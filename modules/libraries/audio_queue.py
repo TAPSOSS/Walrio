@@ -16,8 +16,19 @@ import sqlite3
 import argparse
 import random
 import subprocess
+import hashlib
+import time
 from pathlib import Path
 from audio_player import play_audio
+from playlist import load_m3u_playlist
+
+# Try to import audio_library functions for auto-adding missing songs
+try:
+    from audio_library import extract_metadata, get_file_hash
+    AUDIO_LIBRARY_AVAILABLE = True
+except ImportError:
+    print("Note: audio_library.py functions not available. Auto-adding missing songs disabled.")
+    AUDIO_LIBRARY_AVAILABLE = False
 
 # Default database path
 DEFAULT_DB_PATH = "walrio_library.db"
@@ -112,7 +123,7 @@ def display_queue(queue, current_index=0):
     print()
 
 # Play songs in the queue
-def play_queue(queue, shuffle=False, repeat=False, start_index=0):
+def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
     if not queue:
         print("Queue is empty. Nothing to play.")
         return
@@ -154,6 +165,13 @@ def play_queue(queue, shuffle=False, repeat=False, start_index=0):
                 current_index += 1
                 continue
             
+            # Auto-add missing song to database if connection is available
+            if conn and AUDIO_LIBRARY_AVAILABLE:
+                try:
+                    add_missing_song_to_database(file_path, conn)
+                except Exception as e:
+                    print(f"Note: Could not auto-add song to database: {e}")
+            
             # Play the song
             success = play_audio(file_path)
             
@@ -186,6 +204,86 @@ def play_queue(queue, shuffle=False, repeat=False, start_index=0):
             current_index += 1
             continue
 
+# Add missing song to database
+def add_missing_song_to_database(file_path, conn):
+    if not AUDIO_LIBRARY_AVAILABLE:
+        return False
+    
+    try:
+        cursor = conn.cursor()
+        file_url = f"file://{file_path}"
+        
+        # Check if song already exists
+        cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
+        if cursor.fetchone():
+            return False  # Song already exists
+        
+        print(f"  Adding missing song to database: {os.path.basename(file_path)}")
+        
+        # Get file stats
+        stat = os.stat(file_path)
+        
+        # Get directory for this file
+        dir_path = str(Path(file_path).parent)
+        
+        # Add directory to directories table if not exists
+        try:
+            dir_stat = os.stat(dir_path)
+            cursor.execute('''
+                INSERT OR IGNORE INTO directories (path, mtime) 
+                VALUES (?, ?)
+            ''', (str(dir_path), int(dir_stat.st_mtime)))
+        except Exception:
+            pass  # Directory might not exist or be accessible
+        
+        # Get directory ID
+        cursor.execute('SELECT id FROM directories WHERE path = ?', (str(dir_path),))
+        result = cursor.fetchone()
+        directory_id = result[0] if result else None
+        
+        # Extract metadata
+        metadata = extract_metadata(file_path)
+        if metadata is None:
+            print(f"    Warning: Could not extract metadata from {file_path}")
+            return False
+        
+        # Generate IDs
+        fingerprint = get_file_hash(file_path)
+        song_id = fingerprint
+        artist_id = hashlib.md5(metadata['artist'].encode()).hexdigest() if metadata['artist'] else ''
+        album_id = hashlib.md5(f"{metadata['albumartist'] or metadata['artist']}:{metadata['album']}".encode()).hexdigest() if metadata['album'] else ''
+        
+        # Insert into database
+        file_ext = Path(file_path).suffix.lower()
+        cursor.execute('''
+            INSERT OR IGNORE INTO songs (
+                title, album, artist, albumartist, track, disc, year, originalyear,
+                genre, composer, performer, grouping, comment, lyrics,
+                url, directory_id, basefilename, filetype, filesize, mtime, ctime,
+                length, bitrate, samplerate, bitdepth,
+                compilation, art_embedded, fingerprint, song_id, artist_id, album_id,
+                lastseen, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            metadata['title'], metadata['album'], metadata['artist'], metadata['albumartist'],
+            metadata['track'], metadata['disc'], metadata['year'], metadata['originalyear'],
+            metadata['genre'], metadata['composer'], metadata['performer'], metadata['grouping'],
+            metadata['comment'], metadata['lyrics'],
+            file_url, directory_id, Path(file_path).name, file_ext[1:] if file_ext else '', stat.st_size,
+            int(stat.st_mtime), int(stat.st_ctime),
+            metadata['length'], metadata['bitrate'], metadata['samplerate'], metadata['bitdepth'],
+            metadata['compilation'], metadata['art_embedded'], fingerprint, song_id, artist_id, album_id,
+            int(time.time()), 4  # source = 4 (Auto-added during playback)
+        ))
+        
+        conn.commit()
+        print(f"    Added: {metadata['artist']} - {metadata['title']}")
+        return True
+        
+    except Exception as e:
+        print(f"    Error adding song to database: {e}")
+        return False
+
 # Interactive mode for queue management
 def interactive_mode(conn):
     queue = []
@@ -196,6 +294,7 @@ def interactive_mode(conn):
     print("  list - Show all songs in library")
     print("  filter - Set filters (artist, album, genre)")
     print("  load - Load songs based on current filters")
+    print("  playlist - Load songs from M3U playlist file")
     print("  show - Show current queue")
     print("  play - Play current queue")
     print("  shuffle - Toggle shuffle mode")
@@ -249,7 +348,7 @@ def interactive_mode(conn):
                 display_queue(queue)
             elif command == 'play':
                 if queue:
-                    play_queue(queue, shuffle_mode, repeat_mode)
+                    play_queue(queue, shuffle_mode, repeat_mode, 0, conn)
                 else:
                     print("Queue is empty. Use 'load' to add songs first.")
             elif command == 'shuffle':
@@ -258,11 +357,23 @@ def interactive_mode(conn):
             elif command == 'repeat':
                 repeat_mode = not repeat_mode
                 print(f"Repeat mode: {'ON' if repeat_mode else 'OFF'}")
+            elif command == 'playlist':
+                playlist_path = input("Enter playlist file path: ").strip()
+                if not os.path.exists(playlist_path):
+                    print(f"Error: Playlist file '{playlist_path}' not found.")
+                    continue
+                
+                songs = load_m3u_playlist(playlist_path)
+                if songs:
+                    queue = list(songs)
+                    print(f"Loaded {len(queue)} songs from playlist '{playlist_path}'.")
+                else:
+                    print("No songs found in playlist or failed to load.")
             elif command == 'clear':
                 queue = []
                 print("Queue cleared.")
             elif command == 'help':
-                print("Commands: list, filter, load, show, play, shuffle, repeat, clear, quit")
+                print("Commands: list, filter, load, playlist, show, play, shuffle, repeat, clear, quit")
             else:
                 print("Unknown command. Type 'help' for available commands.")
                 
@@ -275,7 +386,7 @@ def interactive_mode(conn):
 def main():
     parser = argparse.ArgumentParser(
         description="Audio Queue Manager - Play songs from your music library",
-        epilog="Example: python audio_queue.py --artist 'Pink Floyd' --shuffle"
+        epilog="Example: python audio_queue.py --artist 'Pink Floyd' --shuffle OR python audio_queue.py --playlist myplaylist.m3u"
     )
     parser.add_argument(
         "--db-path",
@@ -314,10 +425,49 @@ def main():
         action="store_true",
         help="List all songs in the library and exit"
     )
+    parser.add_argument(
+        "--playlist",
+        help="Load songs from an M3U playlist file"
+    )
     
     args = parser.parse_args()
     
-    # Connect to database
+    # Playlist mode - load from M3U file (no database needed for loading, but can auto-add)
+    if args.playlist:
+        if not os.path.exists(args.playlist):
+            print(f"Error: Playlist file '{args.playlist}' not found.")
+            sys.exit(1)
+        
+        songs = load_m3u_playlist(args.playlist)
+        if not songs:
+            print("No songs found in playlist or failed to load playlist.")
+            sys.exit(1)
+        
+        print(f"Loaded {len(songs)} songs from playlist '{args.playlist}'.")
+        
+        # Try to connect to database for auto-adding missing songs
+        conn = None
+        if AUDIO_LIBRARY_AVAILABLE:
+            try:
+                if os.path.exists(args.db_path):
+                    conn = sqlite3.connect(args.db_path)
+                    conn.row_factory = sqlite3.Row
+                    print(f"Connected to database for auto-adding missing songs: {args.db_path}")
+                else:
+                    print(f"Database not found ({args.db_path}). Songs will play without auto-adding to database.")
+            except Exception as e:
+                print(f"Could not connect to database: {e}")
+                conn = None
+        
+        try:
+            # Play the playlist
+            play_queue(list(songs), args.shuffle, args.repeat, 0, conn)
+        finally:
+            if conn:
+                conn.close()
+        return
+    
+    # Connect to database for database-based operations
     conn = connect_to_database(args.db_path)
     if not conn:
         sys.exit(1)
@@ -359,7 +509,7 @@ def main():
         print(f"Found {len(songs)} songs matching criteria.")
         
         # Play the queue
-        play_queue(list(songs), args.shuffle, args.repeat)
+        play_queue(list(songs), args.shuffle, args.repeat, 0, conn)
         
     except Exception as e:
         print(f"Error: {e}")
