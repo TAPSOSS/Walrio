@@ -51,7 +51,10 @@ jobs:
 
           // Check 2: Description has content (at least 1 character after the template)
           const descriptionSection = body.match(/## Description\s*\n<!-- Provide a brief description of the changes in this pull request -->\s*\n(.*?)(?=\n##|$)/s);
-          const description = descriptionSection ? descriptionSection[1].trim() : '';
+          let description = descriptionSection ? descriptionSection[1].trim() : '';
+          
+          // Remove any HTML comments from the description
+          description = description.replace(/<!--[\s\S]*?-->/g, '').trim();
           
           // Check if description is empty or contains only whitespace/newlines
           if (!description || description.length < 1 || description.match(/^\s*$/)) {
