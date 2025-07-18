@@ -32,3 +32,19 @@ pip install -r requirements.txt
 # Play an audio file using the audio player module
 python3 modules/addons/audio_player.py testing_files/test.flac
 ```
+
+## File Overview
+
+### Modules
+
+#### Addons
+- audio_player.py: plays specified song file using gstreamer
+- audio_library.py: analyzes given directory to make sqlite file containing useful info such as metadata, url, etc.
+
+#### Libraries
+Essential libraries 100% needed for a standard audio player.
+- N/A
+
+#### Niche
+Niche scripts/features for specific devices or workflows
+- N/A 
