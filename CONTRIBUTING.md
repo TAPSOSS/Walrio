@@ -15,7 +15,7 @@ Once more progress has been done this guide will be updated and documentation fo
 """
 (Basic summary of function, 5 words max)
 
-Copyright (c) 2025 TAPSOSS
+Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
