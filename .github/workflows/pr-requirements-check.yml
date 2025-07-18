@@ -50,7 +50,7 @@ jobs:
           }
 
           // Check 2: Description has content (at least 1 character after the template)
-          const descriptionSection = body.match(/## Description\s*\n<!-- Provide a brief description of the changes in this pull request -->\s*\n(.*?)(?=\n##|$)/s);
+          const descriptionSection = body.match(/## Description\s*\n.*?\n(.*?)(?=\n##|$)/s);
           let description = descriptionSection ? descriptionSection[1].trim() : '';
           
           // Remove any HTML comments from the description
