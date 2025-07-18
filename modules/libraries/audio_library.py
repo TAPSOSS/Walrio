@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 Audio Library Analyzer
+
+Copyright (c) 2025 TAPS OSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
 A script that analyzes audio files in a directory and stores metadata in SQLite database.
-Usage: python audio_library.py <directory_path> [--db-path <database_path>]
+Sample Usage: python audio_library.py <directory_path> [--db-path <database_path>]
 """
 
 import sys
