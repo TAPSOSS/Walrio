@@ -32,16 +32,19 @@ jobs:
 
           // Check 1: PR Title Guidelines
           const titlePatterns = [
-            /^Added \[.+\]: .+$/,
-            /^Bug Fix\/Updated \[.+\]: .+$/,
+            /^Added .+: .+$/,
+            /^Bug Fix .+: .+$/,
+            /^Updated .+: .+$/,
             /^Documentation: .+$/
           ];
           
           const titleValid = titlePatterns.some(pattern => pattern.test(title));
           if (!titleValid) {
             errors.push('❌ **PR Title**: Title does not follow the required format. Please use one of:\n' +
-                       '   - "Added [Component]: [description]" - for new features\n' +
-                       '   - "Bug Fix/Updated [Component/Documentation]: [Brief description]" - for other changes');
+                       '   - "Added [word]: [description]" - for new features\n' +
+                       '   - "Bug Fix [word]: [description]" - for bug fixes\n' +
+                       '   - "Updated [word]: [description]" - for updates\n' +
+                       '   - "Documentation: [description]" - for documentation only');
           } else {
             console.log('✅ PR Title format is correct');
           }
@@ -58,7 +61,7 @@ jobs:
 
           // Check 3: At least one "Type of Change" box checked
           const typeOfChangeSection = body.match(/## Type of Change.*?\n(.*?)(?=\n##|$)/s);
-          const typeOfChangeChecked = typeOfChangeSection && typeOfChangeSection[1].includes('- [x]');
+          const typeOfChangeChecked = typeOfChangeSection && (typeOfChangeSection[1].includes('- [x]') || typeOfChangeSection[1].includes('- [X]'));
           
           if (!typeOfChangeChecked) {
             errors.push('❌ **Type of Change**: Please check at least one box in the "Type of Change" section.');
@@ -69,8 +72,8 @@ jobs:
           // Check 4: All checklist items checked
           const checklistSection = body.match(/## Checklist.*?\n(.*?)(?=\n##|$)/s);
           if (checklistSection) {
-            const checklistItems = checklistSection[1].match(/- \[[ x]\]/g) || [];
-            const checkedItems = checklistSection[1].match(/- \[x\]/g) || [];
+            const checklistItems = checklistSection[1].match(/- \[[ xX]\]/g) || [];
+            const checkedItems = checklistSection[1].match(/- \[[xX]\]/g) || [];
             
             if (checklistItems.length === 0) {
               warnings.push('⚠️ **Checklist**: No checklist items found.');
