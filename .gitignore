@@ -1,2 +1,5 @@
 # ignore generated database files
 *.db
+
+# ignore Python cache directories
+__pycache__/
