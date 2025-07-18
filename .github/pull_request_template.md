@@ -1,10 +1,4 @@
-<!--
-PULL REQUEST TITLE GUIDELINES:
-Please use one of these formats for your PR title:
-- "Added [Component]: [filename.py]" - for new features
-- "Bug Fix/Updated [Component/Documentation]: [Brief description]" - for other
--->
-
+<!-- Use this format for title: Added (Component): (Component Name) or Bug Fix/Updated (Componenet/Documentation): (Descripiton)-->
 ## Description
 <!-- Provide a brief description of the changes in this pull request -->
 
