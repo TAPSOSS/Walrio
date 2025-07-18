@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
 Audio Player using GStreamer
+
+Copyright (c) 2025 TAPSOSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
 A simple audio player that uses gst-launch-1.0 to play audio files.
-Usage: python audioplayer.py <filepath>
+Sample Usage: python audioplayer.py <filepath>
 """
 
 import sys
