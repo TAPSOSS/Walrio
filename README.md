@@ -1,11 +1,9 @@
 # Walrio
 Walrus Audio (Walrio) modular music player.
 
-## Contributing
-If you're interested in contributing to Walrio? Check out our [Contributing Guide](CONTRIBUTING.md) for guidelines on how to get started and requirements for contributions. All contributer names are listed in [AUTHORS](AUTHORS).
-
-## License
+## Contributing/License
 This project is licensed under the BSD-3-Clause License, see the [LICENSE](LICENSE) file for details. 
+If you're interested in contributing to Walrio check out our [Contributing Guide](CONTRIBUTING.md) for guidelines on how to get started and requirements for contributions.
 
 ## Requirements
 ```requirements.txt``` is an up to date list of all packages that can simply be installed with ```pip install -r requirements.txt``` on any system with python installed.
