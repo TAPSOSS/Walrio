@@ -28,7 +28,7 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.wav', '.m4a', '.aac', '.wma', '.o
 def connect_to_database(db_path):
     if not os.path.exists(db_path):
         print(f"Error: Database file '{db_path}' not found.")
-        print("Please run audio_library.py first to create the database.")
+        print("Please run database.py first to create the database.")
         return None
     try:
         conn = sqlite3.connect(db_path)

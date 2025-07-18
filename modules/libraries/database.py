@@ -7,7 +7,7 @@ Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A script that analyzes audio files in a directory and stores metadata in SQLite database.
-Sample Usage: python audio_library.py <directory_path> [--db-path <database_path>]
+Sample Usage: python database.py <directory_path> [--db-path <database_path>]
 """
 
 import sys
@@ -557,8 +557,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Audio Library Analyzer - Scans directory for audio files and stores metadata in SQLite database",
         epilog="Examples:\n"
-               "  python audio_library.py /path/to/music --db-path ~/music.db\n"
-               "  python audio_library.py --playlist myplaylist.m3u --db-path ~/music.db",
+               "  python database.py /path/to/music --db-path ~/music.db\n"
+               "  python database.py --playlist myplaylist.m3u --db-path ~/music.db",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
