@@ -20,6 +20,13 @@ from pathlib import Path
 from mutagen import File
 from mutagen.id3 import ID3NoHeaderError
 
+# Import playlist loading function
+try:
+    from playlist import load_m3u_playlist
+except ImportError:
+    print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
+    load_m3u_playlist = None
+
 # Supported audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.wav', '.m4a', '.aac', '.wma', '.opus', '.ape', '.mpc'}
 
@@ -328,6 +335,15 @@ def scan_directory(directory_path, conn):
                     artist_id = hashlib.md5(metadata['artist'].encode()).hexdigest() if metadata['artist'] else ''
                     album_id = hashlib.md5(f"{metadata['albumartist'] or metadata['artist']}:{metadata['album']}".encode()).hexdigest() if metadata['album'] else ''
                     
+                    # Check if song already exists in database
+                    cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
+                    existing_song = cursor.fetchone()
+                    
+                    if existing_song:
+                        # Update lastseen timestamp for existing song
+                        cursor.execute('UPDATE songs SET lastseen = ? WHERE id = ?', (int(time.time()), existing_song[0]))
+                        continue
+                    
                     # Insert into database
                     cursor.execute('''
                         INSERT INTO songs (
@@ -362,6 +378,136 @@ def scan_directory(directory_path, conn):
     print(f"Audio files found: {audio_files_found}")
     print(f"Audio files processed: {audio_files_processed}")
     print(f"Database updated: {audio_files_processed} songs added")
+
+# Load songs from playlist and add to database
+def load_playlist_to_database(playlist_path, conn):
+    if load_m3u_playlist is None:
+        print("Error: Playlist loading functionality is not available.")
+        return False
+    
+    if not os.path.exists(playlist_path):
+        print(f"Error: Playlist file '{playlist_path}' not found.")
+        return False
+    
+    print(f"Loading playlist: {playlist_path}")
+    
+    # Load playlist
+    songs = load_m3u_playlist(playlist_path)
+    if not songs:
+        print("No songs found in playlist or failed to load playlist.")
+        return False
+    
+    print(f"Found {len(songs)} songs in playlist.")
+    
+    cursor = conn.cursor()
+    added_count = 0
+    skipped_count = 0
+    
+    for i, song in enumerate(songs):
+        file_path = song['url']
+        if file_path.startswith('file://'):
+            file_path = file_path[7:]  # Remove 'file://' prefix
+        
+        # Convert to absolute path if relative
+        if not os.path.isabs(file_path):
+            playlist_dir = Path(playlist_path).parent
+            file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
+        
+        print(f"Processing [{i+1}/{len(songs)}]: {os.path.basename(file_path)}")
+        
+        # Check if file exists
+        if not os.path.exists(file_path):
+            print(f"  Warning: File not found: {file_path}")
+            skipped_count += 1
+            continue
+        
+        try:
+            # Get file stats
+            stat = os.stat(file_path)
+            file_url = f"file://{file_path}"
+            
+            # Check if file already exists in database
+            cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
+            existing = cursor.fetchone()
+            
+            if existing:
+                print(f"  Skipping (already in database): {os.path.basename(file_path)}")
+                skipped_count += 1
+                continue
+            
+            # Get directory for this file
+            dir_path = str(Path(file_path).parent)
+            
+            # Add directory to directories table if not exists
+            dir_stat = os.stat(dir_path)
+            cursor.execute('''
+                INSERT OR IGNORE INTO directories (path, mtime) 
+                VALUES (?, ?)
+            ''', (str(dir_path), int(dir_stat.st_mtime)))
+            
+            # Get directory ID
+            cursor.execute('SELECT id FROM directories WHERE path = ?', (str(dir_path),))
+            directory_id = cursor.fetchone()[0]
+            
+            # Extract metadata
+            metadata = extract_metadata(file_path)
+            if metadata is None:
+                print(f"  Warning: Could not extract metadata from {file_path}")
+                skipped_count += 1
+                continue
+            
+            # Generate IDs
+            fingerprint = get_file_hash(file_path)
+            song_id = fingerprint
+            artist_id = hashlib.md5(metadata['artist'].encode()).hexdigest() if metadata['artist'] else ''
+            album_id = hashlib.md5(f"{metadata['albumartist'] or metadata['artist']}:{metadata['album']}".encode()).hexdigest() if metadata['album'] else ''
+            
+            # Check if song already exists in database
+            cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
+            existing_song = cursor.fetchone()
+            
+            if existing_song:
+                print(f"  Already exists: {metadata['artist']} - {metadata['title']}")
+                skipped_count += 1
+                continue
+            
+            # Insert into database
+            file_ext = Path(file_path).suffix.lower()
+            cursor.execute('''
+                INSERT INTO songs (
+                    title, album, artist, albumartist, track, disc, year, originalyear,
+                    genre, composer, performer, grouping, comment, lyrics,
+                    url, directory_id, basefilename, filetype, filesize, mtime, ctime,
+                    length, bitrate, samplerate, bitdepth,
+                    compilation, art_embedded, fingerprint, song_id, artist_id, album_id,
+                    lastseen, source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                metadata['title'], metadata['album'], metadata['artist'], metadata['albumartist'],
+                metadata['track'], metadata['disc'], metadata['year'], metadata['originalyear'],
+                metadata['genre'], metadata['composer'], metadata['performer'], metadata['grouping'],
+                metadata['comment'], metadata['lyrics'],
+                file_url, directory_id, Path(file_path).name, file_ext[1:], stat.st_size,
+                int(stat.st_mtime), int(stat.st_ctime),
+                metadata['length'], metadata['bitrate'], metadata['samplerate'], metadata['bitdepth'],
+                metadata['compilation'], metadata['art_embedded'], fingerprint, song_id, artist_id, album_id,
+                int(time.time()), 3  # source = 3 (Playlist)
+            ))
+            
+            added_count += 1
+            print(f"  Added: {metadata['artist']} - {metadata['title']}")
+                
+        except Exception as e:
+            print(f"  Error processing {file_path}: {e}")
+            skipped_count += 1
+    
+    conn.commit()
+    
+    print(f"\nPlaylist processing complete:")
+    print(f"  Added: {added_count} songs")
+    print(f"  Skipped: {skipped_count} songs")
+    
+    return True
 
 # Analyze audio files in directory and store related info in SQLite database
 def analyze_directory(directory_path, db_path):
@@ -410,10 +556,16 @@ def analyze_directory(directory_path, db_path):
 def main():
     parser = argparse.ArgumentParser(
         description="Audio Library Analyzer - Scans directory for audio files and stores metadata in SQLite database",
-        epilog="Example: python audio_library.py /path/to/music --db-path ~/music.db"
+        epilog="Examples:\n"
+               "  python audio_library.py /path/to/music --db-path ~/music.db\n"
+               "  python audio_library.py --playlist myplaylist.m3u --db-path ~/music.db",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
+    
+    # Make directory argument optional when using playlist
     parser.add_argument(
         "directory",
+        nargs='?',
         help="Path to the directory containing audio files"
     )
     parser.add_argument(
@@ -421,10 +573,53 @@ def main():
         default="walrio_library.db",
         help="Path to SQLite database file (default: walrio_library.db)"
     )
+    parser.add_argument(
+        "--playlist",
+        help="Load songs from an M3U playlist file into the database"
+    )
 
-    # Parse arguments and analyze directory
+    # Parse arguments
     args = parser.parse_args()
-    success = analyze_directory(args.directory, args.db_path)
+    
+    # Validate arguments
+    if not args.directory and not args.playlist:
+        print("Error: Either directory or --playlist must be specified.")
+        parser.print_help()
+        sys.exit(1)
+    
+    success = True
+    
+    # Handle playlist loading
+    if args.playlist:
+        print(f"Loading playlist into database: {args.db_path}")
+        conn = create_database(args.db_path)
+        success = load_playlist_to_database(args.playlist, conn)
+        
+        if success:
+            # Print summary
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM songs')
+            total_songs = cursor.fetchone()[0]
+            
+            cursor.execute('SELECT COUNT(*) FROM directories')
+            total_dirs = cursor.fetchone()[0]
+            
+            print(f"\nDatabase Summary:")
+            print(f"Total songs: {total_songs}")
+            print(f"Total directories: {total_dirs}")
+            print(f"Database file: {args.db_path}")
+        
+        conn.close()
+    
+    # Handle directory scanning
+    if args.directory:
+        if args.playlist:
+            print(f"\nAlso scanning directory: {args.directory}")
+        else:
+            print(f"Scanning directory: {args.directory}")
+        
+        directory_success = analyze_directory(args.directory, args.db_path)
+        success = success and directory_success
     
     # Exit with appropriate code for success or failure
     sys.exit(0 if success else 1)
