@@ -38,13 +38,14 @@ python3 modules/addons/audio_player.py testing_files/test.flac
 ### Modules
 
 #### Addons
+Addons that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
+- N/A
+
+#### Libraries
+Essential libraries 100% needed for a standard audio player (play music, analyze, etc.).
 - audio_player.py: plays specified song file using gstreamer
 - audio_library.py: analyzes given directory to make sqlite file containing useful info such as metadata, url, etc.
 
-#### Libraries
-Essential libraries 100% needed for a standard audio player.
-- N/A
-
 #### Niche
-Niche scripts/features for specific devices or workflows
+Niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
 - N/A 
