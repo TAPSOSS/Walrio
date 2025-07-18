@@ -53,7 +53,8 @@ jobs:
           const descriptionSection = body.match(/## Description\s*\n<!-- Provide a brief description of the changes in this pull request -->\s*\n(.*?)(?=\n##|$)/s);
           const description = descriptionSection ? descriptionSection[1].trim() : '';
           
-          if (!description || description.length < 1) {
+          // Check if description is empty or contains only whitespace/newlines
+          if (!description || description.length < 1 || description.match(/^\s*$/)) {
             errors.push('❌ **Description**: Please provide a description of your changes in the Description section.');
           } else {
             console.log('✅ Description provided');
@@ -77,7 +78,7 @@ jobs:
             
             if (checklistItems.length === 0) {
               warnings.push('⚠️ **Checklist**: No checklist items found.');
-            } else if (checkedItems.length !== checklistItems.length) {
+            } else if (checkedItems.length < checklistItems.length) {
               const uncheckedCount = checklistItems.length - checkedItems.length;
               errors.push(`❌ **Checklist**: ${uncheckedCount} checklist item(s) not checked off. Please complete all checklist items.`);
             } else {
