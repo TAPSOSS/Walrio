@@ -7,7 +7,7 @@ Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A simple audio player that uses GStreamer Python bindings for full playback control.
-Sample Usage: python player.py <filepath>
+Sample Usage: python player.py <filepath> or python player.py --interactive ../../testing_files/test.mp3
 """
 
 import sys
