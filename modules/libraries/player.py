@@ -56,25 +56,48 @@ class AudioPlayer:
         self.volume = 1.0
         self.loop = None
         self.should_quit = False
+        self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
+        self.repeat_count = 0
+        self.max_repeats = 0  # 0 means no limit (infinite)
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
     
+    # Handle termination signals
     def signal_handler(self, signum, frame):
-        """Handle termination signals"""
         print(f"\nReceived signal {signum}, stopping playback...")
         self.stop()
         self.should_quit = True
         if self.loop:
             self.loop.quit()
     
+    # Handle GStreamer bus messages
     def on_message(self, bus, message):
-        """Handle GStreamer bus messages"""
         t = message.type
         
         if t == Gst.MessageType.EOS:
             print("End of stream reached")
+            
+            # Handle looping
+            if self.loop_mode != 'none':
+                # Check if we should continue looping
+                should_loop = False
+                if self.loop_mode == 'infinite':
+                    should_loop = True
+                elif self.loop_mode.isdigit():
+                    if self.repeat_count < int(self.loop_mode):
+                        should_loop = True
+                
+                if should_loop:
+                    print(f"Looping song (repeat #{self.repeat_count + 1})")
+                    self.repeat_count += 1
+                    # Seek back to beginning and continue playing
+                    if self.seek(0):
+                        return  # Continue playing, don't stop
+                else:
+                    print(f"Finished looping after {self.repeat_count} repeats")
+            
             self.stop()
             if self.loop:
                 self.loop.quit()
@@ -99,8 +122,8 @@ class AudioPlayer:
                     self.is_playing = False
                     self.is_paused = False
     
+    # Load an audio file for playback
     def load_file(self, filepath):
-        """Load an audio file for playback"""
         absolute_path = os.path.abspath(filepath)
         
         # Check if file exists
@@ -121,8 +144,8 @@ class AudioPlayer:
         print(f"Loaded: {filepath}")
         return True
     
+    # Start or resume playback
     def play(self):
-        """Start or resume playback"""
         if not self.current_file:
             print("Error: No file loaded")
             return False
@@ -135,8 +158,8 @@ class AudioPlayer:
         print("Playback started")
         return True
     
+    # Pause playback
     def pause(self):
-        """Pause playback"""
         if not self.is_playing:
             print("Player is not currently playing")
             return False
@@ -149,16 +172,16 @@ class AudioPlayer:
         print("Playback paused")
         return True
     
+    # Resume paused playback
     def resume(self):
-        """Resume paused playback"""
         if not self.is_paused:
             print("Player is not currently paused")
             return False
         
         return self.play()
     
+    # Stop playback
     def stop(self):
-        """Stop playback"""
         ret = self.player.set_state(Gst.State.NULL)
         if ret == Gst.StateChangeReturn.FAILURE:
             print("Error: Unable to stop playback")
@@ -169,8 +192,8 @@ class AudioPlayer:
         print("Playback stopped")
         return True
     
+    # Set playback volume (0.0 to 1.0)
     def set_volume(self, volume):
-        """Set playback volume (0.0 to 1.0)"""
         if volume < 0.0 or volume > 1.0:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
@@ -180,12 +203,12 @@ class AudioPlayer:
         print(f"Volume set to {volume:.2f}")
         return True
     
+    # Get current volume
     def get_volume(self):
-        """Get current volume"""
         return self.player.get_property("volume")
     
+    # Seek to a specific position in seconds
     def seek(self, position_seconds):
-        """Seek to a specific position in seconds"""
         seek_time = position_seconds * Gst.SECOND
         ret = self.player.seek_simple(
             Gst.Format.TIME,
@@ -199,33 +222,66 @@ class AudioPlayer:
         print(f"Seeked to {position_seconds} seconds")
         return True
     
+    # Get current playback position in seconds
     def get_position(self):
-        """Get current playback position in seconds"""
         ret, position = self.player.query_position(Gst.Format.TIME)
         if ret:
             return position / Gst.SECOND
         return 0
     
+    # Get total duration in seconds
     def get_duration(self):
-        """Get total duration in seconds"""
         ret, duration = self.player.query_duration(Gst.Format.TIME)
         if ret:
             return duration / Gst.SECOND
         return 0
     
+    # Set loop mode: 'none', number (e.g. '3'), or 'infinite'
+    def set_loop_mode(self, mode):
+        # Validate input
+        if mode != 'none' and mode != 'infinite' and not mode.isdigit():
+            print("Error: Loop mode must be 'none', a number (e.g. '3'), or 'infinite'")
+            return False
+        
+        if mode.isdigit() and int(mode) <= 0:
+            print("Error: Loop count must be a positive number")
+            return False
+        
+        self.loop_mode = mode
+        self.repeat_count = 0
+        
+        if mode == 'none':
+            print("Loop mode: Off")
+        elif mode == 'infinite':
+            print("Loop mode: Infinite repeats")
+        elif mode.isdigit():
+            print(f"Loop mode: Repeat {mode} times")
+        
+        return True
+    
+    # Get current loop mode
+    def get_loop_mode(self):
+        return self.loop_mode
+    
+    # Get how many times the current song has repeated
+    def get_repeat_count(self):
+        return self.repeat_count
+    
+    # Get current player state
     def get_state(self):
-        """Get current player state"""
         return {
             "is_playing": self.is_playing,
             "is_paused": self.is_paused,
             "current_file": self.current_file,
             "position": self.get_position(),
             "duration": self.get_duration(),
-            "volume": self.get_volume()
+            "volume": self.get_volume(),
+            "loop_mode": self.loop_mode,
+            "repeat_count": self.repeat_count
         }
     
+    # Run in interactive mode with command input
     def run_interactive(self):
-        """Run in interactive mode with command input"""
         print("\nInteractive Audio Player")
         print("Commands:")
         print("  play/p    - Start/resume playback")
@@ -233,6 +289,7 @@ class AudioPlayer:
         print("  stop/s    - Stop playback")
         print("  volume <0.0-1.0> - Set volume")
         print("  seek <seconds>   - Seek to position")
+        print("  loop <none|number|infinite> - Set loop mode (e.g. 'loop 3' or 'loop infinite')")
         print("  status    - Show current status")
         print("  quit/q    - Quit player")
         print()
@@ -251,8 +308,8 @@ class AudioPlayer:
         finally:
             self.stop()
     
+    # Handle user input in interactive mode
     def handle_input(self):
-        """Handle user input in interactive mode"""
         while not self.should_quit:
             try:
                 cmd = input("player> ").strip().lower()
@@ -288,12 +345,25 @@ class AudioPlayer:
                         self.seek(pos)
                     except ValueError:
                         print("Error: Invalid seek position")
+                elif command == 'loop' and len(parts) > 1:
+                    self.set_loop_mode(parts[1])
                 elif command == 'status':
                     state = self.get_state()
                     print(f"File: {state['current_file'] or 'None'}")
                     print(f"Status: {'Playing' if state['is_playing'] else 'Paused' if state['is_paused'] else 'Stopped'}")
                     print(f"Position: {state['position']:.1f}s / {state['duration']:.1f}s")
                     print(f"Volume: {state['volume']:.2f}")
+                    print(f"Loop mode: {state['loop_mode']}")
+                    if state['repeat_count'] > 0:
+                        if state['loop_mode'] == 'infinite':
+                            print(f"Repeat count: {state['repeat_count']} (infinite)")
+                        elif state['loop_mode'].isdigit():
+                            print(f"Repeat count: {state['repeat_count']}/{state['loop_mode']}")
+                        else:
+                            print(f"Repeat count: {state['repeat_count']}")
+                elif command.startswith('loop') and len(parts) > 1:
+                    mode = parts[1]
+                    self.set_loop_mode(mode)
                 else:
                     print("Unknown command. Type 'quit' to exit.")
             except EOFError:
@@ -302,8 +372,8 @@ class AudioPlayer:
                 print(f"Error handling input: {e}")
 
 # Simple playback function for command-line compatibility
+# Simple playback function for backward compatibility
 def play_audio(filepath):
-    """Simple playback function for backward compatibility"""
     if not GST_AVAILABLE:
         print("Error: GStreamer Python bindings not available.")
         print("Install with: pip install PyGObject")
@@ -374,6 +444,11 @@ def main():
         type=float,
         help="Seek to position in seconds"
     )
+    parser.add_argument(
+        "--loop", "-l",
+        default='none',
+        help="Set loop mode: 'none', number (e.g. '3'), or 'infinite'"
+    )
 
     args = parser.parse_args()
     
@@ -393,12 +468,18 @@ def main():
             if args.filepath:
                 if not player.load_file(args.filepath):
                     sys.exit(1)
+            # Set loop mode if specified
+            if args.loop:
+                player.set_loop_mode(args.loop)
             player.run_interactive()
         elif args.daemon:
             # Daemon mode - load file and wait for external commands
             if args.filepath:
                 if not player.load_file(args.filepath):
                     sys.exit(1)
+                # Set loop mode if specified
+                if args.loop:
+                    player.set_loop_mode(args.loop)
                 player.play()
             
             # Create main loop and wait
@@ -420,6 +501,10 @@ def main():
             # Apply volume if specified
             if args.volume is not None:
                 player.set_volume(args.volume)
+            
+            # Set loop mode if specified
+            if args.loop:
+                player.set_loop_mode(args.loop)
             
             success = play_audio(args.filepath)
             sys.exit(0 if success else 1)
