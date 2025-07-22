@@ -7,9 +7,9 @@ This project is licensed under the BSD-3-Clause License, see the [LICENSE](LICEN
 If you're interested in contributing to Walrio check out our [Contributing Guide](CONTRIBUTING.md) for guidelines on how to get started and requirements for contributions. Contributors can be found in the [AUTHORS](AUTHORS) file in the repository.
 
 ## Requirements
-```requirements.txt``` is an up to date list of all packages that can simply be installed with ```pip install -r requirements.txt``` on any system with python installed.
+`requirements.txt` is an up to date list of all Python packages that can simply be installed with `pip install -r requirements.txt` on any system with python installed.
 
-### List of Requirements
+### List of Non-Pip Requirements
 - Python 3.6+ (and pip installs using pip with python and requirements.txt)
 - GStreamer 1.0 (with gst-launch-1.0 command-line tool)
 
@@ -18,29 +18,36 @@ I only have the developer environment set up properly for my OS of choice (fedor
 
 #### Fedora/RHEL/CentOS:
 ```bash
-sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools
+# Install GStreamer system packages
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools gstreamer1-devel gobject-introspection-devel
+
+# Install Python dependencies
 pip install -r requirements.txt
 ```
 
 ## File Overview
+Specific details about what every file and function do can be found in the sphinx auto-generated documentation please [click here](https://tapsoss.github.io/Walrio/) to go check that out before asking any questions. The structure below is just the grant overview.
+
+### .github
+This is where automated GitHub scritps run to do things like check pull requests, auto-build docs, build and GUIs, and more.
 
 ### GUI
-GUI versions of Walrio to make it easier to use the modules without needing the command line or to standardize the command line commands.
+This is where you can find the official/mainline GUI versions of Walrio which should always stay up to date and are made to make it possible to just click around to use this music player like you would any other music player. If lots of folks start making their own UIs, I will try to find a way to simply have a webpage linking to all their repos directly which can be submitted to so those GUIs can be easily browsed and users can install the GUI they like most so that this repository doesn't get cluttered or large in size.
+
+### Docs
+The Docs folder is where sphinx documentation files go to auto-generate the relevant [documentation](https://tapsoss.github.io/Walrio/) for this project.
 
 ### Modules
-Modules to be used in the backend of any GUI made with Walrio.
+Modules are the actually music player modules to be used in the backend of any GUI made with Walrio. Their specific features can be viewed in the [documentation](https://tapsoss.github.io/Walrio/).
 
 #### Addons
-Addons that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
-- N/A
+Addons are modules that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
 
 #### Libraries
-Essential libraries 100% needed for a standard audio player (play music, analyze, etc.).
-- player.py: plays, pause, and loop a specified song file using gstreamer with audio levels
-- database.py: analyzes given directory to make sqlite file containing useful info such as metadata, url, etc.
-- queue.py: stores a list of songs in order to be played by player.py and queues them up when the previous song finishes.
-- playlist.py: creates and manages M3U playlists from the audio library database or from files/folders
+Essential libraries are modules that are 100% needed for a standard audio player (play music, analyze, etc.).
 
 #### Niche
-Niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
-- N/A
+The Niche folder is for niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
+
+### Testing Files
+This is where simple audio and playlist files for testing purposes are stored. The files in there were made by @tapscodes and aren't super pleasent to listen to but are guaranteed to be legally safe. When testing/writing code, it's best to use your own real music files for testing but these files are there for those who don't have those files.
