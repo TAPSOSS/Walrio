@@ -30,7 +30,20 @@ except ImportError:
     print("Warning: GStreamer Python bindings not available. Install with: pip install PyGObject")
 
 class AudioPlayer:
+    """
+    A GStreamer-based audio player with full playback control.
+    
+    This class provides comprehensive audio playback functionality including
+    play, pause, stop, seek, volume control, and looping capabilities.
+    """
+    
     def __init__(self):
+        """
+        Initialize the AudioPlayer with GStreamer components.
+        
+        Raises:
+            RuntimeError: If GStreamer Python bindings are not available.
+        """
         if not GST_AVAILABLE:
             raise RuntimeError("GStreamer Python bindings not available")
         
@@ -65,16 +78,28 @@ class AudioPlayer:
         signal.signal(signal.SIGINT, self.signal_handler)
         signal.signal(signal.SIGTERM, self.signal_handler)
     
-    # Handle termination signals
     def signal_handler(self, signum, frame):
+        """
+        Handle termination signals gracefully.
+        
+        Args:
+            signum (int): Signal number received.
+            frame: Current stack frame (unused).
+        """
         print(f"\nReceived signal {signum}, stopping playback...")
         self.stop()
         self.should_quit = True
         if self.loop:
             self.loop.quit()
     
-    # Handle GStreamer bus messages
     def on_message(self, bus, message):
+        """
+        Handle GStreamer bus messages.
+        
+        Args:
+            bus: GStreamer bus object.
+            message: GStreamer message object.
+        """
         t = message.type
         
         if t == Gst.MessageType.EOS:
@@ -130,8 +155,16 @@ class AudioPlayer:
                     self.is_playing = False
                     self.is_paused = False
     
-    # Load an audio file for playback
     def load_file(self, filepath):
+        """
+        Load an audio file for playback.
+        
+        Args:
+            filepath (str): Path to the audio file.
+            
+        Returns:
+            bool: True if file loaded successfully, False otherwise.
+        """
         absolute_path = os.path.abspath(filepath)
         
         # Check if file exists
@@ -152,8 +185,13 @@ class AudioPlayer:
         print(f"Loaded: {filepath}")
         return True
     
-    # Start or resume playback
     def play(self):
+        """
+        Start or resume playback.
+        
+        Returns:
+            bool: True if playback started successfully, False otherwise.
+        """
         if not self.current_file:
             print("Error: No file loaded")
             return False
@@ -179,8 +217,13 @@ class AudioPlayer:
         print("Playback started")
         return True
     
-    # Pause playback
     def pause(self):
+        """
+        Pause playback.
+        
+        Returns:
+            bool: True if paused successfully, False otherwise.
+        """
         if not self.is_playing:
             print("Player is not currently playing")
             return False
@@ -193,16 +236,26 @@ class AudioPlayer:
         print("Playback paused")
         return True
     
-    # Resume paused playback
     def resume(self):
+        """
+        Resume paused playback.
+        
+        Returns:
+            bool: True if resumed successfully, False otherwise.
+        """
         if not self.is_paused:
             print("Player is not currently paused")
             return False
         
         return self.play()
     
-    # Stop playback
     def stop(self):
+        """
+        Stop playback.
+        
+        Returns:
+            bool: True if stopped successfully, False otherwise.
+        """
         ret = self.player.set_state(Gst.State.NULL)
         if ret == Gst.StateChangeReturn.FAILURE:
             print("Error: Unable to stop playback")
@@ -212,8 +265,16 @@ class AudioPlayer:
         self.is_paused = False
         return True
     
-    # Set playback volume (0.0 to 1.0)
     def set_volume(self, volume):
+        """
+        Set playback volume.
+        
+        Args:
+            volume (float): Volume level between 0.0 and 1.0.
+            
+        Returns:
+            bool: True if volume set successfully, False otherwise.
+        """
         if volume < 0.0 or volume > 1.0:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
@@ -223,12 +284,25 @@ class AudioPlayer:
         print(f"Volume set to {volume:.2f}")
         return True
     
-    # Get current volume
     def get_volume(self):
+        """
+        Get current volume level.
+        
+        Returns:
+            float: Current volume between 0.0 and 1.0.
+        """
         return self.player.get_property("volume")
     
-    # Seek to a specific position in seconds
     def seek(self, position_seconds):
+        """
+        Seek to a specific position in the audio.
+        
+        Args:
+            position_seconds (float): Position to seek to in seconds.
+            
+        Returns:
+            bool: True if seek successful, False otherwise.
+        """
         seek_time = position_seconds * Gst.SECOND
         ret = self.player.seek_simple(
             Gst.Format.TIME,
@@ -242,22 +316,40 @@ class AudioPlayer:
         print(f"Seeked to {position_seconds} seconds")
         return True
     
-    # Get current playback position in seconds
     def get_position(self):
+        """
+        Get current playback position.
+        
+        Returns:
+            float: Current position in seconds.
+        """
         ret, position = self.player.query_position(Gst.Format.TIME)
         if ret:
             return position / Gst.SECOND
         return 0
     
-    # Get total duration in seconds
     def get_duration(self):
+        """
+        Get total duration of the current audio file.
+        
+        Returns:
+            float: Total duration in seconds.
+        """
         ret, duration = self.player.query_duration(Gst.Format.TIME)
         if ret:
             return duration / Gst.SECOND
         return 0
     
-    # Set loop mode: 'none', number (e.g. '3'), or 'infinite'
     def set_loop_mode(self, mode):
+        """
+        Set loop mode for playback.
+        
+        Args:
+            mode (str): Loop mode - 'none', number (e.g. '3'), or 'infinite'.
+            
+        Returns:
+            bool: True if loop mode set successfully, False otherwise.
+        """
         # Validate input
         if mode != 'none' and mode != 'infinite' and not mode.isdigit():
             print("Error: Loop mode must be 'none', a number (e.g. '3'), or 'infinite'")
@@ -279,16 +371,39 @@ class AudioPlayer:
         
         return True
     
-    # Get current loop mode
     def get_loop_mode(self):
+        """
+        Get current loop mode.
+        
+        Returns:
+            str: Current loop mode setting.
+        """
         return self.loop_mode
     
-    # Get how many times the current song has repeated
     def get_repeat_count(self):
+        """
+        Get number of times the current song has repeated.
+        
+        Returns:
+            int: Number of repeats completed.
+        """
         return self.repeat_count
     
-    # Get current player state
     def get_state(self):
+        """
+        Get current player state information.
+        
+        Returns:
+            dict: Dictionary containing player state including:
+                - is_playing (bool): Whether audio is currently playing
+                - is_paused (bool): Whether audio is paused
+                - current_file (str): Path to current file
+                - position (float): Current position in seconds
+                - duration (float): Total duration in seconds
+                - volume (float): Current volume level
+                - loop_mode (str): Current loop mode
+                - repeat_count (int): Number of repeats completed
+        """
         return {
             "is_playing": self.is_playing,
             "is_paused": self.is_paused,
@@ -300,8 +415,13 @@ class AudioPlayer:
             "repeat_count": self.repeat_count
         }
     
-    # Run in interactive mode with command input
     def run_interactive(self):
+        """
+        Run the player in interactive mode with command input.
+        
+        Starts a command-line interface allowing real-time control
+        of playback through user commands.
+        """
         self.interactive_mode = True
         print("\nInteractive Audio Player")
         print("Commands:")
@@ -329,8 +449,13 @@ class AudioPlayer:
         finally:
             self.stop()
     
-    # Handle user input in interactive mode
     def handle_input(self):
+        """
+        Handle user input in interactive mode.
+        
+        Processes user commands in a separate thread while
+        audio playback continues in the main thread.
+        """
         while not self.should_quit:
             try:
                 cmd = input("player> ").strip().lower()
@@ -392,9 +517,16 @@ class AudioPlayer:
             except Exception as e:
                 print(f"Error handling input: {e}")
 
-# Simple playback function for command-line compatibility
-# Simple playback function for backward compatibility
 def play_audio(filepath):
+    """
+    Simple playback function for command-line compatibility.
+    
+    Args:
+        filepath (str): Path to the audio file to play.
+        
+    Returns:
+        bool: True if playback completed successfully, False otherwise.
+    """
     if not GST_AVAILABLE:
         print("Error: GStreamer Python bindings not available.")
         print("Install with: pip install PyGObject")
@@ -425,8 +557,13 @@ def play_audio(filepath):
         print(f"Error: {e}")
         return False
 
-# main function to handle command line arguments and play audio
 def main():
+    """
+    Main function to handle command line arguments and play audio.
+    
+    Parses command-line arguments and initiates appropriate playback mode
+    (simple, interactive, or daemon).
+    """
     parser = argparse.ArgumentParser(
         description="Audio Player using GStreamer with full playback control",
         epilog="Examples:\n"

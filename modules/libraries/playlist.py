@@ -24,8 +24,16 @@ DEFAULT_DB_PATH = "walrio_library.db"
 # Supported audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.wav', '.m4a', '.aac', '.wma', '.opus', '.ape', '.mpc'}
 
-# Connect to the SQLite database and return connection
 def connect_to_database(db_path):
+    """
+    Connect to the SQLite database and return connection.
+    
+    Args:
+        db_path (str): Path to the SQLite database file.
+        
+    Returns:
+        sqlite3.Connection or None: Database connection object, or None if connection fails.
+    """
     if not os.path.exists(db_path):
         print(f"Error: Database file '{db_path}' not found.")
         print("Please run database.py first to create the database.")
@@ -38,8 +46,18 @@ def connect_to_database(db_path):
         print(f"Error connecting to database: {e}")
         return None
 
-# Get songs from database based on filters
 def get_songs_from_database(conn, filters=None):
+    """
+    Get songs from database based on filters.
+    
+    Args:
+        conn (sqlite3.Connection): Database connection object.
+        filters (dict, optional): Dictionary with filter criteria.
+            Supported keys: 'artist', 'album', 'genre' (all use partial matching).
+            
+    Returns:
+        list: List of song records as sqlite3.Row objects.
+    """
     cursor = conn.cursor()
     
     # Base query
@@ -75,8 +93,16 @@ def get_songs_from_database(conn, filters=None):
         print(f"Error querying database: {e}")
         return []
 
-# Format song information for display
 def format_song_info(song):
+    """
+    Format song information for display.
+    
+    Args:
+        song (dict or sqlite3.Row): Song record with metadata.
+        
+    Returns:
+        str: Formatted song information string with track number, artist, title, album, and duration.
+    """
     artist = song['artist'] or "Unknown Artist"
     title = song['title'] or "Unknown Title"
     album = song['album'] or "Unknown Album"
@@ -95,8 +121,17 @@ def format_song_info(song):
     
     return f"{track}{artist} - {title} ({album}){duration}"
 
-# Convert file path to relative path from playlist location
 def get_relative_path(file_path, playlist_path):
+    """
+    Convert file path to relative path from playlist location.
+    
+    Args:
+        file_path (str): Path to the audio file.
+        playlist_path (str): Path to the playlist file.
+        
+    Returns:
+        str: Relative path from playlist directory to audio file.
+    """
     # Remove file:// prefix if present
     if file_path.startswith('file://'):
         file_path = file_path[7:]
@@ -109,8 +144,19 @@ def get_relative_path(file_path, playlist_path):
         # If relative path calculation fails, return original path
         return file_path
 
-# Create M3U playlist file
 def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist_name="Playlist"):
+    """
+    Create M3U playlist file from a list of songs.
+    
+    Args:
+        songs (list): List of song dictionaries or database records.
+        playlist_path (str): Path where the playlist file will be saved.
+        use_absolute_paths (bool, optional): Use absolute paths instead of relative. Defaults to False.
+        playlist_name (str, optional): Name of the playlist. Defaults to "Playlist".
+        
+    Returns:
+        bool: True if playlist created successfully, False otherwise.
+    """
     try:
         # Ensure directory exists
         playlist_dir = Path(playlist_path).parent
@@ -149,8 +195,16 @@ def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist
         print(f"Error creating playlist: {e}")
         return False
 
-# Load songs from M3U playlist file
 def load_m3u_playlist(playlist_path):
+    """
+    Load songs from M3U playlist file.
+    
+    Args:
+        playlist_path (str): Path to the M3U playlist file.
+        
+    Returns:
+        list: List of song dictionaries parsed from the playlist.
+    """
     songs = []
     try:
         with open(playlist_path, 'r', encoding='utf-8') as f:
@@ -209,8 +263,18 @@ def load_m3u_playlist(playlist_path):
         print(f"Error loading playlist: {e}")
         return []
 
-# Extract metadata from audio file
 def extract_metadata(file_path):
+    """
+    Extract metadata from audio file using mutagen.
+    
+    Args:
+        file_path (str): Path to the audio file.
+        
+    Returns:
+        dict or None: Dictionary containing extracted metadata, or None if extraction fails.
+            Keys include: url, title, artist, album, albumartist, length, track,
+            disc, year, genre.
+    """
     try:
         audio_file = MutagenFile(file_path)
         if audio_file is None:
@@ -281,8 +345,16 @@ def extract_metadata(file_path):
             'genre': 'Unknown'
         }
 
-# Scan directory for audio files
 def scan_directory(directory_path):
+    """
+    Scan directory recursively for audio files.
+    
+    Args:
+        directory_path (str): Path to the directory to scan.
+        
+    Returns:
+        list: List of audio file paths found in the directory.
+    """
     audio_files = []
     try:
         directory = Path(directory_path)
@@ -306,8 +378,19 @@ def scan_directory(directory_path):
         print(f"Error scanning directory '{directory_path}': {e}")
         return []
 
-# Create playlist from list of files and folders
 def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False, playlist_name="Playlist"):
+    """
+    Create playlist from list of files and folders.
+    
+    Args:
+        inputs (list): List of file paths and/or directory paths.
+        playlist_path (str): Path where the playlist file will be saved.
+        use_absolute_paths (bool, optional): Use absolute paths instead of relative. Defaults to False.
+        playlist_name (str, optional): Name of the playlist. Defaults to "Playlist".
+        
+    Returns:
+        bool: True if playlist created successfully, False otherwise.
+    """
     songs = []
     
     for input_path in inputs:
@@ -347,8 +430,14 @@ def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False,
     print(f"Creating playlist with {len(songs)} songs...")
     return create_m3u_playlist(songs, playlist_path, use_absolute_paths, playlist_name)
 
-# Main function
 def main():
+    """
+    Main function for playlist management command-line interface.
+    
+    Parses command-line arguments and performs playlist operations including
+    creating playlists from database queries, files/directories, or loading
+    existing playlists.
+    """
     parser = argparse.ArgumentParser(
         description="Playlist Manager - Create and manage M3U playlists",
         epilog="Examples:\n"

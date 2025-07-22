@@ -33,8 +33,16 @@ except ImportError:
 # Default database path
 DEFAULT_DB_PATH = "walrio_library.db"
 
-# Connect to the SQLite database and return connection
 def connect_to_database(db_path):
+    """
+    Connect to the SQLite database and return connection.
+    
+    Args:
+        db_path (str): Path to the SQLite database file.
+        
+    Returns:
+        sqlite3.Connection or None: Database connection object, or None if connection fails.
+    """
     if not os.path.exists(db_path):
         print(f"Error: Database file '{db_path}' not found.")
         print("Please run database.py first to create the database.")
@@ -47,8 +55,18 @@ def connect_to_database(db_path):
         print(f"Error connecting to database: {e}")
         return None
 
-# Get songs from database based on filters
 def get_songs_from_database(conn, filters=None):
+    """
+    Get songs from database based on filters.
+    
+    Args:
+        conn (sqlite3.Connection): Database connection object.
+        filters (dict, optional): Dictionary with filter criteria.
+            Supported keys: 'artist', 'album', 'genre' (all use partial matching).
+            
+    Returns:
+        list: List of song records as sqlite3.Row objects, ordered by artist, album, disc, track.
+    """
     cursor = conn.cursor()
     
     # Base query
@@ -84,8 +102,16 @@ def get_songs_from_database(conn, filters=None):
         print(f"Error querying database: {e}")
         return []
 
-# Format song information for display
 def format_song_info(song):
+    """
+    Format song information for display with comprehensive metadata.
+    
+    Args:
+        song (dict or sqlite3.Row): Song record with metadata.
+        
+    Returns:
+        str: Formatted song information string with track, artist, title, albumartist, album, year, and duration.
+    """
     artist = song['artist'] or "Unknown Artist"
     albumartist = song['albumartist'] or artist  # Use albumartist if available, otherwise fall back to artist
     title = song['title'] or "Unknown Title"
@@ -110,8 +136,14 @@ def format_song_info(song):
     
     return f"{track}{artist} - {title} ({albumartist} - {album}{year}){duration}"
 
-# Display the current queue with highlighting for current song
 def display_queue(queue, current_index=0):
+    """
+    Display the current queue with highlighting for current song.
+    
+    Args:
+        queue (list): List of song dictionaries or database records.
+        current_index (int, optional): Index of currently playing song. Defaults to 0.
+    """
     if not queue:
         print("Queue is empty.")
         return
@@ -122,8 +154,17 @@ def display_queue(queue, current_index=0):
         print(f"{marker}{i+1:3d}. {format_song_info(song)}")
     print()
 
-# Play songs in the queue
 def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
+    """
+    Play songs in the queue with various playback options.
+    
+    Args:
+        queue (list): List of song dictionaries or database records.
+        shuffle (bool, optional): Enable shuffle mode. Defaults to False.
+        repeat (bool, optional): Enable repeat mode. Defaults to False.
+        start_index (int, optional): Index to start playback from. Defaults to 0.
+        conn (sqlite3.Connection, optional): Database connection for auto-adding missing songs.
+    """
     if not queue:
         print("Queue is empty. Nothing to play.")
         return
@@ -204,8 +245,17 @@ def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
             current_index += 1
             continue
 
-# Add missing song to database
 def add_missing_song_to_database(file_path, conn):
+    """
+    Add missing song to database automatically during playback.
+    
+    Args:
+        file_path (str): Path to the audio file to add.
+        conn (sqlite3.Connection): Database connection object.
+        
+    Returns:
+        bool: True if song was added successfully, False otherwise.
+    """
     if not DATABASE_AVAILABLE:
         return False
     
@@ -284,8 +334,16 @@ def add_missing_song_to_database(file_path, conn):
         print(f"    Error adding song to database: {e}")
         return False
 
-# Interactive mode for queue management
 def interactive_mode(conn):
+    """
+    Interactive mode for queue management.
+    
+    Provides a command-line interface for managing audio queues with
+    commands for filtering, loading, and playing songs.
+    
+    Args:
+        conn (sqlite3.Connection): Database connection object.
+    """
     queue = []
     filters = {}
     
@@ -382,8 +440,13 @@ def interactive_mode(conn):
             break
         except Exception as e:
             print(f"Error: {e}")
-# Main func
 def main():
+    """
+    Main function for audio queue management command-line interface.
+    
+    Parses command-line arguments and performs queue operations including
+    database filtering, playlist loading, and various playback modes.
+    """
     parser = argparse.ArgumentParser(
         description="Audio Queue Manager - Play songs from your music library",
         epilog="Example: python queue.py --artist 'Pink Floyd' --shuffle OR python queue.py --playlist myplaylist.m3u"
