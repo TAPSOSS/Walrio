@@ -50,4 +50,4 @@ Essential libraries are modules that are 100% needed for a standard audio player
 The Niche folder is for niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
 
 ### Testing Files
-This is where simple audio and playlist files for testing purposes are stored. The files in there were made by @tapscodes and aren't super pleasent to listen to but are guaranteed to be legally safe. When testing/writing code, it's best to use your own real music files for testing but these files are there for those who don't have those files.
+This is where simple audio and playlist files for testing purposes are stored. The files in there were made by [@tapscodes](https://github.com/tapscodes) and aren't super pleasent to listen to but are guaranteed to be legally safe. When testing/writing code, it's best to use your own real music files for testing but these files are there for those who don't have those files.
