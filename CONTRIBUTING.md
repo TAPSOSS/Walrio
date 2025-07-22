@@ -3,7 +3,7 @@
 Walrio is an free and open-source project, it is possible and encouraged to participate in the development of this music player. You can also participate by answering questions, reporting bugs or helping with documentation. If you plan on submitting any code/modules/documentation updates, make sure to follow the guidelines below.
 
 ## Styling REQUIREMENTS
-Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting. Generally this means something like:
+Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting (w/ napoleon support). Generally this means something like:
 ```
 """
 class Greeter:
