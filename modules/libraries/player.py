@@ -59,6 +59,7 @@ class AudioPlayer:
         self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
         self.repeat_count = 0
         self.max_repeats = 0  # 0 means no limit (infinite)
+        self.interactive_mode = False  # Track if we're in interactive mode
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -98,16 +99,23 @@ class AudioPlayer:
                 else:
                     print(f"Finished looping after {self.repeat_count} repeats")
             
+            # Reset position to beginning for next play
+            self.seek(0)
             self.stop()
-            if self.loop:
+            # Only quit the loop if not in interactive mode
+            if self.loop and not self.interactive_mode:
                 self.loop.quit()
+            elif self.interactive_mode:
+                # Re-print prompt for user to know they can continue
+                print("player> ", end="", flush=True)
         elif t == Gst.MessageType.ERROR:
             err, debug = message.parse_error()
             print(f"Error: {err}")
             if debug:
                 print(f"Debug info: {debug}")
             self.stop()
-            if self.loop:
+            # Only quit the loop if not in interactive mode
+            if self.loop and not self.interactive_mode:
                 self.loop.quit()
         elif t == Gst.MessageType.STATE_CHANGED:
             if message.src == self.player:
@@ -150,6 +158,16 @@ class AudioPlayer:
             print("Error: No file loaded")
             return False
         
+        # If we're paused, just resume
+        if self.is_paused:
+            ret = self.player.set_state(Gst.State.PLAYING)
+            if ret == Gst.StateChangeReturn.FAILURE:
+                print("Error: Unable to resume playback")
+                return False
+            print("Playback resumed")
+            return True
+        
+        # Otherwise start/restart playback
         ret = self.player.set_state(Gst.State.PLAYING)
         if ret == Gst.StateChangeReturn.FAILURE:
             print("Error: Unable to start playback")
@@ -281,6 +299,7 @@ class AudioPlayer:
     
     # Run in interactive mode with command input
     def run_interactive(self):
+        self.interactive_mode = True
         print("\nInteractive Audio Player")
         print("Commands:")
         print("  play/p    - Start/resume playback")
