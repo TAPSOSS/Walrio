@@ -1,10 +1,10 @@
 # Walrio
 Walrus Audio (Walrio) modular music player.
 
-## Contributing/License
+## Contributing/License/Documentation
 This project is licensed under the BSD-3-Clause License, see the [LICENSE](LICENSE) file for details. 
 
-If you're interested in contributing to Walrio check out our [Contributing Guide](CONTRIBUTING.md) for guidelines on how to get started and requirements for contributions. Contributors can be found in the [AUTHORS](AUTHORS) file in the repository.
+If you're interested in contributing to Walrio check out our [Contributing Guide](CONTRIBUTING.md) for guidelines on how to get started and requirements for contributions. Contributors can be found in the [AUTHORS](AUTHORS) file in the repository. Documentation can be found [here](https://tapsoss.github.io/Walrio/api/).
 
 ## Requirements
 `requirements.txt` is an up to date list of all Python packages that can simply be installed with `pip install -r requirements.txt` on any system with python installed.
@@ -26,7 +26,7 @@ pip install -r requirements.txt
 ```
 
 ## File Overview
-Specific details about what every file and function do can be found in the sphinx auto-generated documentation please [click here](https://tapsoss.github.io/Walrio/) to go check that out before asking any questions. The structure below is just the grant overview.
+The sphinx documentation gives a nice overview of the files and what they do [click here](https://tapsoss.github.io/Walrio/api/index.html#module-overview) to go check that out before asking any questions. The structure below is just the grant overview.
 
 ### .github
 This is where automated GitHub scritps run to do things like check pull requests, auto-build docs, build and GUIs, and more.
@@ -38,7 +38,7 @@ This is where you can find the official/mainline GUI versions of Walrio which sh
 The Docs folder is where sphinx documentation files go to auto-generate the relevant [documentation](https://tapsoss.github.io/Walrio/) for this project.
 
 ### Modules
-Modules are the actually music player modules to be used in the backend of any GUI made with Walrio. Their specific features can be viewed in the [documentation](https://tapsoss.github.io/Walrio/).
+Modules are the actually music player modules to be used in the backend of any GUI made with Walrio. Their specific features can be viewed in the [API documentation](https://tapsoss.github.io/Walrio/api/index.html).
 
 #### Addons
 Addons are modules that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
