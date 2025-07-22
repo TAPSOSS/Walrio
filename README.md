@@ -36,7 +36,7 @@ Addons that greatly assist a standard music player but aren't technically needed
 
 #### Libraries
 Essential libraries 100% needed for a standard audio player (play music, analyze, etc.).
-- player.py: plays specified song file using gstreamer
+- player.py: plays, pause, and loop a specified song file using gstreamer with audio levels
 - database.py: analyzes given directory to make sqlite file containing useful info such as metadata, url, etc.
 - queue.py: stores a list of songs in order to be played by player.py and queues them up when the previous song finishes.
 - playlist.py: creates and manages M3U playlists from the audio library database or from files/folders
