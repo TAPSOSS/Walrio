@@ -7,7 +7,6 @@ Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A simple audio player that uses GStreamer Python bindings for full playback control.
-Sample Usage: python player.py <filepath> or python player.py --interactive ../../testing_files/test.mp3
 """
 
 import sys
@@ -563,6 +562,19 @@ def main():
     
     Parses command-line arguments and initiates appropriate playback mode
     (simple, interactive, or daemon).
+    
+    Examples:
+        Simple playback:
+            python player.py /path/to/song.mp3
+            
+        Interactive mode with controls:
+            python player.py --interactive /path/to/song.mp3
+            
+        Daemon mode for external control:
+            python player.py --daemon /path/to/song.mp3
+            
+        Using test file:
+            python player.py ../../testing_files/test.mp3
     """
     parser = argparse.ArgumentParser(
         description="Audio Player using GStreamer with full playback control",

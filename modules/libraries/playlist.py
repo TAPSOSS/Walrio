@@ -7,7 +7,6 @@ Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A script that creates and manages M3U playlists from the audio library database.
-Sample Usage: python playlist.py --name "My Playlist" --artist "Me" --output playlists/
 """
 
 import sys
@@ -437,6 +436,19 @@ def main():
     Parses command-line arguments and performs playlist operations including
     creating playlists from database queries, files/directories, or loading
     existing playlists.
+    
+    Examples:
+        Create playlist from database with artist filter:
+            python playlist.py --name "My Playlist" --artist "Pink Floyd" --output playlists/
+            
+        Create playlist from files and directories:
+            python playlist.py --name "Files" --inputs song1.mp3 song2.flac /path/to/music/
+            
+        Create playlist from input file:
+            python playlist.py --name "From File" --input-file mylist.txt --output playlists/
+            
+        Load and display existing playlist:
+            python playlist.py --load existing_playlist.m3u
     """
     parser = argparse.ArgumentParser(
         description="Playlist Manager - Create and manage M3U playlists",
