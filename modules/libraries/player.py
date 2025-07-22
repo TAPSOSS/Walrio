@@ -77,7 +77,7 @@ class AudioPlayer:
         t = message.type
         
         if t == Gst.MessageType.EOS:
-            print("End of stream reached")
+            print("Playback finished")
             
             # Handle looping
             if self.loop_mode != 'none':
@@ -189,7 +189,6 @@ class AudioPlayer:
         
         self.is_playing = False
         self.is_paused = False
-        print("Playback stopped")
         return True
     
     # Set playback volume (0.0 to 1.0)
