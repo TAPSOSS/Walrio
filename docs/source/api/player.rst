@@ -1,11 +1,6 @@
 Player Module
 =============
 
-.. currentmodule:: modules.libraries.player
-
 The player module provides audio playback functionality.
 
-.. automodule:: modules.libraries.player
-   :members:
-   :undoc-members:
-   :show-inheritance:
+For detailed API documentation, see the :doc:`autosummary page <_autosummary/modules.libraries.player>`.

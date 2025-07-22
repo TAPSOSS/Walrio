@@ -1,11 +1,6 @@
 Queue Module
 ============
 
-.. currentmodule:: modules.libraries.queue
-
 The queue module provides playback queue management functionality.
 
-.. automodule:: modules.libraries.queue
-   :members:
-   :undoc-members:
-   :show-inheritance:
+For detailed API documentation, see the :doc:`autosummary page <_autosummary/modules.libraries.queue>`.
