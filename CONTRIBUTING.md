@@ -1,9 +1,8 @@
 # Contributing to Walrio
-
 Walrio is an free and open-source project, it is possible and encouraged to participate in the development of this music player. You can also participate by answering questions, reporting bugs or helping with documentation. If you plan on submitting any code/modules/documentation updates, make sure to follow the guidelines below.
 
 ## Styling REQUIREMENTS
-Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting (w/ napoleon support). Generally this means something like:
+Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting (w/ napoleon support). Any paramters or return values MUST be explained. Generally this means something like:
 ```
 """
 class Greeter:
@@ -44,13 +43,12 @@ Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 (longer description of what the file actually does)
-Sample Usage: (include a basic command to test/run the file with)
 """
 ```
 
-4. Add documentation (will be updated/explained once documentation is done better). At the moment all you need to do is add a 1-line description and add any requirements to the [README.md](README.md) and [requirements.txt](requirements.txt) files and your new file name (with basic description) to the [README.md](README.md) until documentation is standardized.
+4. For any new files, make sure they're added to the auto-generated sphinx documentation (check the docs folder and for examples like [this](/docs/source/api/player.rst)), add any newly needed imports to [requirements.txt](requirements.txt), and add your name to the [authors](AUTHORS) file if you want to (not required).
 
-5. Once the code, documentation, and headers are all set properly, send a [pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) in for code review. Styling for this pull request should be automatically filled in by GitHub and you just need to alter the template to submit the pull request. Relevant feedback will be given or the pull request will be accepted and your changes/new code will be part of Walrio repository.
+5. Once the code, documentation, and headers are all set properly, send a [pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) in for code review. Styling for this pull request should be automatically filled in by GitHub and you just need to fill in the template and change the pull request title to one of the 3 given to submit the pull request. Relevant feedback will be given both through automatede tests and direct human communication or the pull request will be accepted and your changes/new code will be part of Walrio repository.
 
 ## Questions?
 
