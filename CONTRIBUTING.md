@@ -37,7 +37,6 @@ as this makes it easier to read them, but unlike autodoc support, this isn't str
 ```
 """
 (Basic summary of function, 5 words max)
-
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
