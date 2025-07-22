@@ -3,11 +3,31 @@
 Walrio is an free and open-source project, it is possible and encouraged to participate in the development of this music player. You can also participate by answering questions, reporting bugs or helping with documentation. If you plan on submitting any code/modules/documentation updates, make sure to follow the guidelines below.
 
 ## Styling REQUIREMENTS
-Every function needs a minimum of a 1-line comment explaining what it does right above its declaration.
+Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting. Generally this means something like:
+```
+"""
+class Greeter:
+    """
+    A class that greets people.
+    """
+
+    def greet(self, name: str) -> str:
+        """
+        Return a personalized greeting.
+
+        Args:
+            name (str): The name to greet.
+
+        Returns:
+            str: A greeting string.
+        """
+        return f"Hi {name}!"
+```
+^ this would create a doc for 'Greeter' saying that it greets people and 'greet' with the args and return given.
 
 ## Styling Suggestions
 It would be very much appreciated if the single-line comments in your code follow the style of: ```# (insert comment here)``` (having a space after the #)
-as this makes it easier to read them.
+as this makes it easier to read them, but unlike autodoc support, this isn't strictly required.
 
 ## Contribution REQUIREMENTS
 1. To start contributing, first [fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo) this respository.
