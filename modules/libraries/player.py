@@ -306,12 +306,12 @@ class AudioPlayer:
         print("\nInteractive Audio Player")
         print("Commands:")
         print("  play/p    - Start/resume playback")
-        print("  pause     - Pause playback")
+        print("  pause/ps  - Pause playback")
         print("  stop/s    - Stop playback")
-        print("  volume <0.0-1.0> - Set volume")
-        print("  seek <seconds>   - Seek to position")
-        print("  loop <none|number|infinite> - Set loop mode (e.g. 'loop 3' or 'loop infinite')")
-        print("  status    - Show current status")
+        print("  volume/v <0.0-1.0> - Set volume")
+        print("  seek/sk <seconds>   - Seek to position")
+        print("  loop/l <none|number|infinite> - Set loop mode (e.g. 'loop 3' or 'loop infinite')")
+        print("  status/st - Show current status")
         print("  quit/q    - Quit player")
         print()
         
@@ -350,25 +350,25 @@ class AudioPlayer:
                         self.resume()
                     else:
                         self.play()
-                elif command == 'pause':
+                elif command in ['pause', 'ps']:
                     self.pause()
                 elif command in ['stop', 's']:
                     self.stop()
-                elif command == 'volume' and len(parts) > 1:
+                elif command in ['volume', 'v'] and len(parts) > 1:
                     try:
                         vol = float(parts[1])
                         self.set_volume(vol)
                     except ValueError:
                         print("Error: Invalid volume value")
-                elif command == 'seek' and len(parts) > 1:
+                elif command in ['seek', 'sk'] and len(parts) > 1:
                     try:
                         pos = float(parts[1])
                         self.seek(pos)
                     except ValueError:
                         print("Error: Invalid seek position")
-                elif command == 'loop' and len(parts) > 1:
+                elif command in ['loop', 'l'] and len(parts) > 1:
                     self.set_loop_mode(parts[1])
-                elif command == 'status':
+                elif command in ['status', 'st']:
                     state = self.get_state()
                     print(f"File: {state['current_file'] or 'None'}")
                     print(f"Status: {'Playing' if state['is_playing'] else 'Paused' if state['is_paused'] else 'Stopped'}")
