@@ -167,6 +167,9 @@ class AudioPlayer:
             print("Playback resumed")
             return True
         
+        # Reset repeat count for new playback session (perpetual loop mode)
+        self.repeat_count = 0
+        
         # Otherwise start/restart playback
         ret = self.player.set_state(Gst.State.PLAYING)
         if ret == Gst.StateChangeReturn.FAILURE:
@@ -265,7 +268,7 @@ class AudioPlayer:
             return False
         
         self.loop_mode = mode
-        self.repeat_count = 0
+        # Don't reset repeat_count here - let it reset on new playback
         
         if mode == 'none':
             print("Loop mode: Off")
