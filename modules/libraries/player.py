@@ -318,17 +318,97 @@ class AudioPlayer:
         """
         Seek to a specific position in the audio.
         
-        Note: Seeking is not easily implemented with command-line GStreamer.
-        This is a placeholder implementation.
-        
         Args:
             position_seconds (float): Position to seek to in seconds.
             
         Returns:
-            bool: Always False (not implemented with command-line tools).
+            bool: True if seek successful, False otherwise.
         """
-        print(f"Seek to {position_seconds} seconds not supported with command-line GStreamer")
-        return False
+        if not self.current_file:
+            print("Error: No file loaded")
+            return False
+        
+        if position_seconds < 0:
+            print("Error: Seek position cannot be negative")
+            return False
+        
+        if self.duration > 0 and position_seconds > self.duration:
+            print(f"Error: Seek position {position_seconds:.1f}s exceeds duration {self.duration:.1f}s")
+            return False
+        
+        # Store current playing state
+        was_playing = self.is_playing
+        
+        try:
+            # Stop current playback if any
+            if self.process:
+                self.stop()
+            
+            # Use ffmpeg to create a temporary stream starting at the seek position
+            # This is more reliable than trying to seek with gst-launch-1.0
+            cmd = [
+                'ffmpeg',
+                '-ss', str(position_seconds),  # Seek to position
+                '-i', self.current_file,       # Input file
+                '-f', 'wav',                   # Output format
+                '-af', f'volume={self.volume}', # Apply volume
+                '-',                           # Output to stdout
+            ]
+            
+            # Pipe ffmpeg output to gst-launch-1.0 for playback
+            ffmpeg_process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            gst_cmd = [
+                'gst-launch-1.0',
+                'fdsrc', 'fd=0',
+                '!', 'wavparse',
+                '!', 'audioconvert',
+                '!', 'audioresample', 
+                '!', 'autoaudiosink'
+            ]
+            
+            self.process = subprocess.Popen(
+                gst_cmd,
+                stdin=ffmpeg_process.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            # Close the ffmpeg stdout in the parent process
+            ffmpeg_process.stdout.close()
+            
+            # Update our position tracking
+            self.position = position_seconds
+            
+            if was_playing:
+                self.is_playing = True
+                self.is_paused = False
+                # Adjust start time to account for the seek position
+                self.start_time = time.time() - position_seconds
+                
+                # Start position tracking
+                if self.position_thread is None or not self.position_thread.is_alive():
+                    self.position_thread = threading.Thread(target=self._update_position, daemon=True)
+                    self.position_thread.start()
+                
+                print(f"Seeked to {position_seconds:.1f} seconds and resumed playback")
+            else:
+                self.is_playing = False
+                self.is_paused = True
+                # Pause the process immediately after seeking
+                time.sleep(0.1)
+                self.process.send_signal(signal.SIGSTOP)
+                print(f"Seeked to {position_seconds:.1f} seconds")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error seeking to {position_seconds} seconds: {e}")
+            return False
     
     def get_position(self):
         """
@@ -437,7 +517,7 @@ class AudioPlayer:
         print("  pause/ps  - Pause playback")
         print("  stop/s    - Stop playback")
         print("  volume/v <0.0-1.0> - Set volume")
-        print("  seek/sk <seconds>   - Seek to position (not supported)")
+        print("  seek/sk <seconds>   - Seek to position")
         print("  loop/l <none|number|infinite> - Set loop mode (e.g. 'loop 3' or 'loop infinite')")
         print("  status/st - Show current status")
         print("  quit/q    - Quit player")
