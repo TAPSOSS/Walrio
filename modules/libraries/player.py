@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-Audio Player using GStreamer
+Audio Player using GStreamer Command-Line Tools
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A simple audio player that uses GStreamer Python bindings for full playback control.
+A simple audio player that uses GStreamer command-line tools (gst-launch-1.0) 
+for playback control.
 """
 
 import sys
@@ -17,59 +18,43 @@ import threading
 import time
 from pathlib import Path
 
-try:
-    import gi
-    gi.require_version('Gst', '1.0')
-    gi.require_version('GLib', '2.0')
-    from gi.repository import Gst, GLib
-    GST_AVAILABLE = True
-except ImportError:
-    GST_AVAILABLE = False
-    print("Warning: GStreamer Python bindings not available. Install with: pip install PyGObject")
+import subprocess
+import shlex
 
 class AudioPlayer:
     """
-    A GStreamer-based audio player with full playback control.
+    A GStreamer command-line based audio player with playback control.
     
-    This class provides comprehensive audio playback functionality including
-    play, pause, stop, seek, volume control, and looping capabilities.
+    This class provides audio playback functionality using GStreamer's
+    command-line tools (gst-launch-1.0) including play, pause, stop,
+    volume control, and looping capabilities. No PyGObject bindings required.
     """
     
     def __init__(self):
         """
-        Initialize the AudioPlayer with GStreamer components.
+        Initialize the AudioPlayer with command-line GStreamer support.
         
         Raises:
-            RuntimeError: If GStreamer Python bindings are not available.
+            RuntimeError: If gst-launch-1.0 is not available.
         """
-        if not GST_AVAILABLE:
-            raise RuntimeError("GStreamer Python bindings not available")
-        
-        # Initialize GStreamer
-        Gst.init(None)
-        
-        # Create playbin element
-        self.player = Gst.ElementFactory.make("playbin", "player")
-        if not self.player:
-            raise RuntimeError("Could not create playbin element")
-        
-        # Create bus to watch for messages
-        self.bus = self.player.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.connect("message", self.on_message)
+        # Check if gst-launch-1.0 is available
+        try:
+            subprocess.run(['gst-launch-1.0', '--version'], 
+                         capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise RuntimeError("gst-launch-1.0 not found. Please install GStreamer.")
         
         # Player state
+        self.process = None
         self.is_playing = False
         self.is_paused = False
         self.current_file = None
         self.duration = 0
         self.position = 0
         self.volume = 1.0
-        self.loop = None
         self.should_quit = False
         self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
         self.repeat_count = 0
-        self.max_repeats = 0  # 0 means no limit (infinite)
         self.interactive_mode = False  # Track if we're in interactive mode
         
         # Setup signal handlers
@@ -87,71 +72,41 @@ class AudioPlayer:
         print(f"\nReceived signal {signum}, stopping playback...")
         self.stop()
         self.should_quit = True
-        if self.loop:
-            self.loop.quit()
     
-    def on_message(self, bus, message):
-        """
-        Handle GStreamer bus messages.
-        
-        Args:
-            bus: GStreamer bus object.
-            message: GStreamer message object.
-        """
-        t = message.type
-        
-        if t == Gst.MessageType.EOS:
-            print("Playback finished")
+    def _handle_looping(self):
+        """Handle looping functionality by monitoring process completion."""
+        if not self.process:
+            return
             
-            # Handle looping
-            if self.loop_mode != 'none':
-                # Check if we should continue looping
-                should_loop = False
-                if self.loop_mode == 'infinite':
-                    should_loop = True
-                elif self.loop_mode.isdigit():
-                    if self.repeat_count < int(self.loop_mode):
-                        should_loop = True
+        try:
+            # Wait for process to complete
+            self.process.wait()
+            
+            # Check if we should loop
+            if self.should_quit or not self.is_playing:
+                return
                 
-                if should_loop:
-                    print(f"Looping song (repeat #{self.repeat_count + 1})")
-                    self.repeat_count += 1
-                    # Seek back to beginning and continue playing
-                    if self.seek(0):
-                        return  # Continue playing, don't stop
-                else:
-                    print(f"Finished looping after {self.repeat_count} repeats")
+            should_loop = False
+            if self.loop_mode == 'infinite':
+                should_loop = True
+            elif self.loop_mode.isdigit():
+                if self.repeat_count < int(self.loop_mode):
+                    should_loop = True
             
-            # Reset position to beginning for next play
-            self.seek(0)
-            self.stop()
-            # Only quit the loop if not in interactive mode
-            if self.loop and not self.interactive_mode:
-                self.loop.quit()
-            elif self.interactive_mode:
-                # Re-print prompt for user to know they can continue
-                print("player> ", end="", flush=True)
-        elif t == Gst.MessageType.ERROR:
-            err, debug = message.parse_error()
-            print(f"Error: {err}")
-            if debug:
-                print(f"Debug info: {debug}")
-            self.stop()
-            # Only quit the loop if not in interactive mode
-            if self.loop and not self.interactive_mode:
-                self.loop.quit()
-        elif t == Gst.MessageType.STATE_CHANGED:
-            if message.src == self.player:
-                old_state, new_state, pending_state = message.parse_state_changed()
-                if new_state == Gst.State.PLAYING:
-                    self.is_playing = True
-                    self.is_paused = False
-                elif new_state == Gst.State.PAUSED:
-                    self.is_playing = False
-                    self.is_paused = True
-                elif new_state == Gst.State.NULL:
-                    self.is_playing = False
-                    self.is_paused = False
+            if should_loop:
+                self.repeat_count += 1
+                print(f"Looping song (repeat #{self.repeat_count})")
+                # Restart playback
+                self.is_playing = False  # Reset state
+                self.play()
+            else:
+                print(f"Finished looping after {self.repeat_count} repeats")
+                self.is_playing = False
+                if self.interactive_mode:
+                    print("player> ", end="", flush=True)
+                
+        except Exception as e:
+            print(f"Error in looping handler: {e}")
     
     def load_file(self, filepath):
         """
@@ -175,9 +130,7 @@ class AudioPlayer:
             print(f"Error: '{filepath}' is not a file.")
             return False
         
-        # Set the URI
-        uri = f"file://{absolute_path}"
-        self.player.set_property("uri", uri)
+        # Store the file path for playback
         self.current_file = absolute_path
         
         print(f"Loaded: {filepath}")
@@ -196,24 +149,48 @@ class AudioPlayer:
         
         # If we're paused, just resume
         if self.is_paused:
-            ret = self.player.set_state(Gst.State.PLAYING)
-            if ret == Gst.StateChangeReturn.FAILURE:
-                print("Error: Unable to resume playback")
-                return False
-            print("Playback resumed")
-            return True
+            return self.resume()
         
-        # Reset repeat count for new playback session (perpetual loop mode)
+        # Stop any existing playback
+        if self.process:
+            self.stop()
+        
+        # Reset repeat count for new playback session
         self.repeat_count = 0
         
-        # Otherwise start/restart playback
-        ret = self.player.set_state(Gst.State.PLAYING)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Unable to start playback")
+        try:
+            # Build GStreamer pipeline command
+            cmd = [
+                'gst-launch-1.0',
+                'filesrc', f'location={shlex.quote(self.current_file)}',
+                '!', 'decodebin',
+                '!', 'audioconvert',
+                '!', 'audioresample',
+                '!', 'volume', f'volume={self.volume}',
+                '!', 'autoaudiosink'
+            ]
+            
+            # Start process
+            self.process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                stdin=subprocess.PIPE
+            )
+            
+            self.is_playing = True
+            self.is_paused = False
+            print("Playback started")
+            
+            # Handle looping in a separate thread
+            if self.loop_mode != 'none':
+                threading.Thread(target=self._handle_looping, daemon=True).start()
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error starting playback: {e}")
             return False
-        
-        print("Playback started")
-        return True
     
     def pause(self):
         """
@@ -222,17 +199,20 @@ class AudioPlayer:
         Returns:
             bool: True if paused successfully, False otherwise.
         """
-        if not self.is_playing:
+        if not self.is_playing or not self.process:
             print("Player is not currently playing")
             return False
         
-        ret = self.player.set_state(Gst.State.PAUSED)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Unable to pause playback")
+        try:
+            # Send SIGSTOP to pause the process
+            self.process.send_signal(signal.SIGSTOP)
+            self.is_paused = True
+            self.is_playing = False
+            print("Playback paused")
+            return True
+        except Exception as e:
+            print(f"Error pausing playback: {e}")
             return False
-        
-        print("Playback paused")
-        return True
     
     def resume(self):
         """
@@ -241,11 +221,20 @@ class AudioPlayer:
         Returns:
             bool: True if resumed successfully, False otherwise.
         """
-        if not self.is_paused:
+        if not self.is_paused or not self.process:
             print("Player is not currently paused")
             return False
         
-        return self.play()
+        try:
+            # Send SIGCONT to resume the process
+            self.process.send_signal(signal.SIGCONT)
+            self.is_paused = False
+            self.is_playing = True
+            print("Playback resumed")
+            return True
+        except Exception as e:
+            print(f"Error resuming playback: {e}")
+            return False
     
     def stop(self):
         """
@@ -254,10 +243,21 @@ class AudioPlayer:
         Returns:
             bool: True if stopped successfully, False otherwise.
         """
-        ret = self.player.set_state(Gst.State.NULL)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Unable to stop playback")
-            return False
+        if self.process:
+            try:
+                self.process.terminate()
+                # Give it a moment to terminate gracefully
+                try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't terminate
+                    self.process.kill()
+                    self.process.wait()
+            except Exception as e:
+                print(f"Error stopping playback: {e}")
+                return False
+            finally:
+                self.process = None
         
         self.is_playing = False
         self.is_paused = False
@@ -277,9 +277,9 @@ class AudioPlayer:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
         
-        self.player.set_property("volume", volume)
         self.volume = volume
         print(f"Volume set to {volume:.2f}")
+        # Note: Volume will be applied when next playback starts
         return True
     
     def get_volume(self):
@@ -289,54 +289,47 @@ class AudioPlayer:
         Returns:
             float: Current volume between 0.0 and 1.0.
         """
-        return self.player.get_property("volume")
+        return self.volume
     
     def seek(self, position_seconds):
         """
         Seek to a specific position in the audio.
         
+        Note: Seeking is not easily implemented with command-line GStreamer.
+        This is a placeholder implementation.
+        
         Args:
             position_seconds (float): Position to seek to in seconds.
             
         Returns:
-            bool: True if seek successful, False otherwise.
+            bool: Always False (not implemented with command-line tools).
         """
-        seek_time = position_seconds * Gst.SECOND
-        ret = self.player.seek_simple(
-            Gst.Format.TIME,
-            Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT,
-            seek_time
-        )
-        if not ret:
-            print(f"Error: Unable to seek to {position_seconds} seconds")
-            return False
-        
-        print(f"Seeked to {position_seconds} seconds")
-        return True
+        print(f"Seek to {position_seconds} seconds not supported with command-line GStreamer")
+        return False
     
     def get_position(self):
         """
         Get current playback position.
         
+        Note: Position tracking is not easily implemented with command-line GStreamer.
+        This returns a placeholder value.
+        
         Returns:
-            float: Current position in seconds.
+            float: Always 0 (not implemented with command-line tools).
         """
-        ret, position = self.player.query_position(Gst.Format.TIME)
-        if ret:
-            return position / Gst.SECOND
-        return 0
+        return self.position
     
     def get_duration(self):
         """
         Get total duration of the current audio file.
         
+        Note: Duration detection requires additional tools and is complex
+        with command-line GStreamer. Returns placeholder value.
+        
         Returns:
-            float: Total duration in seconds.
+            float: Always 0 (not implemented with command-line tools).
         """
-        ret, duration = self.player.query_duration(Gst.Format.TIME)
-        if ret:
-            return duration / Gst.SECOND
-        return 0
+        return self.duration
     
     def set_loop_mode(self, mode):
         """
@@ -427,32 +420,20 @@ class AudioPlayer:
         print("  pause/ps  - Pause playback")
         print("  stop/s    - Stop playback")
         print("  volume/v <0.0-1.0> - Set volume")
-        print("  seek/sk <seconds>   - Seek to position")
+        print("  seek/sk <seconds>   - Seek to position (not supported)")
         print("  loop/l <none|number|infinite> - Set loop mode (e.g. 'loop 3' or 'loop infinite')")
         print("  status/st - Show current status")
         print("  quit/q    - Quit player")
         print()
         
-        # Create main loop
-        self.loop = GLib.MainLoop()
-        
-        # Start input thread
-        input_thread = threading.Thread(target=self.handle_input, daemon=True)
-        input_thread.start()
-        
-        try:
-            self.loop.run()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.stop()
+        # Handle input directly in main thread
+        self.handle_input()
     
     def handle_input(self):
         """
         Handle user input in interactive mode.
         
-        Processes user commands in a separate thread while
-        audio playback continues in the main thread.
+        Processes user commands while audio playback continues.
         """
         while not self.should_quit:
             try:
@@ -465,8 +446,7 @@ class AudioPlayer:
                 
                 if command in ['quit', 'q']:
                     self.should_quit = True
-                    if self.loop:
-                        self.loop.quit()
+                    self.stop()
                     break
                 elif command in ['play', 'p']:
                     if self.is_paused:
@@ -512,6 +492,10 @@ class AudioPlayer:
                     print("Unknown command. Type 'quit' to exit.")
             except EOFError:
                 break
+            except KeyboardInterrupt:
+                print("\nExiting...")
+                self.stop()
+                break
             except Exception as e:
                 print(f"Error handling input: {e}")
 
@@ -525,11 +509,6 @@ def play_audio(filepath):
     Returns:
         bool: True if playback completed successfully, False otherwise.
     """
-    if not GST_AVAILABLE:
-        print("Error: GStreamer Python bindings not available.")
-        print("Install with: pip install PyGObject")
-        return False
-    
     try:
         player = AudioPlayer()
         
@@ -539,12 +518,10 @@ def play_audio(filepath):
         if not player.play():
             return False
         
-        # Create main loop for playback
-        loop = GLib.MainLoop()
-        player.loop = loop
-        
+        # Wait for playback to complete or user interruption
         try:
-            loop.run()
+            while player.is_playing and not player.should_quit:
+                time.sleep(0.1)
         except KeyboardInterrupt:
             print("\nPlayback interrupted by user.")
         finally:
@@ -621,14 +598,6 @@ def main():
 
     args = parser.parse_args()
     
-    if not GST_AVAILABLE:
-        print("Error: GStreamer Python bindings not available.")
-        print("Please install with one of:")
-        print("  pip install PyGObject")
-        print("  sudo apt install python3-gi python3-gi-cairo gir1.2-gst-1.0")
-        print("  sudo dnf install python3-gobject gstreamer1-devel")
-        sys.exit(1)
-    
     try:
         player = AudioPlayer()
         
@@ -651,11 +620,10 @@ def main():
                     player.set_loop_mode(args.loop)
                 player.play()
             
-            # Create main loop and wait
-            loop = GLib.MainLoop()
-            player.loop = loop
+            # Wait for playback or user interruption
             try:
-                loop.run()
+                while not player.should_quit:
+                    time.sleep(0.1)
             except KeyboardInterrupt:
                 pass
             finally:

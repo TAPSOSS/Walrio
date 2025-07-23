@@ -19,7 +19,7 @@ I only have the developer environment set up properly for my OS of choice (fedor
 #### Fedora/RHEL/CentOS:
 ```bash
 # Install GStreamer system packages
-sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools gstreamer1-devel gobject-introspection-devel
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools
 
 # Install Python dependencies
 pip install -r requirements.txt
