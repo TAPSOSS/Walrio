@@ -56,6 +56,9 @@ class AudioPlayer:
         self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
         self.repeat_count = 0
         self.interactive_mode = False  # Track if we're in interactive mode
+        self.start_time = None  # Track when playback started
+        self.pause_time = None  # Track when playback was paused
+        self.position_thread = None  # Thread for position tracking
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -133,7 +136,16 @@ class AudioPlayer:
         # Store the file path for playback
         self.current_file = absolute_path
         
+        # Reset position for new file
+        self.position = 0
+        self._stop_position_tracking()
+        
+        # Get the duration of the file
+        self.duration = self._get_file_duration(absolute_path)
+        
         print(f"Loaded: {filepath}")
+        if self.duration > 0:
+            print(f"Duration: {self.duration:.1f} seconds")
         return True
     
     def play(self):
@@ -182,6 +194,9 @@ class AudioPlayer:
             self.is_paused = False
             print("Playback started")
             
+            # Start position tracking
+            self._start_position_tracking()
+            
             # Handle looping in a separate thread
             if self.loop_mode != 'none':
                 threading.Thread(target=self._handle_looping, daemon=True).start()
@@ -206,6 +221,8 @@ class AudioPlayer:
         try:
             # Send SIGSTOP to pause the process
             self.process.send_signal(signal.SIGSTOP)
+            # Store pause time to maintain position accuracy
+            self.pause_time = time.time()
             self.is_paused = True
             self.is_playing = False
             print("Playback paused")
@@ -228,6 +245,11 @@ class AudioPlayer:
         try:
             # Send SIGCONT to resume the process
             self.process.send_signal(signal.SIGCONT)
+            # Adjust start time to account for pause duration
+            if self.pause_time and self.start_time:
+                pause_duration = time.time() - self.pause_time
+                self.start_time += pause_duration
+            self.pause_time = None
             self.is_paused = False
             self.is_playing = True
             print("Playback resumed")
@@ -261,6 +283,7 @@ class AudioPlayer:
         
         self.is_playing = False
         self.is_paused = False
+        self._stop_position_tracking()
         return True
     
     def set_volume(self, volume):
@@ -311,11 +334,8 @@ class AudioPlayer:
         """
         Get current playback position.
         
-        Note: Position tracking is not easily implemented with command-line GStreamer.
-        This returns a placeholder value.
-        
         Returns:
-            float: Always 0 (not implemented with command-line tools).
+            float: Current position in seconds.
         """
         return self.position
     
@@ -323,11 +343,8 @@ class AudioPlayer:
         """
         Get total duration of the current audio file.
         
-        Note: Duration detection requires additional tools and is complex
-        with command-line GStreamer. Returns placeholder value.
-        
         Returns:
-            float: Always 0 (not implemented with command-line tools).
+            float: Total duration in seconds.
         """
         return self.duration
     
@@ -498,6 +515,83 @@ class AudioPlayer:
                 break
             except Exception as e:
                 print(f"Error handling input: {e}")
+    
+    def _update_position(self):
+        """Update position tracking while playing."""
+        while self.is_playing and not self.should_quit:
+            if self.start_time and not self.is_paused:
+                elapsed = time.time() - self.start_time
+                self.position = elapsed
+            time.sleep(0.1)  # Update every 100ms
+    
+    def _start_position_tracking(self):
+        """Start position tracking in a separate thread."""
+        if self.position_thread and self.position_thread.is_alive():
+            return
+        
+        self.start_time = time.time()
+        self.position_thread = threading.Thread(target=self._update_position, daemon=True)
+        self.position_thread.start()
+    
+    def _stop_position_tracking(self):
+        """Stop position tracking."""
+        self.start_time = None
+        self.pause_time = None
+        if self.position_thread:
+            self.position_thread = None
+
+    def _get_file_duration(self, filepath):
+        """
+        Get the duration of an audio file using ffprobe.
+        
+        Args:
+            filepath (str): Path to the audio file.
+            
+        Returns:
+            float: Duration in seconds, or 0 if unable to determine.
+        """
+        try:
+            # Use ffprobe to get duration
+            cmd = [
+                'ffprobe', 
+                '-v', 'quiet',
+                '-show_entries', 'format=duration',
+                '-of', 'csv=p=0',
+                filepath
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                duration = float(result.stdout.strip())
+                return duration
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+            # Fallback: try using gst-discoverer-1.0 if ffprobe fails
+            try:
+                cmd = [
+                    'gst-discoverer-1.0',
+                    '-v',
+                    filepath
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                if result.returncode == 0:
+                    # Parse duration from gst-discoverer output
+                    for line in result.stdout.split('\n'):
+                        if 'Duration:' in line:
+                            # Format is usually "Duration: 0:03:45.123456789"
+                            duration_str = line.split('Duration:')[1].strip()
+                            # Convert time format to seconds
+                            time_parts = duration_str.split(':')
+                            if len(time_parts) >= 3:
+                                hours = float(time_parts[0])
+                                minutes = float(time_parts[1])
+                                seconds = float(time_parts[2])
+                                total_seconds = hours * 3600 + minutes * 60 + seconds
+                                return total_seconds
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, FileNotFoundError):
+                pass
+        
+        return 0.0
 
 def play_audio(filepath):
     """
