@@ -93,7 +93,7 @@ autodoc_default_options = {
 }
 
 # Mock imports for external dependencies that might not be available during doc build
-autodoc_mock_imports = ['mutagen', 'sqlite3', 'gi', 'gi.repository']
+autodoc_mock_imports = ['mutagen', 'sqlite3']
 
 # -- Options for napoleon extension ------------------------------------------
 
