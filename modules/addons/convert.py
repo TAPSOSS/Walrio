@@ -265,11 +265,14 @@ class AudioConverter:
         if self.options['metadata'] == 'n':
             cmd.extend(['-map_metadata', '-1'])
         else:
+            # Always map metadata from input to output
+            cmd.extend(['-map_metadata', '0'])
+            
             # Special handling for Opus format which needs specific treatment for album art
             if output_format == 'opus':
                 # For Opus, we only map audio stream in the initial command
                 # Album art will be handled separately after audio conversion
-                cmd = [x for x in cmd if x != '-map']  # Remove any map options if they exist
+                cmd = [x for x in cmd if x != '-map' or x == '-map_metadata']  # Remove any map options except metadata
                 cmd.extend(['-map', '0:a:0'])  # Only map first audio stream
             else:
                 # For other formats with album art support
