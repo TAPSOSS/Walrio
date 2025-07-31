@@ -1,4 +1,4 @@
-name: Style Sync Check
+name: CONTRIBUTING.md Checker
 
 on:
   pull_request:
