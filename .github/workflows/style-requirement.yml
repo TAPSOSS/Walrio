@@ -1,4 +1,4 @@
-name: Style Check
+name: Style Checker
 
 on:
   pull_request:
@@ -89,7 +89,9 @@ jobs:
                 
                 # For functions, check for Args/Returns if they have parameters/return
                 if isinstance(node, ast.FunctionDef):
-                    has_params = len(node.args.args) > 0
+                    # Only check for Args if function has actual parameters (excluding 'self')
+                    params = [arg.arg for arg in node.args.args if arg.arg != 'self']
+                    has_params = len(params) > 0
                     has_return = any(isinstance(n, ast.Return) and n.value for n in ast.walk(node))
                     
                     if has_params and "Args:" not in docstring and "Parameters:" not in docstring:

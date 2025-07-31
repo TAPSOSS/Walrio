@@ -20,7 +20,7 @@ import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 
-# Configure logging
+# Configure logging format
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
