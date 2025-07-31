@@ -1,0 +1,191 @@
+name: Style Sync Check
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  style-sync-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files_yaml: |
+          contributing:
+            - CONTRIBUTING.md
+          style_workflow:
+            - .github/workflows/style-requirement.yml
+    
+    - name: Debug outputs
+      run: |
+        echo "Contributing changed: ${{ steps.changed-files.outputs.contributing_changed }}"
+        echo "Style workflow changed: ${{ steps.changed-files.outputs.style_workflow_changed }}"
+        echo "All outputs: ${{ toJSON(steps.changed-files.outputs) }}"
+    
+    - name: Block CONTRIBUTING.md changes
+      id: block-contributing
+      if: steps.changed-files.outputs.contributing_changed == 'true'
+      run: |
+        echo "� CONTRIBUTING.md was modified - Admin approval required"
+        echo "contributing_blocked=true" >> $GITHUB_OUTPUT
+        
+        # Check if styling-related sections were modified for additional warning
+        git diff origin/main...HEAD -- CONTRIBUTING.md > contributing_diff.txt
+        
+        if grep -i -E "(styling|docstring|header|bsd|sphinx|napoleon|args|returns)" contributing_diff.txt > /dev/null; then
+          echo "styling_changed=true" >> $GITHUB_OUTPUT
+          echo "📝 Styling-related changes detected in CONTRIBUTING.md"
+          
+          # Show what styling changes were found
+          echo "� Styling-related changes found:"
+          grep -i -E -A2 -B2 "(styling|docstring|header|bsd|sphinx|napoleon|args|returns)" contributing_diff.txt || true
+        else
+          echo "styling_changed=false" >> $GITHUB_OUTPUT
+          echo "ℹ️ CONTRIBUTING.md changed but no styling section modifications detected"
+        fi
+    
+    - name: Check style workflow sync for warning
+      if: steps.block-contributing.outputs.styling_changed == 'true'
+      run: |
+        echo "🔍 Checking if style checker was updated alongside styling changes..."
+        
+        if [ "${{ steps.changed-files.outputs.style_workflow_changed }}" == "true" ]; then
+          echo "✅ style-requirement.yml was also updated - good synchronization"
+          echo "sync_status=synced" >> $GITHUB_ENV
+        else
+          echo "⚠️ style-requirement.yml was NOT updated despite styling changes"
+          echo "sync_status=out_of_sync" >> $GITHUB_ENV
+        fi
+    
+    - name: Create admin blocking comment
+      if: steps.block-contributing.outputs.contributing_blocked == 'true'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const botComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('CONTRIBUTING.md Modified - Admin Approval Required')
+          );
+          
+          // Check if styling was also changed for additional warning
+          const stylingChanged = '${{ steps.block-contributing.outputs.styling_changed }}' === 'true';
+          const styleWorkflowChanged = '${{ steps.changed-files.outputs.style_workflow_changed }}' === 'true';
+          
+          let syncWarning = '';
+          if (stylingChanged && !styleWorkflowChanged) {
+            syncWarning = `
+          
+          ### ⚠️ Additional Style Sync Warning:
+          **Styling requirements were modified but the automated style checker was not updated!**
+          
+          - CONTRIBUTING.md styling section was changed
+          - \`.github/workflows/style-requirement.yml\` was NOT updated
+          - Consider updating the style checker to match new requirements
+          `;
+          } else if (stylingChanged && styleWorkflowChanged) {
+            syncWarning = `
+          
+          ### ✅ Style Sync Status:
+          Both CONTRIBUTING.md styling requirements and the automated style checker were updated together - good synchronization!
+          `;
+          }
+          
+          const commentBody = `## 🚫 CONTRIBUTING.md Modified - Admin Approval Required
+          
+          Changes to **CONTRIBUTING.md** require administrator review and approval before merging.
+          
+          ### 🛑 This merge is blocked because:
+          - CONTRIBUTING.md contains critical project guidelines and requirements
+          - Changes to contribution guidelines affect all future contributors
+          - Administrative oversight ensures consistency and quality standards
+          - Prevents accidental or unauthorized changes to project standards
+          
+          ### � Admin Actions Required:
+          1. **Review the CONTRIBUTING.md changes** thoroughly
+          2. **Verify changes align** with project goals and standards  
+          3. **Check for completeness** - are all necessary updates included?
+          4. **Admin merge approval** - only repository administrators can merge this PR
+          
+          ### � What changed in CONTRIBUTING.md:
+          - Review the diff to see exactly what was modified
+          - Pay special attention to styling requirements, contribution workflows, or coding standards
+          - Ensure documentation is clear and actionable for contributors${syncWarning}
+          
+          ### � Admin Override Process:
+          Repository administrators can approve this PR by:
+          1. Thoroughly reviewing all CONTRIBUTING.md changes
+          2. Ensuring changes are accurate and beneficial
+          3. Using admin privileges to merge despite this blocking check
+          
+          📖 **Modified file**: \`CONTRIBUTING.md\`
+          📖 **Current guidelines**: [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md)
+          
+          **🚫 This PR is blocked and requires administrator approval to proceed.**`;
+          
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: commentBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });
+          }
+    
+    - name: Fail check for CONTRIBUTING.md changes
+      if: steps.block-contributing.outputs.contributing_blocked == 'true'
+      run: |
+        echo "❌ CONTRIBUTING.md CHANGE BLOCKED"
+        echo ""
+        echo "🚫 Merge blocked: CONTRIBUTING.md was modified"
+        echo "   Administrative approval required for all contribution guideline changes."
+        echo ""
+        if [ "${{ steps.block-contributing.outputs.styling_changed }}" == "true" ]; then
+          if [ "${{ steps.changed-files.outputs.style_workflow_changed }}" == "true" ]; then
+            echo "✅ Style checker was updated alongside styling changes - good synchronization"
+          else
+            echo "⚠️  WARNING: Styling requirements changed but style checker was not updated!"
+            echo "   Consider updating .github/workflows/style-requirement.yml"
+          fi
+          echo ""
+        fi
+        echo "👑 Repository administrators must review and approve this change."
+        echo "📖 This protects project standards and ensures consistency."
+        echo ""
+        exit 1
+    
+    - name: Set check status
+      if: steps.block-contributing.outputs.styling_changed == 'true'
+      run: |
+        if [ "$sync_status" == "out_of_sync" ]; then
+          echo "❌ CONTRIBUTING.md change blocked + Style sync warning issued"
+          echo "Repository admin review required - check style checker synchronization"
+        else
+          echo "✅ CONTRIBUTING.md change blocked but style checker appears synchronized"
+        fi
+    
+    - name: Summary
+      if: steps.changed-files.outputs.contributing_changed != 'true'
+      run: |
+        echo "ℹ️ CONTRIBUTING.md was not modified - no admin approval or style sync check needed"
