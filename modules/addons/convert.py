@@ -16,6 +16,7 @@ import argparse
 import subprocess
 import logging
 import json
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 
@@ -50,6 +51,7 @@ DEFAULT_SETTINGS = {
     'quality': 'maximum',  # standard, high, maximum
     'skip_existing': False,
     'recursive': False,
+    'force_overwrite': False,  # Don't force overwrite by default
 }
 
 # Bitrate presets for various formats (in kbps)
@@ -209,7 +211,14 @@ class AudioConverter:
         output_format = self.options['output_format']
         codec = SUPPORTED_OUTPUT_FORMATS[output_format]['codec']
         
-        cmd = ['ffmpeg', '-i', input_file]
+        # Start with basic command
+        cmd = ['ffmpeg']
+        
+        # Add force overwrite flag if specified
+        if self.options.get('force_overwrite', False):
+            cmd.append('-y')
+            
+        cmd.extend(['-i', input_file])
         
         # Add codec
         cmd.extend(['-c:a', codec])
@@ -255,6 +264,21 @@ class AudioConverter:
         # Handle metadata preservation
         if self.options['metadata'] == 'n':
             cmd.extend(['-map_metadata', '-1'])
+        else:
+            # Special handling for Opus format which needs specific treatment for album art
+            if output_format == 'opus':
+                # For Opus, we only map audio stream in the initial command
+                # Album art will be handled separately after audio conversion
+                cmd = [x for x in cmd if x != '-map']  # Remove any map options if they exist
+                cmd.extend(['-map', '0:a:0'])  # Only map first audio stream
+            else:
+                # For other formats with album art support
+                cmd.extend(['-map', '0'])  # Map all streams
+                cmd.extend(['-c:v', 'copy'])  # Copy album art as-is
+                
+                if output_format == 'mp3':
+                    # For MP3, ensure album art is properly tagged
+                    cmd.extend(['-id3v2_version', '3', '-write_id3v1', '1'])
         
         # Set the output file
         cmd.append(output_file)
@@ -299,29 +323,170 @@ class AudioConverter:
         file_info = self.get_file_info(input_file)
         input_format = file_info.get('format', {}).get('format_name', 'unknown')
         
+        # Check if file has album art
+        has_album_art = False
+        album_art_streams = []
+        if 'streams' in file_info:
+            for i, stream in enumerate(file_info['streams']):
+                if stream.get('codec_type') == 'video' and 'attached_pic' in stream.get('disposition', {}):
+                    has_album_art = True
+                    album_art_streams.append(i)
+        
         logger.info(f"Converting {input_file} ({input_format}) to {output_format}")
+        
+        if has_album_art:
+            if self.options['metadata'] == 'y':
+                if output_format == 'opus':
+                    logger.info(f"Album art detected - will be properly embedded in Opus file using mutagen")
+                else:
+                    logger.info(f"Album art detected - will be preserved in output file")
+            else:
+                logger.info(f"Album art detected but will be removed (--metadata n specified)")
         
         # Build FFmpeg command
         cmd = self.build_ffmpeg_command(input_file, output_file)
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
         
         try:
-            # Run FFmpeg
-            process = subprocess.run(
-                cmd, 
-                capture_output=True, 
-                text=True,
-                check=False
-            )
-            
-            if process.returncode != 0:
-                logger.error(f"FFmpeg error: {process.stderr}")
+            # Run FFmpeg with a timeout
+            logger.info(f"Starting FFmpeg process for audio conversion")
+            try:
+                process = subprocess.run(
+                    cmd, 
+                    capture_output=True, 
+                    text=True,
+                    check=False,
+                    timeout=300  # Set a 5-minute timeout for the conversion process
+                )
+                
+                # Log command output for debugging
+                if process.stdout:
+                    logger.debug(f"FFmpeg stdout: {process.stdout}")
+                
+                # Check if user declined to overwrite the file
+                if process.returncode != 0:
+                    # Look for the specific "not overwriting" message in stderr
+                    if "not overwriting" in process.stderr.lower() or "file exists" in process.stderr.lower():
+                        logger.info(f"User declined to overwrite {output_file}")
+                    else:
+                        logger.error(f"FFmpeg error: {process.stderr}")
+                    return False
+                
+                logger.info(f"Initial audio conversion completed successfully")
+            except subprocess.TimeoutExpired:
+                logger.error(f"FFmpeg process timed out after 5 minutes")
                 return False
+            
+            # Special handling for Opus files with album art
+            if output_format == 'opus' and has_album_art and self.options['metadata'] == 'y':
+                # Extract album art to temporary file
+                logger.info("Extracting album art for Opus embedding")
+                temp_art_file = f"{output_file}.albumart.jpg"
+                
+                # Get the first album art stream
+                art_stream_index = album_art_streams[0] if album_art_streams else 0
+                
+                # Extract album art using FFmpeg (force overwrite for temp files)
+                art_cmd = [
+                    'ffmpeg', '-y', '-i', input_file,  # -y is ok here since it's a temp file
+                    '-an', '-vcodec', 'copy', 
+                    '-map', f'0:{art_stream_index}',
+                    temp_art_file
+                ]
+                
+                try:
+                    logger.info(f"Extracting album art to {temp_art_file}")
+                    logger.debug(f"Album art extraction command: {' '.join(art_cmd)}")
+                    
+                    art_process = subprocess.run(
+                        art_cmd,
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                        timeout=60  # Set a 1-minute timeout for art extraction
+                    )
+                    
+                    if art_process.returncode == 0 and os.path.exists(temp_art_file):
+                        # Now embed the extracted art into the Opus file using mutagen via python script
+                        logger.info(f"Album art extracted successfully to {temp_art_file}")
+                        logger.info("Embedding album art in Opus file using mutagen")
+                        
+                        # Create a small Python script to embed the cover using mutagen
+                        temp_script = f"{output_file}.embed_art.py"
+                        with open(temp_script, 'w') as f:
+                            f.write(f'''
+import base64
+from mutagen.oggopus import OggOpus
+from mutagen.flac import Picture
+from PIL import Image
+import io
+
+# Load the image and resize if necessary
+img = Image.open("{temp_art_file}")
+img = img.convert("RGB")
+img = img.resize((1000, 1000), Image.LANCZOS)  # Resize to reasonable size
+buf = io.BytesIO()
+img.save(buf, format="JPEG")
+img_data = buf.getvalue()
+
+# Create FLAC Picture object
+pic = Picture()
+pic.mime = "image/jpeg"
+pic.type = 3  # Front cover
+pic.data = img_data
+pic.desc = "Cover"
+
+# Embed in Opus file
+opus = OggOpus("{output_file}")
+opus["METADATA_BLOCK_PICTURE"] = [base64.b64encode(pic.write()).decode("ascii")]
+opus.save()
+
+print("Album art embedded successfully!")
+''')
+                        
+                        # Execute the Python script
+                        python_cmd = [sys.executable, temp_script]
+                        logger.debug(f"Running Python script to embed album art: {' '.join(python_cmd)}")
+                        
+                        python_process = subprocess.run(
+                            python_cmd,
+                            capture_output=True,
+                            text=True,
+                            check=False,
+                            timeout=60  # Set a 1-minute timeout for embedding
+                        )
+                        
+                        if python_process.returncode == 0:
+                            logger.info("Successfully embedded album art in Opus file")
+                        else:
+                            logger.warning(f"Failed to embed album art: {python_process.stderr}")
+                        
+                        # Clean up temporary files
+                        for temp_file in [temp_art_file, temp_script]:
+                            if os.path.exists(temp_file):
+                                os.remove(temp_file)
+                    else:
+                        logger.warning(f"Failed to extract album art: {art_process.stderr}")
+                except subprocess.TimeoutExpired:
+                    logger.error("Album art processing timed out")
+                except Exception as e:
+                    logger.warning(f"Error during album art processing: {str(e)}")
             
             logger.info(f"Successfully converted {input_file} to {output_file}")
             return True
         except Exception as e:
             logger.error(f"Error converting {input_file}: {str(e)}")
+            # Clean up any temporary files that might have been created
+            temp_files = [
+                f"{output_file}.albumart.jpg",
+                f"{output_file}.embed_art.py"
+            ]
+            for tmp_file in temp_files:
+                if os.path.exists(tmp_file):
+                    try:
+                        os.remove(tmp_file)
+                    except:
+                        pass
             return False
     
     def convert_directory(self, input_dir: str, output_dir: Optional[str] = None) -> Tuple[int, int]:
@@ -407,7 +572,9 @@ def parse_arguments():
                "  # Explicitly specify that inputs are files\n"
                "  python convert.py file1 file2 --type file\n\n"
                "  # Convert files recursively without metadata, high logging level\n"
-               "  python convert.py /music/input -o /music/output -r --metadata n --logging high\n"
+               "  python convert.py /music/input -o /music/output -r --metadata n --logging high\n\n"
+               "  # Force overwrite existing files without prompting\n"
+               "  python convert.py input.flac -f opus -y\n"
     )
     
     # Input/output options
@@ -435,6 +602,11 @@ def parse_arguments():
         "--skip-existing",
         action="store_true",
         help="Skip existing files"
+    )
+    parser.add_argument(
+        "-y", "--force-overwrite",
+        action="store_true",
+        help="Force overwrite of existing files without prompting"
     )
     
     # Format options
@@ -535,6 +707,8 @@ def main():
         options['recursive'] = True
     if args.skip_existing:
         options['skip_existing'] = True
+    if args.force_overwrite:
+        options['force_overwrite'] = True
     
     # Create converter
     try:
