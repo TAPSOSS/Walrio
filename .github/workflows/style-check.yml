@@ -34,6 +34,7 @@ jobs:
         import sys
         import os
         import glob
+        import subprocess
 
         def check_file_headers(filename):
             """Check if file has required BSD header."""
@@ -104,22 +105,60 @@ jobs:
 
         def main():
             """Main function to check all Python files."""
-            # Find all Python files (excluding __pycache__ and .git)
+            # Get list of changed files from git
             python_files = []
-            for root, dirs, files in os.walk('.'):
-                # Skip certain directories
-                dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', '.pytest_cache']]
-                for file in files:
-                    if file.endswith('.py'):
-                        python_files.append(os.path.join(root, file))
+            
+            # Check if we're in a PR context
+            if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+                # Get changed files in the PR
+                import subprocess
+                try:
+                    # Get the base branch
+                    base_ref = os.environ.get('GITHUB_BASE_REF', 'main')
+                    head_ref = os.environ.get('GITHUB_HEAD_REF', 'HEAD')
+                    
+                    # Get list of changed files
+                    result = subprocess.run(
+                        ['git', 'diff', '--name-only', f'origin/{base_ref}...HEAD'],
+                        capture_output=True, text=True, check=True
+                    )
+                    changed_files = result.stdout.strip().split('\n')
+                    
+                    # Filter for Python files
+                    for file in changed_files:
+                        if file and file.endswith('.py') and os.path.exists(file):
+                            python_files.append(file)
+                            
+                    print(f"Found {len(python_files)} changed Python files in PR:")
+                    for f in python_files:
+                        print(f"  {f}")
+                        
+                except subprocess.CalledProcessError as e:
+                    print(f"Error getting changed files: {e}")
+                    print("Falling back to checking all Python files...")
+                    # Fallback to checking all files
+                    for root, dirs, files in os.walk('.'):
+                        dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', '.pytest_cache']]
+                        for file in files:
+                            if file.endswith('.py'):
+                                python_files.append(os.path.join(root, file))
+            else:
+                # For push events, check all Python files
+                print("Push event detected - checking all Python files...")
+                for root, dirs, files in os.walk('.'):
+                    dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', '.pytest_cache']]
+                    for file in files:
+                        if file.endswith('.py'):
+                            python_files.append(os.path.join(root, file))
             
             if not python_files:
                 print("No Python files found to check.")
                 return 0
             
-            print("Found Python files to check:")
-            for f in python_files:
-                print(f"  {f}")
+            if os.environ.get('GITHUB_EVENT_NAME') != 'pull_request':
+                print("Found Python files to check:")
+                for f in python_files:
+                    print(f"  {f}")
             print()
             
             total_violations = 0
@@ -149,7 +188,10 @@ jobs:
             
             # Summary
             print("=" * 50)
-            print("STYLING CHECK SUMMARY")
+            if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+                print("STYLING CHECK SUMMARY (Changed Files Only)")
+            else:
+                print("STYLING CHECK SUMMARY (All Files)")
             print("=" * 50)
             print(f"Total violations found: {total_violations}")
             
@@ -170,7 +212,10 @@ jobs:
                 
                 return 1
             else:
-                print("✅ All styling requirements met!")
+                if os.environ.get('GITHUB_EVENT_NAME') == 'pull_request':
+                    print("✅ All changed files meet styling requirements!")
+                else:
+                    print("✅ All styling requirements met!")
                 return 0
 
         if __name__ == "__main__":
@@ -194,7 +239,9 @@ jobs:
             repo: context.repo.repo,
             body: `## ❌ Styling Requirements Check Failed
             
-            Your pull request has styling violations that need to be addressed before merging.
+            Your pull request has styling violations in the **changed files** that need to be addressed before merging.
+            
+            > **Note:** This check only examines Python files that were modified in your PR, not the entire codebase.
             
             ### 📋 Requirements
             
