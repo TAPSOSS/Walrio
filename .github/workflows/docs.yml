@@ -42,6 +42,11 @@ jobs:
         cd docs
         pip install -r requirements.txt
 
+    - name: Generate CLI documentation
+      run: |
+        cd docs
+        python generate_cli_docs.py
+
     - name: Build documentation
       run: |
         cd docs
