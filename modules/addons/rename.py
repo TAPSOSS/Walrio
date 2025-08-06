@@ -36,7 +36,7 @@ ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
 # Default naming format
-DEFAULT_FORMAT = "{title} - {album} - {albumartist}"
+DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
 
 # Default character replacements (applied before other sanitization)
 DEFAULT_CHAR_REPLACEMENTS = {'/': '~', '\\': '~'}
