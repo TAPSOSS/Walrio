@@ -3,3 +3,6 @@
 
 # ignore Python cache directories
 __pycache__/
+
+# ignore generated documentation files
+docs/source/cli_usage.rst

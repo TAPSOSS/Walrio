@@ -153,8 +153,7 @@ def generate_rst_section(tool_info: Dict[str, str]) -> str:
     """
     name = tool_info['name']
     description = tool_info['description']
-    usage = tool_info['usage']
-    examples = tool_info['examples']
+    full_help = tool_info['full_help']
     
     # Create a clean title
     title = name.replace('_', ' ').title()
@@ -170,21 +169,12 @@ def generate_rst_section(tool_info: Dict[str, str]) -> str:
     if description:
         rst += f"{description}\n\n"
     
-    # Add usage if available
-    if usage:
-        rst += f"**Usage**::\n\n    {usage}\n\n"
-    
-    # Add examples if available
-    if examples:
-        rst += "**Examples**:\n\n"
-        rst += ".. code-block:: bash\n\n"
-        for line in examples.split('\n'):
-            if line.strip():
-                rst += f"    {line}\n"
-        rst += "\n"
-    
-    # Add link to full help
-    rst += f"For complete options, run: ``python {relative_path} --help``\n\n"
+    # Add complete help output
+    rst += "**Complete Help Output**:\n\n"
+    rst += ".. code-block:: text\n\n"
+    for line in full_help.split('\n'):
+        rst += f"    {line}\n"
+    rst += "\n"
     
     return rst
 
