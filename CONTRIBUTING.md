@@ -30,6 +30,76 @@ class Greeter:
 ### Module Documentation Requirements
 For command-line tools in any `modules/` subfolder (`core/`, `addons/`, and `niche/`), ensure your `--help` output is comprehensive with clear descriptions and examples (see [convert.py](/modules/addons/convert.py)). The documentation will be automatically generated from the help text you've written so make sure to include all tags and a few example commands if possible/needed.
 
+Here's an example of good CLI help documentation structure:
+
+```
+Examples:
+  # Organize music library using default format: album/albumartist
+  python organize.py /path/to/music/library /path/to/organized/library
+
+  # Custom folder format with year and genre
+  python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
+
+  # Artist-based organization
+  python organize.py /music /organized --folder-format "{artist}/{album}"
+
+  # Detailed organization with track info
+  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}"
+
+Available pre-defined metadata fields:
+  {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
+  {album}       - Album name (searches: album, Album, ALBUM, TALB, etc.)
+  {artist}      - Track artist (searches: artist, Artist, TPE1, etc.)
+  {albumartist} - Album artist (searches: albumartist, AlbumArtist, TPE2, etc.)
+  {track}       - Track number (searches: track, Track, tracknumber, etc.)
+  {year}        - Release year (searches: year, Year, date, Date, etc.)
+  {genre}       - Music genre (searches: genre, Genre, GENRE, etc.)
+  {disc}        - Disc number (searches: disc, Disc, discnumber, etc.)
+  {composer}    - Composer (searches: composer, Composer, TCOM, etc.)
+  {comment}     - Comment field (searches: comment, Comment, COMM, etc.)
+
+You can also use any raw metadata tag name (case-sensitive):
+  {ARTIST}      - Use exact tag name from file
+  {TPE1}        - Use ID3v2 tag directly
+  {Custom_Tag}  - Use any custom tag present in the file
+
+Character replacement examples (default: problematic chars become safe alternatives):
+  --replace-char "/" "-"             # Replace forward slashes with dashes (default)
+  --rc ":" "-"                       # Replace colons with dashes (default, using shortcut)
+  --replace-char "&" "and"           # Replace ampersands with 'and'
+  --rc "/" "-" --rc "&" "and"        # Multiple replacements using shortcuts
+  --replace-char "?" ""              # Remove question marks (replace with nothing)
+  --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
+  --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
+
+Sanitization examples (default: sanitize enabled with conservative character set):
+  --sanitize                         # Explicitly enable character filtering (default behavior)
+  --s                                # Same as above using shortcut
+  --dont-sanitize                    # Disable character filtering, keep all characters
+  --ds                               # Same as above using shortcut
+  --ds --rc "/" "-"                  # No filtering, but still replace / with -
+  --dont-sanitize --dontreplace      # No filtering or replacements at all
+  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
+  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
+  --cs "0123456789"                  # Only allow numbers using shortcut
+
+Custom sanitization examples:
+  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
+  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
+  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --cs "あいうえおかきくけこ"              # Japanese characters
+
+Folder format tips:
+  - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
+  - Missing fields will be empty (logged as warnings)
+  - Use --skip-no-metadata to skip files missing critical metadata
+  - Character replacements are applied before sanitization
+  - When sanitization is enabled, problematic characters are removed/replaced
+  - Default character set excludes apostrophes and special chars for music player compatibility
+```
+
+This creates comprehensive help with usage examples, detailed field explanations, and helpful tips that users need.
+
 ## Styling Suggestions
 It would be very much appreciated if the single-line comments in your code follow the style of: ```# (insert comment here)``` (having a space after the #)
 as this makes it easier to read them, but unlike autodoc support, this isn't strictly required.
