@@ -1,16 +1,16 @@
-Addons API
-==========
+Addon Modules
+=============
 
-This section is reserved for auto-generated API documentation for Walrio's addon modules.
+This section contains the auto-generated API documentation for Walrio's addon modules that provide additional functionality for audio file management and processing.
 
-Overview
---------
+Available Addon Modules
+------------------------
 
-The addons package is currently empty but will contain extension modules that provide additional functionality such as:
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
 
-* **CLI interfaces** - Command-line tools for interacting with Walrio
-* **Utilities** - Helper tools and scripts  
-* **Extensions** - Additional features and integrations
-
-.. note::
-   Addon modules will be documented here as they are added to the project.
+   modules.addons.convert
+   modules.addons.file_relocater
+   modules.addons.rename
+   modules.addons.organize

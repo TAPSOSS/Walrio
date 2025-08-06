@@ -1,22 +1,16 @@
-Walrio Core API
-===============
+Core Modules
+============
 
-This section contains the auto-generated API documentation for Walrio's core library modules.
+This section contains the auto-generated API documentation for Walrio's core modules that provide fundamental functionality.
 
-.. toctree::
-   :maxdepth: 2
+Available Core Modules
+-----------------------
 
-   database
-   player
-   playlist
-   queue
+.. autosummary::
+   :toctree: _autosummary
+   :recursive:
 
-Overview
---------
-
-The core package contains the core functionality modules for Walrio:
-
-* **database** - SQLite database management for music metadata and playlists
-* **player** - GStreamer-based audio player with advanced playback features
-* **playlist** - M3U playlist creation and management utilities
-* **queue** - Playback queue management with shuffle and repeat modes
+   modules.core.database
+   modules.core.player
+   modules.core.playlist
+   modules.core.queue
