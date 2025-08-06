@@ -123,10 +123,13 @@ class AudioRenamer:
             # Only apply character replacements, skip character filtering
             final_sanitized = sanitized
         else:
-            # Apply standard character filtering
+            # Get the allowed character set (custom or default)
+            allowed_chars = self.options.get('custom_sanitize_chars', ALLOWED_FILE_CHARS)
+            
+            # Apply character filtering
             final_sanitized = ""
             for char in sanitized:
-                if char in ALLOWED_FILE_CHARS:
+                if char in allowed_chars:
                     final_sanitized += char
                 elif char in "?!/\\|.,&%*\":;'><":
                     # Remove these completely as they can cause issues
@@ -462,6 +465,14 @@ Sanitization examples (default: sanitize enabled):
   --ds --rc "/" "~"                  # No filtering, but still replace / with ~
   --dont-sanitize --dontreplace      # No filtering or replacements at all
   --s --rc "&" "and"                 # Explicit sanitize with custom replacements
+  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
+  --cs "0123456789"                  # Only allow numbers using shortcut
+
+Custom sanitization examples:
+  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
+  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols
+  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --cs "あいうえおかきくけこ"              # Japanese characters
 
 Format string tips:
   - Use Python string formatting: {track:02d} for zero-padded numbers
@@ -469,6 +480,7 @@ Format string tips:
   - Use --skip-no-metadata to skip files missing critical metadata
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
+  - Use --custom-sanitize to define your own allowed character set
 """)
     
     # Input options
@@ -516,6 +528,11 @@ Format string tips:
         "--dont-sanitize", "--ds",
         action="store_true",
         help="Disable filename sanitization using the allowed character set. Only apply character replacements."
+    )
+    parser.add_argument(
+        "--custom-sanitize", "--cs",
+        metavar="CHARS",
+        help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
     )
     
     # Behavior options
@@ -651,6 +668,8 @@ def main():
         sanitize_enabled = False
         if args.sanitize:
             logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
+        if args.custom_sanitize:
+            logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
     elif args.sanitize:
         sanitize_enabled = True
     # If neither flag is specified, use default (True)
@@ -665,6 +684,11 @@ def main():
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
     }
+    
+    # Add custom sanitization character set if provided
+    if args.custom_sanitize:
+        options['custom_sanitize_chars'] = set(args.custom_sanitize)
+        logger.info(f"Using custom character set for sanitization: '{args.custom_sanitize}'")
     
     # Create renamer
     try:
