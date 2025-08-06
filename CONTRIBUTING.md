@@ -27,6 +27,9 @@ class Greeter:
 ```
 ^ this would create a doc for 'Greeter' saying that it greets people and 'greet' with the args and return given.
 
+### Module Documentation Requirements
+For command-line tools in `modules/addons/`, ensure your `--help` output is comprehensive with clear descriptions and examples. The documentation will be automatically generated from the help text you've written so make sure to include all tags and a few example commands if possible/needed.
+
 ## Styling Suggestions
 It would be very much appreciated if the single-line comments in your code follow the style of: ```# (insert comment here)``` (having a space after the #)
 as this makes it easier to read them, but unlike autodoc support, this isn't strictly required.
@@ -48,7 +51,7 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 """
 ```
 
-4. For any new files, make sure they're added to the auto-generated sphinx documentation (check the docs folder and for examples like [this](/docs/source/api/player.rst)), add any newly needed imports to [requirements.txt](requirements.txt), and add your name to the [authors](AUTHORS) file if you want to (not required).
+4. For any new files, make sure they're added to the auto-generated sphinx documentation (check the docs folder and for examples like [this](/docs/source/api/player.rst)), add any newly needed imports to [requirements.txt](requirements.txt), and add your name to the [authors](AUTHORS) file if you want to (not required). For CLI tools in `modules/addons/`, make sure your `--help` output is good quality as it will be used to auto-generate user documentation.
 
 5. Once the code, documentation, and headers are all set properly, send a [pull request](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request) in for code review. Styling for this pull request should be automatically filled in by GitHub and you just need to fill in the template and change the pull request title to one of the 3 given to submit the pull request. Relevant feedback will be given both through automatede tests and direct human communication or the pull request will be accepted and your changes/new code will be part of Walrio repository.
 
