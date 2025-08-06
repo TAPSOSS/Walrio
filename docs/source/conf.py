@@ -107,6 +107,63 @@ autodoc_default_options = {
 # Mock imports for external dependencies that might not be available during doc build
 autodoc_mock_imports = ['mutagen', 'sqlite3']
 
+# Process docstrings to remove copyright headers
+def process_docstring(app, what, name, obj, options, lines):
+    """
+    Remove copyright header lines from docstrings.
+    
+    This function is called by Sphinx's autodoc extension to process docstrings
+    before they are rendered in the documentation. It systematically removes
+    the standard copyright header lines from all module docstrings.
+    
+    Args:
+        app: The Sphinx application object
+        what (str): The type of object being documented (e.g., 'module', 'class', 'function')
+        name (str): The fully qualified name of the object
+        obj: The object being documented
+        options: The options given to the directive
+        lines (list): List of strings containing the docstring lines
+    """
+    if lines:
+        # Remove the specific copyright header lines
+        copyright_patterns = [
+            "Copyright (c) 2025 TAPS OSS",
+            "Project: https://github.com/TAPSOSS/Walrio", 
+            "Licensed under the BSD-3-Clause License (see LICENSE file for details)"
+        ]
+        
+        # Remove lines that match any of the copyright patterns
+        lines_to_remove = []
+        for i, line in enumerate(lines):
+            for pattern in copyright_patterns:
+                if pattern in line:
+                    lines_to_remove.append(i)
+                    break
+        
+        # Remove lines in reverse order to maintain indices
+        for i in reversed(lines_to_remove):
+            lines.pop(i)
+        
+        # Remove any empty lines at the beginning after copyright removal
+        while lines and not lines[0].strip():
+            lines.pop(0)
+
+def setup(app):
+    """
+    Sphinx setup function to configure custom extensions and event handlers.
+    
+    This function is called by Sphinx during initialization to set up custom
+    extensions and connect event handlers. It registers the process_docstring
+    function to handle docstring processing.
+    
+    Args:
+        app: The Sphinx application object
+        
+    Returns:
+        dict: Extension metadata (optional)
+    """
+    app.connect('autodoc-process-docstring', process_docstring)
+
 # -- Options for napoleon extension ------------------------------------------
 
 # Enable parsing of Google style docstrings
