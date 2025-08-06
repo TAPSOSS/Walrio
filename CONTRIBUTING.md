@@ -28,7 +28,7 @@ class Greeter:
 ^ this would create a doc for 'Greeter' saying that it greets people and 'greet' with the args and return given.
 
 ### Module Documentation Requirements
-For command-line tools in any `modules/` subfolder (`core/`, `addons/`, and `niche/`), ensure your `--help` output is comprehensive with clear descriptions and examples. The documentation will be automatically generated from the help text you've written so make sure to include all tags and a few example commands if possible/needed.
+For command-line tools in any `modules/` subfolder (`core/`, `addons/`, and `niche/`), ensure your `--help` output is comprehensive with clear descriptions and examples (see [convert.py](/modules/addons/convert.py)). The documentation will be automatically generated from the help text you've written so make sure to include all tags and a few example commands if possible/needed.
 
 ## Styling Suggestions
 It would be very much appreciated if the single-line comments in your code follow the style of: ```# (insert comment here)``` (having a space after the #)
