@@ -115,20 +115,25 @@ class AudioRenamer:
         for old_char, new_char in char_replacements.items():
             sanitized = sanitized.replace(old_char, new_char)
         
-        # Then apply standard character filtering
-        final_sanitized = ""
-        for char in sanitized:
-            if char in ALLOWED_FILE_CHARS:
-                final_sanitized += char
-            elif char in "?!/\\|.,&%*\":;'><":
-                # Remove these completely as they can cause issues
-                # (unless they were already replaced above)
-                pass
-            else:
-                # Replace other characters with space
-                final_sanitized += " "
+        # Check if sanitization is disabled
+        if self.options.get('dont_sanitize', False):
+            # Only apply character replacements, skip character filtering
+            final_sanitized = sanitized
+        else:
+            # Apply standard character filtering
+            final_sanitized = ""
+            for char in sanitized:
+                if char in ALLOWED_FILE_CHARS:
+                    final_sanitized += char
+                elif char in "?!/\\|.,&%*\":;'><":
+                    # Remove these completely as they can cause issues
+                    # (unless they were already replaced above)
+                    pass
+                else:
+                    # Replace other characters with space
+                    final_sanitized += " "
         
-        # Clean up multiple spaces and strip whitespace
+        # Clean up multiple spaces and strip whitespace (always do this)
         final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
         
         # Ensure we don't end up with an empty string
@@ -433,7 +438,7 @@ You can also use any raw metadata tag name (case-sensitive):
   {TPE1}        - Use ID3v2 tag directly
   {Custom_Tag}  - Use any custom tag present in the file
 
-Character replacement examples (default: / and \ become ~):
+Character replacement examples (default: / and \\ become ~):
   --replace-char "/" "~"             # Replace forward slashes with tildes (default)
   --rc "\\" "~"                      # Replace backslashes with tildes (default, using shortcut)
   --replace-char "&" "and"           # Replace ampersands with 'and'
@@ -442,12 +447,21 @@ Character replacement examples (default: / and \ become ~):
   --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
   --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
 
+Sanitization examples (default: sanitize enabled):
+  --sanitize                         # Explicitly enable character filtering (default behavior)
+  --s                                # Same as above using shortcut
+  --dont-sanitize                    # Disable character filtering, keep all characters
+  --ds                               # Same as above using shortcut
+  --ds --rc "/" "~"                  # No filtering, but still replace / with ~
+  --dont-sanitize --dontreplace      # No filtering or replacements at all
+  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
+
 Format string tips:
   - Use Python string formatting: {track:02d} for zero-padded numbers
   - Missing fields will be empty (logged as warnings)
   - Use --skip-no-metadata to skip files missing critical metadata
-  - Character replacements are applied before other sanitization
-  - Problematic characters are automatically removed/replaced
+  - Character replacements are applied before sanitization
+  - When sanitization is enabled, problematic characters are removed/replaced
 """)
     
     # Input options
@@ -485,6 +499,16 @@ Format string tips:
         "--dontreplace", "--dr",
         action="store_true",
         help="Disable default character replacements (/ and \\ to ~). Only use custom --replace-char replacements."
+    )
+    parser.add_argument(
+        "--sanitize", "--s",
+        action="store_true",
+        help="Enable filename sanitization using the allowed character set (default behavior)."
+    )
+    parser.add_argument(
+        "--dont-sanitize", "--ds",
+        action="store_true",
+        help="Disable filename sanitization using the allowed character set. Only apply character replacements."
     )
     
     # Behavior options
@@ -613,6 +637,17 @@ def main():
     # Parse character replacements
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
+    # Determine sanitization setting (default is True)
+    # If both flags are set, the disable flag takes priority
+    sanitize_enabled = True
+    if args.dont_sanitize:
+        sanitize_enabled = False
+        if args.sanitize:
+            logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
+    elif args.sanitize:
+        sanitize_enabled = True
+    # If neither flag is specified, use default (True)
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
@@ -621,6 +656,7 @@ def main():
         'skip_no_metadata': args.skip_no_metadata,
         'format': args.format,
         'char_replacements': char_replacements,
+        'dont_sanitize': not sanitize_enabled,
     }
     
     # Create renamer
@@ -656,6 +692,8 @@ def main():
         if char_replacements:
             replacement_info = ", ".join([f"'{old}' -> '{new}'" for old, new in char_replacements.items()])
             logger.info(f"Character replacements: {replacement_info}")
+        if not sanitize_enabled:
+            logger.info("Filename sanitization disabled - keeping all characters except replacements")
         
         # Process all files first
         if input_files:
