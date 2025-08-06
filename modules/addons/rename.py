@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('AudioRenamer')
 
-# Character set for file names
+# Standard character set for file names (as defined by tapscodes)
 ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ')
 
 # Audio file extensions to process
