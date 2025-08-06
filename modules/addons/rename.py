@@ -35,6 +35,23 @@ ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 # Audio file extensions to process
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
+# Default naming format
+DEFAULT_FORMAT = "{title} - {album}"
+
+# Pre-defined metadata tag mappings for common fields
+METADATA_TAG_MAPPINGS = {
+    'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
+    'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
+    'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
+    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist'],
+    'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
+    'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
+    'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
+    'disc': ['disc', 'Disc', 'DISC', 'discnumber', 'DiscNumber', 'disc_number', 'TPOS'],
+    'composer': ['composer', 'Composer', 'COMPOSER', 'TCOM'],
+    'comment': ['comment', 'Comment', 'COMMENT', 'COMM'],
+}
+
 class AudioRenamer:
     """
     Audio file renamer that standardizes filenames based on metadata
@@ -116,7 +133,7 @@ class AudioRenamer:
             filepath (str): Path to the audio file
             
         Returns:
-            dict: Dictionary containing title and album metadata
+            dict: Dictionary containing all available metadata
         """
         try:
             cmd = [
@@ -141,17 +158,17 @@ class AudioRenamer:
             if 'format' in file_info and 'tags' in file_info['format']:
                 tags = file_info['format']['tags']
                 
-                # Try different common tag names for title
-                for title_key in ['title', 'Title', 'TITLE', 'TIT2']:
-                    if title_key in tags:
-                        metadata['title'] = tags[title_key]
-                        break
+                # For each pre-defined metadata field, try to find it in the tags
+                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
+                    for tag_key in tag_variants:
+                        if tag_key in tags:
+                            metadata[field_name] = tags[tag_key]
+                            break
                 
-                # Try different common tag names for album
-                for album_key in ['album', 'Album', 'ALBUM', 'TALB']:
-                    if album_key in tags:
-                        metadata['album'] = tags[album_key]
-                        break
+                # Also store all raw tags for custom metadata access
+                for key, value in tags.items():
+                    # Store with original key name for custom format strings
+                    metadata[key] = value
             
             return metadata
             
@@ -161,47 +178,93 @@ class AudioRenamer:
     
     def generate_new_filename(self, filepath: str) -> Optional[str]:
         """
-        Generate a new filename based on metadata in the format "(title) - (album).ext"
+        Generate a new filename based on metadata using the specified format.
         
         Args:
             filepath (str): Path to the audio file
             
         Returns:
-            str or None: New filename, or None if no metadata available
+            str or None: New filename, or None if format cannot be resolved
         """
         metadata = self.get_file_metadata(filepath)
         
-        title = metadata.get('title', '').strip()
-        album = metadata.get('album', '').strip()
+        # Get the naming format from options
+        format_string = self.options.get('format', DEFAULT_FORMAT)
         
         # Get file extension
         file_ext = os.path.splitext(filepath)[1].lower()
         
-        # If we don't have both title and album, use fallback strategy
-        if not title and not album:
-            logger.warning(f"No title or album metadata found for {os.path.basename(filepath)}")
+        # Parse the format string to find all required fields
+        import string
+        formatter = string.Formatter()
+        format_fields = [field_name for _, field_name, _, _ in formatter.parse(format_string) if field_name]
+        
+        # Check if we have all required metadata
+        missing_fields = []
+        format_values = {}
+        
+        for field in format_fields:
+            if field in metadata and metadata[field].strip():
+                format_values[field] = self.sanitize_filename(metadata[field].strip())
+            else:
+                # Check if this is a pre-defined field that we should try harder to find
+                if field in METADATA_TAG_MAPPINGS:
+                    missing_fields.append(field)
+                    format_values[field] = ""
+                else:
+                    # For custom fields, log warning and use empty string
+                    logger.warning(f"Custom metadata field '{field}' not found in {os.path.basename(filepath)}")
+                    format_values[field] = ""
+        
+        # Log missing pre-defined fields
+        if missing_fields:
+            logger.warning(f"Missing metadata fields {missing_fields} in {os.path.basename(filepath)}")
+        
+        # If skip_no_metadata is enabled and we're missing critical fields, skip the file
+        if self.options.get('skip_no_metadata', False):
+            # Check if any of the critical fields (title, album) are missing
+            critical_fields = {'title', 'album'} & set(format_fields)
+            if critical_fields and any(not format_values.get(field, '') for field in critical_fields):
+                return None
+        
+        # Handle special case where we have no metadata at all for any field
+        if all(not value for value in format_values.values()):
             if not self.options.get('skip_no_metadata', False):
                 # Use original filename without extension as title
                 original_name = os.path.splitext(os.path.basename(filepath))[0]
-                title = original_name
-                album = "Unknown Album"
+                # If format contains {title}, use original name for it
+                if 'title' in format_values:
+                    format_values['title'] = self.sanitize_filename(original_name)
+                # For other fields, use "Unknown" prefix
+                for field in format_values:
+                    if not format_values[field] and field != 'title':
+                        format_values[field] = f"Unknown {field.title()}"
             else:
                 return None
-        elif not title:
-            # Use original filename without extension as title
-            original_name = os.path.splitext(os.path.basename(filepath))[0]
-            title = original_name
-        elif not album:
-            album = "Unknown Album"
         
-        # Sanitize the title and album
-        clean_title = self.sanitize_filename(title)
-        clean_album = self.sanitize_filename(album)
-        
-        # Create the new filename in format: "title - album.ext"
-        new_filename = f"{clean_title} - {clean_album}{file_ext}"
-        
-        return new_filename
+        try:
+            # Apply the format string
+            new_filename_base = format_string.format(**format_values)
+            
+            # Clean up any double spaces or other formatting issues
+            new_filename_base = re.sub(r'\s+', ' ', new_filename_base).strip()
+            
+            # Remove any leading/trailing separators
+            new_filename_base = new_filename_base.strip(' -_')
+            
+            # Ensure we don't end up with an empty filename
+            if not new_filename_base:
+                new_filename_base = "Unknown"
+            
+            new_filename = f"{new_filename_base}{file_ext}"
+            return new_filename
+            
+        except KeyError as e:
+            logger.error(f"Invalid format string - unknown field {e} in format: {format_string}")
+            return None
+        except Exception as e:
+            logger.error(f"Error formatting filename for {os.path.basename(filepath)}: {str(e)}")
+            return None
     
     def rename_file(self, filepath: str) -> bool:
         """
@@ -323,22 +386,47 @@ def parse_arguments():
         argparse.Namespace: Parsed arguments
     """
     parser = argparse.ArgumentParser(
-        description="Audio File Renamer - Rename files to '(title) - (album)' format",
+        description="Audio File Renamer - Rename files using custom metadata formats",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Examples:\n"
-               "  # Rename a single file\n"
-               "  python rename.py song.mp3\n\n"
-               "  # Rename multiple files\n"
-               "  python rename.py song1.mp3 song2.flac song3.wav\n\n"
-               "  # Rename all files in a directory\n"
-               "  python rename.py /music/directory\n\n"
-               "  # Rename files recursively in subdirectories\n"
-               "  python rename.py /music/directory --recursive\n\n"
-               "  # Dry run to see what would be renamed\n"
-               "  python rename.py /music/directory --dry-run\n\n"
-               "  # Skip files without metadata\n"
-               "  python rename.py /music/directory --skip-no-metadata\n"
-    )
+        epilog="""Examples:
+  # Rename using default format: title - album
+  python rename.py song.mp3
+
+  # Custom format with artist and year
+  python rename.py /music --format "{artist} - {title} ({year})"
+
+  # Track number prefix format
+  python rename.py /music --format "{track:02d} - {title}"
+
+  # Album folder organization format
+  python rename.py /music --format "{albumartist} - {album} - {title}"
+
+  # Year and genre format
+  python rename.py /music --format "{year} - {genre} - {artist} - {title}"
+
+Available pre-defined metadata fields:
+  {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
+  {album}       - Album name (searches: album, Album, ALBUM, TALB, etc.)
+  {artist}      - Track artist (searches: artist, Artist, TPE1, etc.)
+  {albumartist} - Album artist (searches: albumartist, AlbumArtist, TPE2, etc.)
+  {track}       - Track number (searches: track, Track, tracknumber, etc.)
+  {year}        - Release year (searches: year, Year, date, Date, etc.)
+  {genre}       - Music genre (searches: genre, Genre, GENRE, etc.)
+  {disc}        - Disc number (searches: disc, Disc, discnumber, etc.)
+  {composer}    - Composer (searches: composer, Composer, TCOM, etc.)
+  {comment}     - Comment field (searches: comment, Comment, COMM, etc.)
+
+You can also use any raw metadata tag name (case-sensitive):
+  {ARTIST}      - Use exact tag name from file
+  {TPE1}        - Use ID3v2 tag directly
+  {Custom_Tag}  - Use any custom tag present in the file
+
+Format string tips:
+  - Use Python string formatting: {track:02d} for zero-padded numbers
+  - Missing fields will be empty (logged as warnings)
+  - Use --skip-no-metadata to skip files missing critical metadata
+  - Problematic characters are automatically removed/replaced
+""")
     
     # Input options
     parser.add_argument(
@@ -358,6 +446,13 @@ def parse_arguments():
         help="Recursively process subdirectories"
     )
     
+    # Format options
+    parser.add_argument(
+        "-f", "--format",
+        default=DEFAULT_FORMAT,
+        help=f"Naming format using metadata fields in {{field}} syntax (default: '{DEFAULT_FORMAT}')"
+    )
+    
     # Behavior options
     parser.add_argument(
         "--dry-run",
@@ -373,7 +468,7 @@ def parse_arguments():
     parser.add_argument(
         "--skip-no-metadata",
         action="store_true",
-        help="Skip files that have no title or album metadata"
+        help="Skip files that have no metadata for the specified format fields"
     )
     
     # Utility options
@@ -382,6 +477,11 @@ def parse_arguments():
         choices=["low", "high"],
         default="low",
         help="Logging level: low (default) or high (verbose)"
+    )
+    parser.add_argument(
+        "--list-metadata",
+        metavar="FILE",
+        help="Show all available metadata fields for a specific file and exit"
     )
     
     return parser.parse_args()
@@ -397,12 +497,57 @@ def main():
     if args.logging == "high":
         logger.setLevel(logging.DEBUG)
     
+    # Handle metadata listing request
+    if args.list_metadata:
+        if not os.path.isfile(args.list_metadata):
+            logger.error(f"File not found: {args.list_metadata}")
+            sys.exit(1)
+        
+        try:
+            # Create a temporary renamer to get metadata
+            temp_renamer = AudioRenamer({})
+            metadata = temp_renamer.get_file_metadata(args.list_metadata)
+            
+            print(f"\nMetadata for: {os.path.basename(args.list_metadata)}")
+            print("-" * 60)
+            
+            if not metadata:
+                print("No metadata found in this file.")
+                return
+            
+            # Show pre-defined fields first
+            print("Pre-defined fields (use these in format strings):")
+            for field_name in METADATA_TAG_MAPPINGS.keys():
+                value = metadata.get(field_name, '')
+                status = f"'{value}'" if value else "(not found)"
+                print(f"  {{{field_name}:<12}} -> {status}")
+            
+            # Show all raw metadata tags
+            print(f"\nAll raw metadata tags (case-sensitive):")
+            raw_tags = {k: v for k, v in metadata.items() if k not in METADATA_TAG_MAPPINGS}
+            if raw_tags:
+                for key, value in sorted(raw_tags.items()):
+                    print(f"  {{{key}:<15}} -> '{value}'")
+            else:
+                print("  No additional raw tags found.")
+            
+            print(f"\nExample format strings:")
+            print(f"  --format \"{{title}} - {{album}}\"")
+            print(f"  --format \"{{artist}} - {{title}} ({{year}})\"")
+            print(f"  --format \"{{track:02d}} - {{title}}\"")
+            
+        except Exception as e:
+            logger.error(f"Error reading metadata: {str(e)}")
+            sys.exit(1)
+        return
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
         'skip_existing': args.skip_existing,
         'skip_no_metadata': args.skip_no_metadata,
+        'format': args.format,
     }
     
     # Create renamer
@@ -432,6 +577,9 @@ def main():
                 else:
                     logger.error(f"Input path '{input_path}' doesn't exist")
                     sys.exit(1)
+        
+        # Show format being used
+        logger.info(f"Using naming format: '{args.format}'")
         
         # Process all files first
         if input_files:
