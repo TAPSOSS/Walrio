@@ -38,6 +38,9 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 # Default naming format
 DEFAULT_FORMAT = "{title} - {album}"
 
+# Default character replacements (applied before other sanitization)
+DEFAULT_CHAR_REPLACEMENTS = {'/': '~', '\\': '~'}
+
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
@@ -104,26 +107,35 @@ class AudioRenamer:
         if not text:
             return "Unknown"
         
-        # Replace problematic characters with safe alternatives
-        sanitized = ""
-        for char in text:
+        # Get character replacements from options (default to standard replacements)
+        char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
+        
+        # Apply custom character replacements first
+        sanitized = text
+        for old_char, new_char in char_replacements.items():
+            sanitized = sanitized.replace(old_char, new_char)
+        
+        # Then apply standard character filtering
+        final_sanitized = ""
+        for char in sanitized:
             if char in ALLOWED_FILE_CHARS:
-                sanitized += char
+                final_sanitized += char
             elif char in "?!/\\|.,&%*\":;'><":
                 # Remove these completely as they can cause issues
+                # (unless they were already replaced above)
                 pass
             else:
                 # Replace other characters with space
-                sanitized += " "
+                final_sanitized += " "
         
         # Clean up multiple spaces and strip whitespace
-        sanitized = re.sub(r'\s+', ' ', sanitized).strip()
+        final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
         
         # Ensure we don't end up with an empty string
-        if not sanitized:
-            sanitized = "Unknown"
+        if not final_sanitized:
+            final_sanitized = "Unknown"
         
-        return sanitized
+        return final_sanitized
     
     def get_file_metadata(self, filepath: str) -> Dict[str, str]:
         """
@@ -421,10 +433,20 @@ You can also use any raw metadata tag name (case-sensitive):
   {TPE1}        - Use ID3v2 tag directly
   {Custom_Tag}  - Use any custom tag present in the file
 
+Character replacement examples (default: / and \ become ~):
+  --replace-char "/" "~"             # Replace forward slashes with tildes (default)
+  --rc "\\" "~"                      # Replace backslashes with tildes (default, using shortcut)
+  --replace-char "&" "and"           # Replace ampersands with 'and'
+  --rc "/" "~" --rc "&" "and"        # Multiple replacements using shortcuts
+  --replace-char "?" ""              # Remove question marks (replace with nothing)
+  --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
+  --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
+
 Format string tips:
   - Use Python string formatting: {track:02d} for zero-padded numbers
   - Missing fields will be empty (logged as warnings)
   - Use --skip-no-metadata to skip files missing critical metadata
+  - Character replacements are applied before other sanitization
   - Problematic characters are automatically removed/replaced
 """)
     
@@ -451,6 +473,18 @@ Format string tips:
         "-f", "--format",
         default=DEFAULT_FORMAT,
         help=f"Naming format using metadata fields in {{field}} syntax (default: '{DEFAULT_FORMAT}')"
+    )
+    parser.add_argument(
+        "--replace-char", "--rc",
+        action="append",
+        nargs=2,
+        metavar=("OLD", "NEW"),
+        help="Replace a specific character in filenames. Takes two arguments: old character and new character (e.g., --replace-char '/' '~'). Use multiple times for multiple replacements."
+    )
+    parser.add_argument(
+        "--dontreplace", "--dr",
+        action="store_true",
+        help="Disable default character replacements (/ and \\ to ~). Only use custom --replace-char replacements."
     )
     
     # Behavior options
@@ -485,6 +519,41 @@ Format string tips:
     )
     
     return parser.parse_args()
+
+
+def parse_character_replacements(replace_char_list, no_defaults=False):
+    """
+    Parse character replacement arguments from command line.
+    
+    Args:
+        replace_char_list (list): List of [old_char, new_char] pairs
+        no_defaults (bool): If True, don't include default replacements
+        
+    Returns:
+        dict: Dictionary mapping old characters to new characters
+    """
+    replacements = {}
+    
+    # Start with defaults unless explicitly disabled
+    if not no_defaults:
+        replacements.update(DEFAULT_CHAR_REPLACEMENTS)
+    
+    # Add custom replacements (these override defaults if there are conflicts)
+    if replace_char_list:
+        for replacement_pair in replace_char_list:
+            if len(replacement_pair) != 2:
+                logger.error(f"Invalid character replacement: expected 2 arguments, got {len(replacement_pair)}")
+                continue
+                
+            old_char, new_char = replacement_pair
+            
+            if len(old_char) != 1:
+                logger.warning(f"Character replacement '{old_char}' should be a single character")
+            
+            replacements[old_char] = new_char
+            logger.debug(f"Character replacement: '{old_char}' -> '{new_char}'")
+    
+    return replacements
 
 
 def main():
@@ -541,6 +610,9 @@ def main():
             sys.exit(1)
         return
     
+    # Parse character replacements
+    char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
@@ -548,6 +620,7 @@ def main():
         'skip_existing': args.skip_existing,
         'skip_no_metadata': args.skip_no_metadata,
         'format': args.format,
+        'char_replacements': char_replacements,
     }
     
     # Create renamer
@@ -580,6 +653,9 @@ def main():
         
         # Show format being used
         logger.info(f"Using naming format: '{args.format}'")
+        if char_replacements:
+            replacement_info = ", ".join([f"'{old}' -> '{new}'" for old, new in char_replacements.items()])
+            logger.info(f"Character replacements: {replacement_info}")
         
         # Process all files first
         if input_files:
