@@ -1,5 +1,5 @@
-Walrio Libraries API
-====================
+Walrio Core API
+===============
 
 This section contains the auto-generated API documentation for Walrio's core library modules.
 
@@ -14,7 +14,7 @@ This section contains the auto-generated API documentation for Walrio's core lib
 Overview
 --------
 
-The libraries package contains the core functionality modules for Walrio:
+The core package contains the core functionality modules for Walrio:
 
 * **database** - SQLite database management for music metadata and playlists
 * **player** - GStreamer-based audio player with advanced playback features

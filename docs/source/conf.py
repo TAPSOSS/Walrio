@@ -9,7 +9,7 @@ import sys
 # Add the project root to the Python path so autodoc can find the modules
 sys.path.insert(0, os.path.abspath('../../'))
 sys.path.insert(0, os.path.abspath('../../modules'))
-sys.path.insert(0, os.path.abspath('../../modules/libraries'))
+sys.path.insert(0, os.path.abspath('../../modules/core'))
 sys.path.insert(0, os.path.abspath('../../modules/addons'))
 
 # -- Project information -----------------------------------------------------

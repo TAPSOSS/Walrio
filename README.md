@@ -44,8 +44,8 @@ Modules are the actually music player modules to be used in the backend of any G
 #### Addons
 Addons are modules that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
 
-#### Libraries
-Essential libraries are modules that are 100% needed for a standard audio player (play music, analyze, etc.).
+#### Core
+Essential core libraries are modules that are 100% needed for a standard audio player (play music, analyze, etc.).
 
 #### Niche
 The Niche folder is for niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
