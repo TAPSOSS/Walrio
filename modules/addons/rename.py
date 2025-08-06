@@ -70,6 +70,9 @@ class AudioRenamer:
         self.options = options
         self.renamed_count = 0
         self.error_count = 0
+        self.skipped_count = 0
+        self.metadata_error_count = 0
+        self.conflict_count = 0
         
         # Validate FFprobe availability
         self._check_ffprobe()
@@ -190,7 +193,8 @@ class AudioRenamer:
             return metadata
             
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            logger.warning(f"Could not get metadata for {filepath}: {str(e)}")
+            logger.error(f"⚠️  METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
+            self.metadata_error_count += 1
             return {}
     
     def generate_new_filename(self, filepath: str) -> Optional[str]:
@@ -230,12 +234,12 @@ class AudioRenamer:
                     format_values[field] = ""
                 else:
                     # For custom fields, log warning and use empty string
-                    logger.warning(f"Custom metadata field '{field}' not found in {os.path.basename(filepath)}")
+                    logger.warning(f"⚠️  Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
                     format_values[field] = ""
         
         # Log missing pre-defined fields
         if missing_fields:
-            logger.warning(f"Missing metadata fields {missing_fields} in {os.path.basename(filepath)}")
+            logger.warning(f"⚠️  Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
         
         # If skip_no_metadata is enabled and we're missing critical fields, skip the file
         if self.options.get('skip_no_metadata', False):
@@ -306,7 +310,8 @@ class AudioRenamer:
         # Generate new filename
         new_filename = self.generate_new_filename(filepath)
         if not new_filename:
-            logger.info(f"Skipping file with no metadata: {os.path.basename(filepath)}")
+            logger.error(f"⚠️  SKIPPED: File has insufficient metadata for renaming: {os.path.basename(filepath)}")
+            self.skipped_count += 1
             return True
         
         # Get directory and construct new path
@@ -321,7 +326,8 @@ class AudioRenamer:
         # Check if target file already exists
         if os.path.exists(new_filepath):
             if self.options.get('skip_existing', True):
-                logger.warning(f"Target file already exists, skipping: {new_filename}")
+                logger.error(f"🚫 FILE CONFLICT: Target file already exists, skipping: {new_filename}")
+                self.conflict_count += 1
                 return True
             else:
                 # Add a number suffix to make it unique
@@ -331,6 +337,7 @@ class AudioRenamer:
                     new_filename = f"{base_name} ({counter}){ext}"
                     new_filepath = os.path.join(directory, new_filename)
                     counter += 1
+                logger.warning(f"File conflict resolved by adding suffix: {new_filename}")
         
         # Perform the rename
         try:
@@ -717,9 +724,33 @@ def main():
             logger.info(f"Dry run completed: {renamer.renamed_count} files would be renamed")
         else:
             logger.info(f"Renaming completed: {renamer.renamed_count} files renamed successfully")
-            
+        
+        # Report any issues that occurred
+        issues_found = False
         if renamer.error_count > 0:
-            logger.warning(f"Encountered {renamer.error_count} errors during processing")
+            logger.error(f"❌ ERRORS: {renamer.error_count} files failed to rename due to system errors")
+            issues_found = True
+        
+        if renamer.metadata_error_count > 0:
+            logger.error(f"⚠️  METADATA ERRORS: {renamer.metadata_error_count} files had unreadable metadata")
+            issues_found = True
+        
+        if renamer.conflict_count > 0:
+            logger.error(f"🚫 FILE CONFLICTS: {renamer.conflict_count} files skipped due to existing target files")
+            issues_found = True
+        
+        if renamer.skipped_count > 0:
+            logger.error(f"⏭️  SKIPPED FILES: {renamer.skipped_count} files skipped due to insufficient metadata")
+            issues_found = True
+        
+        if issues_found:
+            logger.error("=" * 60)
+            logger.error("⚠️  ATTENTION: Issues were encountered during processing!")
+            logger.error("Please review the errors above and consider:")
+            logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
+            logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
+            logger.error("- For skipped files: Use --skip-no-metadata=false to force renaming")
+            logger.error("=" * 60)
             sys.exit(1)
         
     except Exception as e:
