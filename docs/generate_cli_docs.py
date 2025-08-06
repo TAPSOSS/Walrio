@@ -175,7 +175,8 @@ def generate_rst_section(tool_info: Dict[str, str]) -> str:
     for line in full_help.split('\n'):
         rst += f"    {line}\n"
     rst += "\n"
-    
+    # Add link to full help
+    rst += f"For complete options, run: ``python {relative_path} --help``\n\n"
     return rst
 
 def generate_cli_documentation(modules_dir: str, output_file: str):
