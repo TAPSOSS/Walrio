@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+Sphinx Documentation Configuration
+Copyright (c) 2025 TAPS OSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
+Configuration file for the Sphinx documentation builder.
+Sets up autodoc, autosummary, and other extensions for generating
+API documentation from docstrings in the Walrio project modules.
+"""
+
 # Configuration file for the Sphinx documentation builder.
 #
 # For the full list of built-in configuration values, see the documentation:
@@ -9,7 +21,7 @@ import sys
 # Add the project root to the Python path so autodoc can find the modules
 sys.path.insert(0, os.path.abspath('../../'))
 sys.path.insert(0, os.path.abspath('../../modules'))
-sys.path.insert(0, os.path.abspath('../../modules/libraries'))
+sys.path.insert(0, os.path.abspath('../../modules/core'))
 sys.path.insert(0, os.path.abspath('../../modules/addons'))
 
 # -- Project information -----------------------------------------------------

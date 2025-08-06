@@ -5,6 +5,10 @@ on:
     branches: [ main ]
     types: [opened, synchronize, reopened]
 
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
   style-check:
     runs-on: ubuntu-latest
@@ -121,6 +125,7 @@ jobs:
                 sys.exit(1)
             
             all_passed = True
+            failed_files = []
             
             for filename in sys.argv[1:]:
                 print(f"\n🔍 Checking {filename}...")
@@ -131,6 +136,7 @@ jobs:
                 except Exception as e:
                     print(f"❌ {filename}: Could not read file - {e}")
                     all_passed = False
+                    failed_files.append(f"{filename} (read error)")
                     continue
                 
                 # Check BSD header
@@ -141,12 +147,21 @@ jobs:
                 
                 if not (header_ok and docstring_ok):
                     all_passed = False
+                    failure_reasons = []
+                    if not header_ok:
+                        failure_reasons.append("header")
+                    if not docstring_ok:
+                        failure_reasons.append("docstrings")
+                    failed_files.append(f"{filename} ({', '.join(failure_reasons)})")
             
             if all_passed:
                 print(f"\n🎉 All files passed styling requirements!")
                 print("📖 For detailed requirements, see: https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements")
             else:
                 print(f"\n❌ Some files failed styling requirements")
+                print(f"\n📋 Failed files:")
+                for failed_file in failed_files:
+                    print(f"   - {failed_file}")
                 print("📖 Please review: https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements")
                 print("\n📋 Required BSD Header format:")
                 print('"""')

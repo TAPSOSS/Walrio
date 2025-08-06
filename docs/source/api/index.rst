@@ -7,7 +7,7 @@ This section contains the complete API reference for Walrio modules, automatical
    :maxdepth: 2
    :caption: Module APIs
 
-   libraries
+   core
    addons
 
 Core Libraries
@@ -18,10 +18,10 @@ The core libraries provide the fundamental functionality for Walrio:
    :toctree: _autosummary
    :recursive:
 
-   modules.libraries.database
-   modules.libraries.player
-   modules.libraries.playlist
-   modules.libraries.queue
+   modules.core.database
+   modules.core.player
+   modules.core.playlist
+   modules.core.queue
 
 Module Overview
 ---------------
