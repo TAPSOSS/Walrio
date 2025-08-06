@@ -1,4 +1,4 @@
-<!-- Use this format for title: Added (Component): (Name), Bug Fix (Name): (Desc), Updated (Name): (Desc), Documentation : (Description)-->
+<!-- Use this format for title: Added (Component): (Name), Bug Fix (Name): (Desc), Updated (Name): (Desc), Documentation: (Description)-->
 ## Description
 <!-- Provide a brief description of the changes in this pull request -->
 
