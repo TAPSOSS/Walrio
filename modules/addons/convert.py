@@ -93,6 +93,10 @@ class AudioConverter:
         self.options = DEFAULT_SETTINGS.copy()
         self.options.update(options)
         
+        # Interactive overwrite state
+        self.overwrite_all = False
+        self.skip_all = False
+        
         # Validate FFmpeg availability
         self._check_ffmpeg()
     
@@ -149,6 +153,94 @@ class AudioConverter:
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
             logger.warning(f"Could not get file info for {filepath}: {str(e)}")
             return {}
+    
+    def is_already_in_target_format(self, filepath: str) -> bool:
+        """
+        Check if file is already in the target format with matching specs.
+        
+        Args:
+            filepath (str): Path to the audio file
+            
+        Returns:
+            bool: True if file is already in target format with matching specs
+        """
+        file_info = self.get_file_info(filepath)
+        if not file_info:
+            return False
+        
+        # Get target format details
+        target_format = self.options['output_format']
+        target_ext = SUPPORTED_OUTPUT_FORMATS[target_format]['ext']
+        
+        # Check file extension
+        current_ext = os.path.splitext(filepath)[1].lower().lstrip('.')
+        if current_ext != target_ext:
+            return False
+        
+        # For lossless formats, also check sample rate and bit depth if specified
+        if target_format in ('flac', 'wav', 'alac'):
+            if 'streams' in file_info:
+                audio_streams = [s for s in file_info['streams'] if s.get('codec_type') == 'audio']
+                if audio_streams:
+                    stream = audio_streams[0]
+                    
+                    # Check sample rate
+                    if self.options.get('sample_rate'):
+                        current_sample_rate = stream.get('sample_rate')
+                        target_sample_rate = int(self.options['sample_rate'])
+                        if current_sample_rate and int(current_sample_rate) != target_sample_rate:
+                            return False
+                    
+                    # Check bit depth for compatible formats
+                    if self.options.get('bit_depth') and target_format in ('flac', 'wav'):
+                        # This is approximate - FFprobe doesn't always report bit depth accurately
+                        current_sample_fmt = stream.get('sample_fmt', '')
+                        target_bit_depth = int(self.options['bit_depth'])
+                        
+                        # Simple heuristic for common formats
+                        if target_bit_depth == 16 and 's16' not in current_sample_fmt and 'pcm_s16le' not in stream.get('codec_name', ''):
+                            return False
+                        elif target_bit_depth == 24 and 's32' not in current_sample_fmt and 'pcm_s24le' not in stream.get('codec_name', ''):
+                            return False
+        
+        return True
+    
+    def prompt_overwrite(self, filepath: str) -> bool:
+        """
+        Prompt user for overwrite decision with options for all files.
+        
+        Args:
+            filepath (str): Path to the file that would be overwritten
+            
+        Returns:
+            bool: True if should overwrite, False if should skip
+        """
+        if self.options.get('force_overwrite', False):
+            return True
+        
+        if self.overwrite_all:
+            return True
+        
+        if self.skip_all:
+            return False
+        
+        filename = os.path.basename(filepath)
+        print(f"\nFile already exists: {filename}")
+        while True:
+            response = input("Overwrite? (y)es, (n)o, (ya) yes to all, (na) no to all: ").lower().strip()
+            
+            if response in ['y', 'yes']:
+                return True
+            elif response in ['n', 'no']:
+                return False
+            elif response in ['ya', 'yes to all', 'yesall']:
+                self.overwrite_all = True
+                return True
+            elif response in ['na', 'no to all', 'noall']:
+                self.skip_all = True
+                return False
+            else:
+                print("Please enter 'y', 'n', 'ya', or 'na'")
     
     def display_file_info(self, filepath: str):
         """
@@ -303,6 +395,11 @@ class AudioConverter:
             logger.error(f"Input file does not exist: {input_file}")
             return False
         
+        # Check if file is already in target format with matching specs
+        if self.is_already_in_target_format(input_file):
+            logger.info(f"Already in target format: {os.path.basename(input_file)} - skipping conversion")
+            return True
+        
         # Get output directory
         if output_dir is None:
             output_dir = os.path.dirname(input_file)
@@ -317,11 +414,20 @@ class AudioConverter:
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         output_file = os.path.join(output_dir, f"{base_name}.{output_ext}")
         
-        # Check if output file already exists and skip_existing is True
-        if os.path.exists(output_file) and self.options['skip_existing']:
-            logger.info(f"Skipping existing file: {output_file}")
-            return True
+        # Check if output file already exists and handle overwrite decision
+        if os.path.exists(output_file):
+            if self.options['skip_existing']:
+                logger.info(f"Skipping existing file: {output_file}")
+                return True
+            elif not self.prompt_overwrite(output_file):
+                logger.info(f"Skipping file: {os.path.basename(output_file)}")
+                return True
             
+        # Enhanced feedback - show what file we're working on
+        logger.info(f"Processing: {os.path.basename(input_file)}")
+        logger.info(f"  From: {os.path.dirname(input_file)}")
+        logger.info(f"  Output: {os.path.basename(output_file)}")
+        
         # Get file information for logging
         file_info = self.get_file_info(input_file)
         input_format = file_info.get('format', {}).get('format_name', 'unknown')
@@ -335,24 +441,36 @@ class AudioConverter:
                     has_album_art = True
                     album_art_streams.append(i)
         
-        logger.info(f"Converting {input_file} ({input_format}) to {output_format}")
+        # Show format conversion details
+        logger.info(f"  Converting: {input_format.upper()} → {output_format.upper()}")
+        
+        # Show file size for context
+        if 'format' in file_info and 'size' in file_info['format']:
+            size_mb = int(file_info['format']['size']) / (1024 * 1024)
+            logger.info(f"  File size: {size_mb:.1f} MB")
         
         if has_album_art:
             if self.options['metadata'] == 'y':
                 if output_format == 'opus':
-                    logger.info(f"Album art detected - will be properly embedded in Opus file using mutagen")
+                    logger.info(f"  Album art detected - will be properly embedded in Opus file")
                 else:
-                    logger.info(f"Album art detected - will be preserved in output file")
+                    logger.info(f"  Album art detected - will be preserved in output file")
             else:
-                logger.info(f"Album art detected but will be removed (--metadata n specified)")
+                logger.info(f"  Album art detected but will be removed (--metadata n specified)")
         
         # Build FFmpeg command
         cmd = self.build_ffmpeg_command(input_file, output_file)
+        
+        # Add overwrite flag if we've decided to overwrite or if force_overwrite is set
+        if (os.path.exists(output_file) and (self.overwrite_all or self.options.get('force_overwrite', False))) or self.options.get('force_overwrite', False):
+            if '-y' not in cmd:
+                cmd.insert(1, '-y')  # Insert after 'ffmpeg'
+        
         logger.debug(f"FFmpeg command: {' '.join(cmd)}")
         
         try:
             # Run FFmpeg with a timeout
-            logger.info(f"Starting FFmpeg process for audio conversion")
+            logger.info(f"  Starting FFmpeg conversion...")
             try:
                 process = subprocess.run(
                     cmd, 
@@ -370,12 +488,25 @@ class AudioConverter:
                 if process.returncode != 0:
                     # Look for the specific "not overwriting" message in stderr
                     if "not overwriting" in process.stderr.lower() or "file exists" in process.stderr.lower():
-                        logger.info(f"User declined to overwrite {output_file}")
+                        logger.info(f"  FFmpeg declined to overwrite {output_file}")
+                        # This shouldn't happen with our new logic, but just in case
+                        if not self.prompt_overwrite(output_file):
+                            logger.info(f"  User chose not to overwrite")
+                            return True
+                        else:
+                            # User wants to overwrite, retry with -y flag
+                            logger.info(f"  Retrying with overwrite permission...")
+                            if '-y' not in cmd:
+                                cmd.insert(1, '-y')
+                            retry_process = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=300)
+                            if retry_process.returncode != 0:
+                                logger.error(f"  FFmpeg error on retry: {retry_process.stderr}")
+                                return False
                     else:
-                        logger.error(f"FFmpeg error: {process.stderr}")
+                        logger.error(f"  FFmpeg error: {process.stderr}")
                     return False
                 
-                logger.info(f"Initial audio conversion completed successfully")
+                logger.info(f"  Initial audio conversion completed successfully")
             except subprocess.TimeoutExpired:
                 logger.error(f"FFmpeg process timed out after 5 minutes")
                 return False
@@ -501,7 +632,7 @@ print("Album art embedded successfully!")
             output_dir (str, optional): Output directory. If None, use the input directory.
             
         Returns:
-            tuple: (number of successful conversions, total number of files attempted)
+            tuple: (number of successful conversions, total number of files processed)
         """
         if not os.path.isdir(input_dir):
             logger.error(f"Input directory does not exist: {input_dir}")
@@ -532,12 +663,17 @@ print("Album art embedded successfully!")
             ]
         
         total_files = len(files_to_convert)
-        logger.info(f"Found {total_files} audio files to convert")
+        logger.info(f"Found {total_files} audio files to process")
         
         # Convert each file
         success_count = 0
+        skipped_format_count = 0
+        
         for i, file in enumerate(files_to_convert, 1):
             logger.info(f"Processing file {i}/{total_files}: {os.path.basename(file)}")
+            
+            # Track if this file was already in target format
+            was_already_target_format = self.is_already_in_target_format(file)
             
             # Determine output path preserving directory structure if recursive
             if output_dir is not None and self.options['recursive']:
@@ -548,7 +684,13 @@ print("Album art embedded successfully!")
                 file_output_dir = output_dir
                 
             if self.convert_file(file, file_output_dir):
-                success_count += 1
+                if was_already_target_format:
+                    skipped_format_count += 1
+                else:
+                    success_count += 1
+        
+        if skipped_format_count > 0:
+            logger.info(f"Summary: {success_count} files converted, {skipped_format_count} files already in target format")
         
         return (success_count, total_files)
 
