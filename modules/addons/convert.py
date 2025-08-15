@@ -380,7 +380,7 @@ class AudioConverter:
         
         return cmd
     
-    def convert_file(self, input_file: str, output_dir: Optional[str] = None) -> bool:
+    def convert_file(self, input_file: str, output_dir: Optional[str] = None) -> Tuple[bool, str]:
         """
         Convert a single audio file to the specified format.
         
@@ -389,16 +389,17 @@ class AudioConverter:
             output_dir (str, optional): Output directory. If None, use the input directory.
             
         Returns:
-            bool: True if conversion was successful, False otherwise
+            tuple: (success: bool, reason: str) where reason is one of:
+                   'converted', 'already_target_format', 'skipped_existing', 'skipped_user', 'error'
         """
         if not os.path.isfile(input_file):
             logger.error(f"Input file does not exist: {input_file}")
-            return False
+            return False, 'error'
         
         # Check if file is already in target format with matching specs
         if self.is_already_in_target_format(input_file):
             logger.info(f"Already in target format: {os.path.basename(input_file)} - skipping conversion")
-            return True
+            return True, 'already_target_format'
         
         # Get output directory
         if output_dir is None:
@@ -420,6 +421,15 @@ class AudioConverter:
         is_same_file = input_file_normalized == output_file_normalized
         
         if is_same_file:
+            # For same-file conversion, we need to prompt user for permission to overwrite
+            if not self.options.get('force_overwrite', False) and not self.overwrite_all:
+                if self.skip_all:
+                    logger.info(f"Skipping file: {os.path.basename(input_file)} (user chose skip all)")
+                    return True, 'skipped_user'
+                elif not self.prompt_overwrite(input_file):
+                    logger.info(f"Skipping file: {os.path.basename(input_file)}")
+                    return True, 'skipped_user'
+            
             # Create a temporary output file with a suffix
             output_file = os.path.join(output_dir, f"{base_name}_converted.{output_ext}")
         
@@ -428,12 +438,12 @@ class AudioConverter:
         if os.path.exists(output_file):
             if self.options['skip_existing']:
                 logger.info(f"Skipping existing file: {output_file}")
-                return True
+                return True, 'skipped_existing'
             elif self.options.get('force_overwrite', False) or self.overwrite_all:
                 should_overwrite = True
             elif not self.prompt_overwrite(output_file):
                 logger.info(f"Skipping file: {os.path.basename(output_file)}")
-                return True
+                return True, 'skipped_user'
             else:
                 should_overwrite = True
             
@@ -501,12 +511,12 @@ class AudioConverter:
                 # Check for FFmpeg errors
                 if process.returncode != 0:
                     logger.error(f"  FFmpeg error: {process.stderr}")
-                    return False
+                    return False, 'error'
                 
                 logger.info(f"  Initial audio conversion completed successfully")
             except subprocess.TimeoutExpired:
                 logger.error(f"FFmpeg process timed out after 5 minutes")
-                return False
+                return False, 'error'
             
             # Special handling for Opus files with album art
             if output_format == 'opus' and has_album_art and self.options['metadata'] == 'y':
@@ -614,10 +624,10 @@ print("Album art embedded successfully!")
                     logger.info(f"  Replaced original file with converted version")
                 except Exception as e:
                     logger.error(f"  Failed to replace original file: {str(e)}")
-                    return False
+                    return False, 'error'
             
             logger.info(f"Successfully converted {input_file} to {output_file}")
-            return True
+            return True, 'converted'
         except Exception as e:
             logger.error(f"Error converting {input_file}: {str(e)}")
             # Clean up any temporary files that might have been created
@@ -635,7 +645,7 @@ print("Album art embedded successfully!")
                         os.remove(tmp_file)
                     except:
                         pass
-            return False
+            return False, 'error'
     
     def convert_directory(self, input_dir: str, output_dir: Optional[str] = None) -> Tuple[int, int]:
         """
@@ -680,14 +690,14 @@ print("Album art embedded successfully!")
         logger.info(f"Found {total_files} audio files to process")
         
         # Convert each file
-        success_count = 0
-        skipped_format_count = 0
+        converted_count = 0
+        already_target_count = 0
+        skipped_existing_count = 0
+        skipped_user_count = 0
+        error_count = 0
         
         for i, file in enumerate(files_to_convert, 1):
             logger.info(f"Processing file {i}/{total_files}: {os.path.basename(file)}")
-            
-            # Track if this file was already in target format
-            was_already_target_format = self.is_already_in_target_format(file)
             
             # Determine output path preserving directory structure if recursive
             if output_dir is not None and self.options['recursive']:
@@ -697,16 +707,36 @@ print("Album art embedded successfully!")
             else:
                 file_output_dir = output_dir
                 
-            if self.convert_file(file, file_output_dir):
-                if was_already_target_format:
-                    skipped_format_count += 1
-                else:
-                    success_count += 1
+            success, reason = self.convert_file(file, file_output_dir)
+            
+            # Track the outcome
+            if reason == 'converted':
+                converted_count += 1
+            elif reason == 'already_target_format':
+                already_target_count += 1
+            elif reason == 'skipped_existing':
+                skipped_existing_count += 1
+            elif reason == 'skipped_user':
+                skipped_user_count += 1
+            elif reason == 'error':
+                error_count += 1
         
-        if skipped_format_count > 0:
-            logger.info(f"Summary: {success_count} files converted, {skipped_format_count} files already in target format")
+        # Provide detailed summary
+        total_successful = converted_count + already_target_count + skipped_existing_count + skipped_user_count
+        logger.info(f"Processing complete:")
+        logger.info(f"  {converted_count} files converted successfully")
+        if already_target_count > 0:
+            logger.info(f"  {already_target_count} files already in target format (skipped)")
+        if skipped_existing_count > 0:
+            logger.info(f"  {skipped_existing_count} files skipped (existing files, --skip-existing used)")
+        if skipped_user_count > 0:
+            logger.info(f"  {skipped_user_count} files skipped (user chose not to overwrite)")
+        if error_count > 0:
+            logger.info(f"  {error_count} files failed due to errors")
         
-        return (success_count, total_files)
+        logger.info(f"Total: {total_successful}/{total_files} files processed successfully")
+        
+        return (converted_count, total_files)
 
 
 def parse_arguments():
@@ -918,30 +948,53 @@ def main():
         # Process all files first
         if input_files:
             logger.info(f"Converting {len(input_files)} individual file(s)")
-            success_count = 0
+            converted_count = 0
+            already_target_count = 0
+            skipped_existing_count = 0
+            skipped_user_count = 0
+            error_count = 0
             
             for file_path in input_files:
-                if converter.convert_file(file_path, output_dir):
-                    success_count += 1
-                    
-            logger.info(f"File conversion completed: {success_count}/{len(input_files)} files converted successfully")
-            if success_count < len(input_files):
+                success, reason = converter.convert_file(file_path, output_dir)
+                
+                # Track the outcome
+                if reason == 'converted':
+                    converted_count += 1
+                elif reason == 'already_target_format':
+                    already_target_count += 1
+                elif reason == 'skipped_existing':
+                    skipped_existing_count += 1
+                elif reason == 'skipped_user':
+                    skipped_user_count += 1
+                elif reason == 'error':
+                    error_count += 1
+            
+            # Provide detailed summary for individual files
+            total_successful = converted_count + already_target_count + skipped_existing_count + skipped_user_count
+            logger.info(f"Individual file processing complete:")
+            logger.info(f"  {converted_count} files converted successfully")
+            if already_target_count > 0:
+                logger.info(f"  {already_target_count} files already in target format (skipped)")
+            if skipped_existing_count > 0:
+                logger.info(f"  {skipped_existing_count} files skipped (existing files)")
+            if skipped_user_count > 0:
+                logger.info(f"  {skipped_user_count} files skipped (user chose not to overwrite)")
+            if error_count > 0:
+                logger.info(f"  {error_count} files failed due to errors")
+            
+            logger.info(f"Total: {total_successful}/{len(input_files)} files processed successfully")
+            
+            # Only exit with error if there were actual errors (not skips)
+            if error_count > 0:
                 sys.exit(1)
         
         # Then process all directories
-        total_dir_files = 0
-        total_dir_success = 0
-        
         for dir_path in input_dirs:
             logger.info(f"Converting files in directory: {dir_path}")
             dir_success, dir_total = converter.convert_directory(dir_path, output_dir)
-            total_dir_files += dir_total
-            total_dir_success += dir_success
             
-        if input_dirs:
-            logger.info(f"Directory conversion completed: {total_dir_success}/{total_dir_files} files converted successfully")
-            if total_dir_success < total_dir_files:
-                sys.exit(1)
+        # Note: Error reporting is now handled within convert_directory method
+        # No need to exit here since detailed statistics are already provided
         
     except Exception as e:
         logger.error(f"Error: {str(e)}")
