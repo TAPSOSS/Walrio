@@ -415,13 +415,18 @@ class AudioConverter:
         output_file = os.path.join(output_dir, f"{base_name}.{output_ext}")
         
         # Check if output file already exists and handle overwrite decision
+        should_overwrite = False
         if os.path.exists(output_file):
             if self.options['skip_existing']:
                 logger.info(f"Skipping existing file: {output_file}")
                 return True
+            elif self.options.get('force_overwrite', False) or self.overwrite_all:
+                should_overwrite = True
             elif not self.prompt_overwrite(output_file):
                 logger.info(f"Skipping file: {os.path.basename(output_file)}")
                 return True
+            else:
+                should_overwrite = True
             
         # Enhanced feedback - show what file we're working on
         logger.info(f"Processing: {os.path.basename(input_file)}")
@@ -461,8 +466,8 @@ class AudioConverter:
         # Build FFmpeg command
         cmd = self.build_ffmpeg_command(input_file, output_file)
         
-        # Add overwrite flag if we've decided to overwrite or if force_overwrite is set
-        if (os.path.exists(output_file) and (self.overwrite_all or self.options.get('force_overwrite', False))) or self.options.get('force_overwrite', False):
+        # Add overwrite flag if we've decided to overwrite the file
+        if should_overwrite or self.options.get('force_overwrite', False):
             if '-y' not in cmd:
                 cmd.insert(1, '-y')  # Insert after 'ffmpeg'
         
@@ -484,26 +489,9 @@ class AudioConverter:
                 if process.stdout:
                     logger.debug(f"FFmpeg stdout: {process.stdout}")
                 
-                # Check if user declined to overwrite the file
+                # Check for FFmpeg errors
                 if process.returncode != 0:
-                    # Look for the specific "not overwriting" message in stderr
-                    if "not overwriting" in process.stderr.lower() or "file exists" in process.stderr.lower():
-                        logger.info(f"  FFmpeg declined to overwrite {output_file}")
-                        # This shouldn't happen with our new logic, but just in case
-                        if not self.prompt_overwrite(output_file):
-                            logger.info(f"  User chose not to overwrite")
-                            return True
-                        else:
-                            # User wants to overwrite, retry with -y flag
-                            logger.info(f"  Retrying with overwrite permission...")
-                            if '-y' not in cmd:
-                                cmd.insert(1, '-y')
-                            retry_process = subprocess.run(cmd, capture_output=True, text=True, check=False, timeout=300)
-                            if retry_process.returncode != 0:
-                                logger.error(f"  FFmpeg error on retry: {retry_process.stderr}")
-                                return False
-                    else:
-                        logger.error(f"  FFmpeg error: {process.stderr}")
+                    logger.error(f"  FFmpeg error: {process.stderr}")
                     return False
                 
                 logger.info(f"  Initial audio conversion completed successfully")
