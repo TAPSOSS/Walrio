@@ -414,6 +414,15 @@ class AudioConverter:
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         output_file = os.path.join(output_dir, f"{base_name}.{output_ext}")
         
+        # If output file is the same as input file (same format, same directory), make a temp file and THEN replace original
+        input_file_normalized = os.path.abspath(input_file)
+        output_file_normalized = os.path.abspath(output_file)
+        is_same_file = input_file_normalized == output_file_normalized
+        
+        if is_same_file:
+            # Create a temporary output file with a suffix
+            output_file = os.path.join(output_dir, f"{base_name}_converted.{output_ext}")
+        
         # Check if output file already exists and handle overwrite decision
         should_overwrite = False
         if os.path.exists(output_file):
@@ -594,6 +603,19 @@ print("Album art embedded successfully!")
                 except Exception as e:
                     logger.warning(f"Error during album art processing: {str(e)}")
             
+            # If we used a temporary output file because input and output were the same,
+            # now replace the original file with the converted one
+            if is_same_file:
+                try:
+                    # Replace the original file with the converted file
+                    import shutil
+                    shutil.move(output_file, input_file)
+                    output_file = input_file  # Update for logging
+                    logger.info(f"  Replaced original file with converted version")
+                except Exception as e:
+                    logger.error(f"  Failed to replace original file: {str(e)}")
+                    return False
+            
             logger.info(f"Successfully converted {input_file} to {output_file}")
             return True
         except Exception as e:
@@ -603,6 +625,10 @@ print("Album art embedded successfully!")
                 f"{output_file}.albumart.jpg",
                 f"{output_file}.embed_art.py"
             ]
+            # Also clean up temporary converted file if we created one
+            if is_same_file and os.path.exists(output_file):
+                temp_files.append(output_file)
+                
             for tmp_file in temp_files:
                 if os.path.exists(tmp_file):
                     try:
