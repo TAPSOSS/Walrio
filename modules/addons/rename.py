@@ -582,8 +582,11 @@ def parse_arguments():
   # Album folder organization format
   python rename.py /music --format "{albumartist} - {album} - {title}"
 
-  # Resolve conflicts by adding counter to title
-  python rename.py /music --resolve-conflicts
+  # Resolve conflicts by adding counter to title (default behavior)
+  python rename.py /music
+
+  # Disable conflict resolution, skip conflicting files instead
+  python rename.py /music --no-resolve-conflicts
 
   # Custom format with conflict resolution
   python rename.py /music --format "{artist} - {title}" --resolve-conflicts
@@ -614,7 +617,7 @@ Character replacement examples (default: / and \\ become ~):
   --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
   --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
 
-Sanitization examples (default: sanitize enabled):
+Sanitization examples (default: sanitize enabled, prompt for special chars):
   --sanitize                         # Explicitly enable character filtering (default behavior)
   --s                                # Same as above using shortcut
   --dont-sanitize                    # Disable character filtering, keep all characters
@@ -626,6 +629,12 @@ Sanitization examples (default: sanitize enabled):
   --cs "0123456789"                  # Only allow numbers using shortcut
   --auto-sanitize                    # Automatically remove special chars without prompting
   --force-allow-special              # Always keep special chars without prompting
+
+Conflict resolution examples (default: resolve conflicts enabled):
+  python rename.py /music                       # Resolve conflicts by adding (2), (3) to title (default)
+  python rename.py /music --no-resolve-conflicts # Skip files with conflicting names instead
+  python rename.py /music --resolve-conflicts    # Explicitly enable conflict resolution
+  python rename.py /music --skip-existing        # Also skip existing files (when combined with --no-resolve-conflicts)
 
 Custom sanitization examples:
   --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
@@ -696,12 +705,12 @@ Format string tips:
     parser.add_argument(
         "--auto-sanitize",
         action="store_true",
-        help="Automatically sanitize filenames without prompting when special characters are detected"
+        help="Automatically sanitize filenames without prompting when special characters are detected (disabled by default)"
     )
     parser.add_argument(
         "--force-allow-special",
         action="store_true",
-        help="Always allow special characters without prompting (equivalent to --dont-sanitize but still applies replacements)"
+        help="Always allow special characters without prompting (disabled by default, equivalent to --dont-sanitize but still applies replacements)"
     )
     
     # Behavior options
@@ -714,12 +723,18 @@ Format string tips:
         "--skip-existing",
         action="store_true",
         default=True,
-        help="Skip renaming if target filename already exists (default: True)"
+        help="Skip renaming if target filename already exists (default: True, but overridden by conflict resolution)"
     )
     parser.add_argument(
         "--resolve-conflicts",
         action="store_true",
-        help="Resolve filename conflicts by adding counter to title instead of skipping (overrides --skip-existing)"
+        default=True,
+        help="Resolve filename conflicts by adding counter to title instead of skipping (default: True)"
+    )
+    parser.add_argument(
+        "--no-resolve-conflicts",
+        action="store_true",
+        help="Don't resolve conflicts, skip files with conflicting names instead"
     )
     parser.add_argument(
         "--skip-no-metadata",
@@ -848,11 +863,17 @@ def main():
         sanitize_enabled = True
     # If neither flag is specified, use default (True)
     
+    # Handle conflict resolution (enabled by default, unless explicitly disabled)
+    resolve_conflicts = args.resolve_conflicts and not args.no_resolve_conflicts
+    if args.no_resolve_conflicts and args.resolve_conflicts:
+        logger.warning("Both --resolve-conflicts and --no-resolve-conflicts specified. Disable flag takes priority - conflict resolution disabled.")
+        resolve_conflicts = False
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
-        'skip_existing': args.skip_existing and not args.resolve_conflicts,  # Override skip if resolve is enabled
+        'skip_existing': args.skip_existing and not resolve_conflicts,  # Override skip if resolve is enabled
         'skip_no_metadata': args.skip_no_metadata,
         'format': args.format,
         'char_replacements': char_replacements,
@@ -901,6 +922,16 @@ def main():
             logger.info(f"Character replacements: {replacement_info}")
         if not sanitize_enabled:
             logger.info("Filename sanitization disabled - keeping all characters except replacements")
+        elif args.auto_sanitize:
+            logger.info("Auto-sanitization enabled - special characters will be removed automatically")
+        elif args.force_allow_special:
+            logger.info("Force allow special characters enabled - special characters will be kept automatically")
+        
+        # Show conflict resolution behavior
+        if resolve_conflicts:
+            logger.info("Conflict resolution enabled - duplicates will have counter added to title")
+        else:
+            logger.info("Conflict resolution disabled - conflicting files will be skipped")
         
         # Process all files first
         if input_files:
