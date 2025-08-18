@@ -74,6 +74,10 @@ class AudioRenamer:
         self.metadata_error_count = 0
         self.conflict_count = 0
         
+        # Interactive special character handling state
+        self.allow_special_all = False
+        self.skip_special_all = False
+        
         # Validate FFprobe availability
         self._check_ffprobe()
     
@@ -97,6 +101,47 @@ class AudioRenamer:
                 "FFprobe not found. Please install FFmpeg and make sure it's in your PATH."
             )
     
+    def prompt_allow_special_chars(self, original_name: str, sanitized_name: str) -> bool:
+        """
+        Prompt user whether to allow special characters when sanitization removes them.
+        
+        Args:
+            original_name (str): Original filename before sanitization
+            sanitized_name (str): Filename after sanitization
+            
+        Returns:
+            bool: True if should allow special chars, False if should use sanitized version
+        """
+        if self.options.get('force_allow_special', False):
+            return True
+        
+        if self.allow_special_all:
+            return True
+        
+        if self.skip_special_all:
+            return False
+        
+        print(f"\nSpecial characters detected in filename:")
+        print(f"  Original:  {original_name}")
+        print(f"  Sanitized: {sanitized_name}")
+        print(f"Some characters were removed during sanitization.")
+        
+        while True:
+            response = input("Keep special characters? (y)es, (n)o, (ya) yes to all, (na) no to all: ").lower().strip()
+            
+            if response in ['y', 'yes']:
+                return True
+            elif response in ['n', 'no']:
+                return False
+            elif response in ['ya', 'yes to all', 'yesall']:
+                self.allow_special_all = True
+                return True
+            elif response in ['na', 'no to all', 'noall']:
+                self.skip_special_all = True
+                return False
+            else:
+                print("Please enter 'y', 'n', 'ya', or 'na'")
+    
     def sanitize_filename(self, text: str) -> str:
         """
         Clean a string to be safe for use as a filename.
@@ -109,6 +154,9 @@ class AudioRenamer:
         """
         if not text:
             return "Unknown"
+        
+        # Store original for comparison
+        original_text = text
         
         # Get character replacements from options (default to standard replacements)
         char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
@@ -141,6 +189,23 @@ class AudioRenamer:
         
         # Clean up multiple spaces and strip whitespace (always do this)
         final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
+        
+        # Check if sanitization removed characters and prompt user if needed
+        if (final_sanitized != original_text and 
+            not self.options.get('dont_sanitize', False) and 
+            not self.options.get('auto_sanitize', False)):
+            
+            # Check if there's a meaningful difference (not just whitespace cleanup)
+            original_cleaned = re.sub(r'\s+', ' ', original_text).strip()
+            if final_sanitized != original_cleaned:
+                # Prompt user about keeping special characters
+                if self.prompt_allow_special_chars(original_text, final_sanitized):
+                    # User wants to keep special characters, return original with basic cleanup
+                    # Still apply character replacements but skip filtering
+                    result = original_text
+                    for old_char, new_char in char_replacements.items():
+                        result = result.replace(old_char, new_char)
+                    final_sanitized = re.sub(r'\s+', ' ', result).strip()
         
         # Ensure we don't end up with an empty string
         if not final_sanitized:
@@ -290,6 +355,97 @@ class AudioRenamer:
             logger.error(f"Error formatting filename for {os.path.basename(filepath)}: {str(e)}")
             return None
     
+    def resolve_filename_conflict(self, filepath: str, new_filename: str, directory: str) -> str:
+        """
+        Resolve filename conflicts by adding a counter to the title portion of the filename.
+        
+        Args:
+            filepath (str): Original file path
+            new_filename (str): Proposed new filename
+            directory (str): Target directory
+            
+        Returns:
+            str: Resolved filename with counter added to title if needed
+        """
+        new_filepath = os.path.join(directory, new_filename)
+        
+        # If no conflict, return original filename
+        if not os.path.exists(new_filepath):
+            return new_filename
+        
+        # Get file extension
+        file_ext = os.path.splitext(new_filename)[1]
+        filename_base = os.path.splitext(new_filename)[0]
+        
+        # Try to parse the filename format to identify the title portion
+        format_string = self.options.get('format', DEFAULT_FORMAT)
+        metadata = self.get_file_metadata(filepath)
+        
+        # Create a mapping to find where title appears in the format
+        import string
+        formatter = string.Formatter()
+        format_fields = [field_name for _, field_name, _, _ in formatter.parse(format_string) if field_name]
+        
+        counter = 2  # Start with (2) since the original is like (1)
+        
+        # If we can identify the title field, add counter to it
+        if 'title' in format_fields and 'title' in metadata:
+            original_title = metadata['title']
+            
+            while os.path.exists(new_filepath):
+                # Create new metadata with modified title
+                modified_metadata = metadata.copy()
+                modified_metadata['title'] = f"{original_title} ({counter})"
+                
+                # Sanitize the modified title
+                sanitized_title = self.sanitize_filename(modified_metadata['title'])
+                modified_metadata['title'] = sanitized_title
+                
+                # Generate new filename with modified title
+                try:
+                    # Build format values
+                    format_values = {}
+                    for field in format_fields:
+                        if field in modified_metadata and modified_metadata[field].strip():
+                            if field == 'title':
+                                format_values[field] = modified_metadata[field]  # Already sanitized above
+                            else:
+                                format_values[field] = self.sanitize_filename(modified_metadata[field].strip())
+                        else:
+                            format_values[field] = ""
+                    
+                    # Apply the format string
+                    new_filename_base = format_string.format(**format_values)
+                    new_filename_base = re.sub(r'\s+', ' ', new_filename_base).strip()
+                    new_filename_base = new_filename_base.strip(' -_')
+                    
+                    if not new_filename_base:
+                        new_filename_base = "Unknown"
+                    
+                    new_filename = f"{new_filename_base}{file_ext}"
+                    new_filepath = os.path.join(directory, new_filename)
+                    counter += 1
+                    
+                except Exception:
+                    # If format parsing fails, fall back to simple counter on whole filename
+                    break
+            else:
+                # Successfully found a unique filename using title modification
+                return new_filename
+        
+        # Fallback: add counter to the end of the entire filename
+        counter = 2
+        base_name = filename_base
+        new_filename = f"{base_name} ({counter}){file_ext}"
+        new_filepath = os.path.join(directory, new_filename)
+        
+        while os.path.exists(new_filepath):
+            counter += 1
+            new_filename = f"{base_name} ({counter}){file_ext}"
+            new_filepath = os.path.join(directory, new_filename)
+        
+        return new_filename
+    
     def rename_file(self, filepath: str) -> bool:
         """
         Rename a single audio file based on its metadata.
@@ -333,14 +489,12 @@ class AudioRenamer:
                 self.conflict_count += 1
                 return True
             else:
-                # Add a number suffix to make it unique
-                base_name, ext = os.path.splitext(new_filename)
-                counter = 1
-                while os.path.exists(new_filepath):
-                    new_filename = f"{base_name} ({counter}){ext}"
+                # Resolve conflict by adding counter to title
+                resolved_filename = self.resolve_filename_conflict(filepath, new_filename, directory)
+                if resolved_filename != new_filename:
+                    logger.warning(f"File conflict resolved by modifying title: {resolved_filename}")
+                    new_filename = resolved_filename
                     new_filepath = os.path.join(directory, new_filename)
-                    counter += 1
-                logger.warning(f"File conflict resolved by adding suffix: {new_filename}")
         
         # Perform the rename
         try:
@@ -428,8 +582,14 @@ def parse_arguments():
   # Album folder organization format
   python rename.py /music --format "{albumartist} - {album} - {title}"
 
-  # Year and genre format
-  python rename.py /music --format "{year} - {genre} - {artist} - {title}"
+  # Resolve conflicts by adding counter to title (default behavior)
+  python rename.py /music
+
+  # Disable conflict resolution, skip conflicting files instead
+  python rename.py /music --no-resolve-conflicts
+
+  # Custom format with conflict resolution
+  python rename.py /music --format "{artist} - {title}" --resolve-conflicts
 
 Available pre-defined metadata fields:
   {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
@@ -457,7 +617,7 @@ Character replacement examples (default: / and \\ become ~):
   --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
   --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
 
-Sanitization examples (default: sanitize enabled):
+Sanitization examples (default: sanitize enabled, prompt for special chars):
   --sanitize                         # Explicitly enable character filtering (default behavior)
   --s                                # Same as above using shortcut
   --dont-sanitize                    # Disable character filtering, keep all characters
@@ -467,6 +627,14 @@ Sanitization examples (default: sanitize enabled):
   --s --rc "&" "and"                 # Explicit sanitize with custom replacements
   --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
   --cs "0123456789"                  # Only allow numbers using shortcut
+  --auto-sanitize                    # Automatically remove special chars without prompting
+  --force-allow-special              # Always keep special chars without prompting
+
+Conflict resolution examples (default: resolve conflicts enabled):
+  python rename.py /music                       # Resolve conflicts by adding (2), (3) to title (default)
+  python rename.py /music --no-resolve-conflicts # Skip files with conflicting names instead
+  python rename.py /music --resolve-conflicts    # Explicitly enable conflict resolution
+  python rename.py /music --skip-existing        # Also skip existing files (when combined with --no-resolve-conflicts)
 
 Custom sanitization examples:
   --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
@@ -534,6 +702,16 @@ Format string tips:
         metavar="CHARS",
         help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
     )
+    parser.add_argument(
+        "--auto-sanitize",
+        action="store_true",
+        help="Automatically sanitize filenames without prompting when special characters are detected (disabled by default)"
+    )
+    parser.add_argument(
+        "--force-allow-special",
+        action="store_true",
+        help="Always allow special characters without prompting (disabled by default, equivalent to --dont-sanitize but still applies replacements)"
+    )
     
     # Behavior options
     parser.add_argument(
@@ -545,7 +723,18 @@ Format string tips:
         "--skip-existing",
         action="store_true",
         default=True,
-        help="Skip renaming if target filename already exists (default: True)"
+        help="Skip renaming if target filename already exists (default: True, but overridden by conflict resolution)"
+    )
+    parser.add_argument(
+        "--resolve-conflicts",
+        action="store_true",
+        default=True,
+        help="Resolve filename conflicts by adding counter to title instead of skipping (default: True)"
+    )
+    parser.add_argument(
+        "--no-resolve-conflicts",
+        action="store_true",
+        help="Don't resolve conflicts, skip files with conflicting names instead"
     )
     parser.add_argument(
         "--skip-no-metadata",
@@ -674,15 +863,23 @@ def main():
         sanitize_enabled = True
     # If neither flag is specified, use default (True)
     
+    # Handle conflict resolution (enabled by default, unless explicitly disabled)
+    resolve_conflicts = args.resolve_conflicts and not args.no_resolve_conflicts
+    if args.no_resolve_conflicts and args.resolve_conflicts:
+        logger.warning("Both --resolve-conflicts and --no-resolve-conflicts specified. Disable flag takes priority - conflict resolution disabled.")
+        resolve_conflicts = False
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
-        'skip_existing': args.skip_existing,
+        'skip_existing': args.skip_existing and not resolve_conflicts,  # Override skip if resolve is enabled
         'skip_no_metadata': args.skip_no_metadata,
         'format': args.format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
+        'auto_sanitize': args.auto_sanitize,
+        'force_allow_special': args.force_allow_special,
     }
     
     # Add custom sanitization character set if provided
@@ -725,6 +922,16 @@ def main():
             logger.info(f"Character replacements: {replacement_info}")
         if not sanitize_enabled:
             logger.info("Filename sanitization disabled - keeping all characters except replacements")
+        elif args.auto_sanitize:
+            logger.info("Auto-sanitization enabled - special characters will be removed automatically")
+        elif args.force_allow_special:
+            logger.info("Force allow special characters enabled - special characters will be kept automatically")
+        
+        # Show conflict resolution behavior
+        if resolve_conflicts:
+            logger.info("Conflict resolution enabled - duplicates will have counter added to title")
+        else:
+            logger.info("Conflict resolution disabled - conflicting files will be skipped")
         
         # Process all files first
         if input_files:
