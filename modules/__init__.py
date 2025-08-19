@@ -19,6 +19,9 @@ Addon Modules:
 - rename: Standardize audio file names based on metadata
 - replaygain: ReplayGain LUFS analysis and tagging using rsgain
 - organize: Library organization tools and utilities
+
+Niche Modules:
+- applyloudness: Apply gain adjustments directly to audio files using FFmpeg with ReplayGain or manual dB values (WARNING: can damage audio files irreversibly)
 """
 
 __version__ = "1.0.0"
@@ -36,10 +39,18 @@ try:
 except ImportError:
     pass
 
+# Import niche modules
+try:
+    from .niche import applyloudness
+except ImportError:
+    pass
+
 # Make all modules available at package level
 __all__ = [
     # Core modules
     'database', 'player', 'playlist', 'queue',
     # Addon modules  
-    'convert', 'file_relocater', 'rename', 'replaygain', 'organize'
+    'convert', 'file_relocater', 'rename', 'replaygain', 'organize',
+    # Niche modules
+    'applyloudness'
 ]
