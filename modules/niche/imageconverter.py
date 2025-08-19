@@ -105,12 +105,13 @@ def validate_format(format_name: str) -> str:
     return format_name
 
 
-def parse_size(size_str: str) -> Tuple[Optional[str], bool]:
+def parse_size(size_str: str, force_stretch: bool = False) -> Tuple[Optional[str], bool]:
     """
     Parse size string into ImageMagick geometry format.
     
     Args:
         size_str (str): Size string in format 'WIDTHxHEIGHT', 'WIDTH', or 'xHEIGHT'
+        force_stretch (bool): Force exact dimensions, ignoring aspect ratio
         
     Returns:
         tuple: (geometry_string, maintain_aspect_ratio)
@@ -133,9 +134,13 @@ def parse_size(size_str: str) -> Tuple[Optional[str], bool]:
         if not width_str and not height_str:
             raise ValueError("Invalid size format. Use 'WIDTHxHEIGHT', 'WIDTH', or 'xHEIGHT'")
         
-        # ImageMagick geometry: WIDTHxHEIGHT for exact size, WIDTHxHEIGHT> to shrink only
-        geometry = f"{width_str}x{height_str}"
-        maintain_aspect = True
+        # ImageMagick geometry: WIDTHxHEIGHT! forces exact size (ignores aspect ratio)
+        if force_stretch and width_str and height_str:
+            geometry = f"{width_str}x{height_str}!"
+            maintain_aspect = False
+        else:
+            geometry = f"{width_str}x{height_str}"
+            maintain_aspect = True
         
         return geometry, maintain_aspect
     else:
@@ -402,11 +407,11 @@ Examples:
   # Convert single image to JPEG
   python imageconverter.py image.png --format jpeg
 
-  # Convert and resize to 800px width (maintaining aspect ratio)
-  python imageconverter.py image.png --format jpeg --size 800
-
-  # Convert and resize to specific dimensions
+  # Convert and resize to 800px width (force stretch to exact size)
   python imageconverter.py image.png --format jpeg --size 800x600
+
+  # Convert and resize maintaining aspect ratio
+  python imageconverter.py image.png --format jpeg --size 800x600 --nostretch
 
   # Convert and resize by percentage
   python imageconverter.py image.png --format jpeg --size 50%
@@ -422,9 +427,13 @@ Examples:
 
 Supported formats: {}
 
+Note: By default, exact dimensions (e.g., 800x600) will stretch the image to fit exactly.
+Use --nostretch or --nstr to maintain aspect ratio instead.
+
 ImageMagick geometry examples:
-  800x600   - Resize to fit within 800x600 (maintains aspect ratio)
-  800x600!  - Resize to exactly 800x600 (may distort)
+  800x600   - Resize to exactly 800x600 (stretches, default behavior)
+  800x600   - With --nostretch: fit within 800x600 (maintains aspect ratio)
+  800x600!  - Force exact size (stretches - same as default)
   800x600>  - Only shrink if larger than 800x600
   800x600<  - Only enlarge if smaller than 800x600
   50%       - Resize to 50% of original size
@@ -451,6 +460,12 @@ ImageMagick geometry examples:
     parser.add_argument(
         '-s', '--size',
         help='Target size using ImageMagick geometry (e.g., 800x600, 800, 50%%)'
+    )
+    
+    parser.add_argument(
+        '--nostretch', '--nstr',
+        action='store_true',
+        help='Maintain aspect ratio instead of stretching to exact dimensions'
     )
     
     parser.add_argument(
@@ -548,7 +563,9 @@ def main():
     geometry = None
     if args.size:
         try:
-            geometry, _ = parse_size(args.size)
+            # Force stretch by default, unless --nostretch is specified
+            force_stretch = not args.nostretch
+            geometry, _ = parse_size(args.size, force_stretch)
         except ValueError as e:
             logger.error(f"Invalid size format: {e}")
             sys.exit(1)
