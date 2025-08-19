@@ -65,6 +65,14 @@ File Relocater
    :undoc-members:
    :show-inheritance:
 
+Image Converter
+~~~~~~~~~~~~~~~
+
+.. automodule:: modules.addons.imageconverter
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
 Rename
 ~~~~~~
 
@@ -88,6 +96,14 @@ Apply Loudness
 ~~~~~~~~~~~~~~
 
 .. automodule:: modules.niche.applyloudness
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Resize Album Art
+~~~~~~~~~~~~~~~~
+
+.. automodule:: modules.niche.resizealbumart
    :members:
    :undoc-members:
    :show-inheritance:
