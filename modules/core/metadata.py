@@ -477,7 +477,7 @@ class MetadataEditor:
     
     def _set_mp3_album_art(self, filepath: str, artwork_path: str) -> bool:
         """
-        Set album art for MP3 files using eyeD3.
+        Set album art for MP3 files using mid3v2.
         
         Args:
             filepath (str): Path to the MP3 file to modify
