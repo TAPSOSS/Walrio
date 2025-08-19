@@ -153,7 +153,24 @@ class MetadataEditor:
             'disk': 'disc',
             'COMM::eng': 'comment',
             'COMMENT': 'comment',
-            '\xa9cmt': 'comment'
+            '\xa9cmt': 'comment',
+            'TCOM': 'composer',
+            'COMPOSER': 'composer',
+            '\xa9wrt': 'composer',
+            'TPE3': 'performer',
+            'PERFORMER': 'performer',
+            'TIT1': 'grouping',
+            'GROUPING': 'grouping',
+            '\xa9grp': 'grouping',
+            'USLT::eng': 'lyrics',
+            'LYRICS': 'lyrics',
+            '\xa9lyr': 'lyrics',
+            'TORY': 'originalyear',
+            'ORIGINALDATE': 'originaldate',
+            'ORIGINALYEAR': 'originalyear',
+            'TCMP': 'compilation',
+            'COMPILATION': 'compilation',
+            'cpil': 'compilation'
         }
         
         for line in lines:

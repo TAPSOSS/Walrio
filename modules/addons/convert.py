@@ -20,6 +20,12 @@ import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 
+# Import the centralized metadata module for OPUS album art handling
+try:
+    from ..core import metadata
+except ImportError:
+    metadata = None
+
 # Configure logging format
 logging.basicConfig(
     level=logging.INFO,
@@ -548,64 +554,18 @@ class AudioConverter:
                     )
                     
                     if art_process.returncode == 0 and os.path.exists(temp_art_file):
-                        # Now embed the extracted art into the Opus file using mutagen via python script
+                        # Use the centralized metadata module to embed album art
                         logger.info(f"Album art extracted successfully to {temp_art_file}")
-                        logger.info("Embedding album art in Opus file using mutagen")
+                        logger.info("Embedding album art in Opus file using metadata module")
                         
-                        # Create a small Python script to embed the cover using mutagen
-                        temp_script = f"{output_file}.embed_art.py"
-                        with open(temp_script, 'w') as f:
-                            f.write(f'''
-import base64
-from mutagen.oggopus import OggOpus
-from mutagen.flac import Picture
-from PIL import Image
-import io
-
-# Load the image and resize if necessary
-img = Image.open("{temp_art_file}")
-img = img.convert("RGB")
-img = img.resize((1000, 1000), Image.LANCZOS)  # Resize to reasonable size
-buf = io.BytesIO()
-img.save(buf, format="JPEG")
-img_data = buf.getvalue()
-
-# Create FLAC Picture object
-pic = Picture()
-pic.mime = "image/jpeg"
-pic.type = 3  # Front cover
-pic.data = img_data
-pic.desc = "Cover"
-
-# Embed in Opus file
-opus = OggOpus("{output_file}")
-opus["METADATA_BLOCK_PICTURE"] = [base64.b64encode(pic.write()).decode("ascii")]
-opus.save()
-
-print("Album art embedded successfully!")
-''')
-                        
-                        # Execute the Python script
-                        python_cmd = [sys.executable, temp_script]
-                        logger.debug(f"Running Python script to embed album art: {' '.join(python_cmd)}")
-                        
-                        python_process = subprocess.run(
-                            python_cmd,
-                            capture_output=True,
-                            text=True,
-                            check=False,
-                            timeout=60  # Set a 1-minute timeout for embedding
-                        )
-                        
-                        if python_process.returncode == 0:
+                        if metadata and metadata.set_album_art(output_file, temp_art_file):
                             logger.info("Successfully embedded album art in Opus file")
                         else:
-                            logger.warning(f"Failed to embed album art: {python_process.stderr}")
+                            logger.warning("Failed to embed album art using metadata module")
                         
-                        # Clean up temporary files
-                        for temp_file in [temp_art_file, temp_script]:
-                            if os.path.exists(temp_file):
-                                os.remove(temp_file)
+                        # Clean up temporary art file
+                        if os.path.exists(temp_art_file):
+                            os.remove(temp_art_file)
                     else:
                         logger.warning(f"Failed to extract album art: {art_process.stderr}")
                 except subprocess.TimeoutExpired:
@@ -632,8 +592,7 @@ print("Album art embedded successfully!")
             logger.error(f"Error converting {input_file}: {str(e)}")
             # Clean up any temporary files that might have been created
             temp_files = [
-                f"{output_file}.albumart.jpg",
-                f"{output_file}.embed_art.py"
+                f"{output_file}.albumart.jpg"
             ]
             # Also clean up temporary converted file if we created one
             if is_same_file and os.path.exists(output_file):
