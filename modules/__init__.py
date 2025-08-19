@@ -19,7 +19,6 @@ Addon Modules:
 - file_relocater: Organize audio files based on metadata into folder structures
 - rename: Standardize audio file names based on metadata
 - replaygain: ReplayGain LUFS analysis and tagging using rsgain
-- organize: Library organization tools and utilities
 
 Niche Modules:
 - applyloudness: Apply gain adjustments directly to audio files using FFmpeg with ReplayGain or manual dB values (WARNING: can damage audio files irreversibly)
@@ -36,7 +35,7 @@ except ImportError:
 
 # Import addon modules
 try:
-    from .addons import convert, file_relocater, rename, replaygain, organize
+    from .addons import convert, file_relocater, rename, replaygain
 except ImportError:
     pass
 
@@ -51,7 +50,7 @@ __all__ = [
     # Core modules
     'database', 'player', 'playlist', 'queue', 'metadata',
     # Addon modules  
-    'convert', 'file_relocater', 'rename', 'replaygain', 'organize',
+    'convert', 'file_relocater', 'rename', 'replaygain',
     # Niche modules
     'applyloudness'
 ]
