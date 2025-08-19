@@ -1,17 +1,28 @@
 API Reference
 =============
 
-.. automodule:: modules
+This section contains the complete API reference for Walrio modules, automatically generated from the source code docstrings.
+
+Core Modules
+------------
+
+.. automodule:: modules.core
    :members:
    :undoc-members:
    :show-inheritance:
 
-This section contains the complete API reference for Walrio modules, automatically generated from the source code docstrings.
+Addon Modules  
+-------------
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Module APIs
+.. automodule:: modules.addons
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
-   core
-   addons
-   niche
+Niche Modules
+-------------
+
+.. automodule:: modules.niche
+   :members:
+   :undoc-members:
+   :show-inheritance:

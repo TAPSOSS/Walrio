@@ -77,7 +77,7 @@ def get_help_output(file_path: str) -> Optional[str]:
         str or None: Help output if successful, None otherwise
     """
     try:
-        # Run the script with --help
+        # First try running as a script
         result = subprocess.run(
             [sys.executable, file_path, '--help'],
             capture_output=True,
@@ -88,8 +88,25 @@ def get_help_output(file_path: str) -> Optional[str]:
         
         if result.returncode == 0:
             return result.stdout
-        else:
-            return None
+        
+        # If that fails due to import errors, try running as a module
+        # Convert file path to module path
+        relative_path = os.path.relpath(file_path, os.path.abspath('..'))
+        if relative_path.startswith('modules/'):
+            module_path = relative_path[:-3].replace('/', '.')  # Remove .py and convert to module notation
+            
+            result = subprocess.run(
+                [sys.executable, '-m', module_path, '--help'],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=os.path.abspath('..')
+            )
+            
+            if result.returncode == 0:
+                return result.stdout
+        
+        return None
     except Exception:
         return None
 
