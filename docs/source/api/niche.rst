@@ -1,7 +1,7 @@
-Addon Modules
+Niche Modules
 =============
 
-.. automodule:: modules.addons
+.. automodule:: modules.niche
    :members:
    :undoc-members:
    :show-inheritance:
