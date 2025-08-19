@@ -13,15 +13,16 @@ If you're interested in contributing to Walrio check out our [Contributing Guide
 - Python 3.6+ (and pip installs using pip with python and requirements.txt)
 - GStreamer 1.0 (with gst-launch-1.0 command-line tool)
 - FFmpeg (for most audio analysis and conversion)
-- rsgain (for ReplayGain LUFS analysis in replaygain.py addon)
+- rsgain (for ReplayGain LUFS analysis)
+- ImageMagick (for image conversion and processing)
 
 ### Dependency install commands
 I only have the developer environment set up properly for my OS of choice (fedora), feel free to contribute the other required dependecy commands if you know them for other operating systems.
 
 #### Fedora/RHEL/CentOS:
 ```bash
-# Install GStreamer, FFmpeg, and rsgain system packages
-sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg rsgain
+# Install GStreamer, FFmpeg, ImageMagick, and rsgain system packages
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
 
 # Install Python dependencies
 pip install -r requirements.txt
