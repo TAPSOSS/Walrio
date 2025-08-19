@@ -17,12 +17,12 @@ import subprocess
 import hashlib
 import time
 from pathlib import Path
-from player import play_audio
-from playlist import load_m3u_playlist
+from .player import play_audio
+from .playlist import load_m3u_playlist
 
 # Try to import database functions for auto-adding missing songs
 try:
-    from database import extract_metadata, get_file_hash
+    from .database import extract_metadata, get_file_hash
     DATABASE_AVAILABLE = True
 except ImportError:
     print("Note: database.py functions not available. Auto-adding missing songs disabled.")
