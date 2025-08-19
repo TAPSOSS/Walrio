@@ -46,10 +46,10 @@ Modules are the actually music player modules to be used in the backend of any G
 Addons are modules that greatly assist a standard music player but aren't technically needed to play music (such as converters, album art fetchers, etc.).
 
 #### Core
-Essential core libraries are modules that are 100% needed for a standard audio player (play music, analyze, etc.).
+Essential core libraries are modules that are 100% needed for a standard audio player (play music, analyze, etc.) or are referenced by a large amount of other scripts/files.
 
 #### Niche
-The Niche folder is for niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, NAS, etc.).
+The Niche folder is for niche scripts/features for specific devices or workflows (scripts to hook up to lighting system, to be used with NAS, apply gain directly to files, etc.).
 
 ### Testing Files
 This is where simple audio and playlist files for testing purposes are stored. The files in there were made by [@tapscodes](https://github.com/tapscodes) and aren't super pleasent to listen to but are guaranteed to be legally safe. When testing/writing code, it's best to use your own real music files for testing but these files are there for those who don't have those files.
