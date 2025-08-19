@@ -404,23 +404,26 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert single image to JPEG
-  python imageconverter.py image.png --format jpeg
+  # Convert single image to 1000x1000 JPEG (default behavior)
+  python imageconverter.py image.png
 
-  # Convert and resize to 800px width (force stretch to exact size)
-  python imageconverter.py image.png --format jpeg --size 800x600
+  # Convert to different format, keeping default 1000x1000 size
+  python imageconverter.py image.png --format webp
 
-  # Convert and resize maintaining aspect ratio
-  python imageconverter.py image.png --format jpeg --size 800x600 --nostretch
+  # Convert with custom dimensions (force stretch)
+  python imageconverter.py image.png --size 800x600
+
+  # Convert maintaining aspect ratio with custom dimensions
+  python imageconverter.py image.png --size 800x600 --nostretch
 
   # Convert and resize by percentage
-  python imageconverter.py image.png --format jpeg --size 50%
+  python imageconverter.py image.png --size 50%
 
-  # Batch convert all images in directory
-  python imageconverter.py /path/to/images --format webp --recursive
+  # Batch convert all images in directory to default 1000x1000 JPEG
+  python imageconverter.py /path/to/images --recursive
 
   # Convert with custom quality and strip metadata
-  python imageconverter.py image.jpg --format webp --quality 80 --strip-metadata
+  python imageconverter.py image.jpg --quality 80 --strip-metadata
 
   # Get image information
   python imageconverter.py image.jpg --info
@@ -459,7 +462,8 @@ ImageMagick geometry examples:
     
     parser.add_argument(
         '-s', '--size',
-        help='Target size using ImageMagick geometry (e.g., 800x600, 800, 50%%)'
+        default='1000x1000',
+        help='Target size using ImageMagick geometry (default: 1000x1000)'
     )
     
     parser.add_argument(
@@ -559,16 +563,14 @@ def main():
         logger.error("Quality must be between 1 and 100")
         sys.exit(1)
     
-    # Parse size/geometry
-    geometry = None
-    if args.size:
-        try:
-            # Force stretch by default, unless --nostretch is specified
-            force_stretch = not args.nostretch
-            geometry, _ = parse_size(args.size, force_stretch)
-        except ValueError as e:
-            logger.error(f"Invalid size format: {e}")
-            sys.exit(1)
+    # Parse size/geometry (always has a default value now)
+    try:
+        # Force stretch by default, unless --nostretch is specified
+        force_stretch = not args.nostretch
+        geometry, _ = parse_size(args.size, force_stretch)
+    except ValueError as e:
+        logger.error(f"Invalid size format: {e}")
+        sys.exit(1)
     
     # Validate format
     try:
