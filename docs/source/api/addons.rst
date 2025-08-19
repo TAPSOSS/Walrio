@@ -1,7 +1,0 @@
-Addon Modules
-=============
-
-.. automodule:: modules.addons
-   :members:
-   :undoc-members:
-   :show-inheritance:
