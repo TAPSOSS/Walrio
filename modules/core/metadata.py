@@ -477,7 +477,7 @@ class MetadataEditor:
     
     def _set_mp3_album_art(self, filepath: str, artwork_path: str) -> bool:
         """
-        Set album art for MP3 files using mid3v2.
+        Set album art for MP3 files using eyeD3.
         
         Args:
             filepath (str): Path to the MP3 file to modify
@@ -487,6 +487,32 @@ class MetadataEditor:
             bool: True if album art was successfully set, False otherwise
         """
         try:
+            # Try eyeD3 first (preferred for album art)
+            try:
+                cmd = [
+                    'eyeD3',
+                    '--add-image',
+                    f'{artwork_path}:FRONT_COVER',
+                    str(filepath)
+                ]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30
+                )
+                
+                if result.returncode == 0:
+                    logger.info(f"Successfully set album art for {os.path.basename(filepath)} using eyeD3")
+                    return True
+                else:
+                    logger.debug(f"eyeD3 album art error: {result.stderr}")
+            except FileNotFoundError:
+                logger.debug("eyeD3 not available, falling back to mid3v2")
+            
+            # Fallback to mid3v2 if eyeD3 fails or isn't available
             cmd = [
                 'mid3v2',
                 '--APIC',
@@ -503,7 +529,7 @@ class MetadataEditor:
             )
             
             if result.returncode == 0:
-                logger.info(f"Successfully set album art for {os.path.basename(filepath)}")
+                logger.info(f"Successfully set album art for {os.path.basename(filepath)} using mid3v2")
                 return True
             else:
                 logger.error(f"mid3v2 album art error: {result.stderr}")
@@ -630,7 +656,7 @@ class MetadataEditor:
     
     def _remove_mp3_album_art(self, filepath: str) -> bool:
         """
-        Remove album art from MP3 files using mid3v2.
+        Remove album art from MP3 files using eyeD3.
         
         Args:
             filepath (str): Path to the MP3 file to modify
@@ -639,6 +665,27 @@ class MetadataEditor:
             bool: True if album art was successfully removed, False otherwise
         """
         try:
+            # Try eyeD3 first (preferred for album art)
+            try:
+                cmd = ['eyeD3', '--remove-all-images', str(filepath)]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30
+                )
+                
+                if result.returncode == 0:
+                    logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using eyeD3")
+                    return True
+                else:
+                    logger.debug(f"eyeD3 remove error: {result.stderr}")
+            except FileNotFoundError:
+                logger.debug("eyeD3 not available, falling back to mid3v2")
+            
+            # Fallback to mid3v2 if eyeD3 fails or isn't available
             cmd = ['mid3v2', '--delete-frames', 'APIC', str(filepath)]
             
             result = subprocess.run(
@@ -650,7 +697,7 @@ class MetadataEditor:
             )
             
             if result.returncode == 0:
-                logger.info(f"Successfully removed album art from {os.path.basename(filepath)}")
+                logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using mid3v2")
                 return True
             else:
                 logger.error(f"mid3v2 remove art error: {result.stderr}")
@@ -671,9 +718,9 @@ class MetadataEditor:
             bool: True if album art was successfully removed, False otherwise
         """
         try:
-            # Try eyeD3 first
+            # Try eyeD3 first (works for most formats)
             try:
-                cmd = ['eyeD3', '--remove-images', str(filepath)]
+                cmd = ['eyeD3', '--remove-all-images', str(filepath)]
                 result = subprocess.run(
                     cmd,
                     capture_output=True,
@@ -683,14 +730,18 @@ class MetadataEditor:
                 )
                 
                 if result.returncode == 0:
-                    logger.info(f"Successfully removed album art from {os.path.basename(filepath)}")
+                    logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using eyeD3")
                     return True
+                else:
+                    logger.debug(f"eyeD3 remove error: {result.stderr}")
             except FileNotFoundError:
-                pass
+                logger.debug("eyeD3 not available")
             
-            # If eyeD3 not available, warn user
-            logger.warning(f"Cannot remove album art from {os.path.basename(filepath)} - eyeD3 not available")
+            # For non-MP3 files, eyeD3 is usually the best option
+            # Other tools like mutagen-pony don't have album art removal capabilities
+            logger.warning(f"Cannot remove album art from {os.path.basename(filepath)} - eyeD3 required for non-MP3 formats")
             logger.warning("Install eyeD3: pip install eyed3")
+            return False
             return False
             
         except Exception as e:
