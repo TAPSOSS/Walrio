@@ -21,6 +21,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import tempfile
 
+# Import the centralized metadata module for OPUS album art handling
+try:
+    from ..core import metadata
+except ImportError:
+    metadata = None
+
 # Configure logging format
 logging.basicConfig(
     level=logging.INFO,
@@ -235,7 +241,7 @@ class LoudnessApplicator:
     
     def _handle_opus_album_art(self, original_filepath: str, opus_filepath: str):
         """
-        Handle album art embedding for Opus files using the same method as convert.py.
+        Handle album art embedding for Opus files using the centralized metadata module.
         
         Args:
             original_filepath (str): Path to the original file with album art
@@ -245,9 +251,14 @@ class LoudnessApplicator:
             logger.debug(f"No album art detected in {os.path.basename(original_filepath)}")
             return
         
-        logger.info("Extracting and embedding album art for Opus file")
+        if metadata is None:
+            logger.warning("Metadata module not available for OPUS album art handling")
+            return
+        
+        logger.info("Extracting and embedding album art for Opus file using metadata module")
+        
+        # Extract album art using FFmpeg first
         temp_art_file = f"{opus_filepath}.albumart.jpg"
-        temp_script = f"{opus_filepath}.embed_art.py"
         
         try:
             # Extract album art using FFmpeg
@@ -271,61 +282,11 @@ class LoudnessApplicator:
             if art_process.returncode == 0 and os.path.exists(temp_art_file):
                 logger.debug("Album art extracted successfully")
                 
-                # Create a Python script to embed the cover using mutagen
-                with open(temp_script, 'w') as f:
-                    f.write(f'''
-import base64
-import sys
-import os
-
-try:
-    from mutagen.oggopus import OggOpus
-    from mutagen.flac import Picture
-    from PIL import Image
-    import io
-
-    # Load the image and resize if necessary
-    img = Image.open("{temp_art_file}")
-    img = img.convert("RGB")
-    img = img.resize((1000, 1000), Image.LANCZOS)  # Resize to reasonable size
-    buf = io.BytesIO()
-    img.save(buf, format="JPEG")
-    img_data = buf.getvalue()
-
-    # Create FLAC Picture object
-    pic = Picture()
-    pic.mime = "image/jpeg"
-    pic.type = 3  # Front cover
-    pic.data = img_data
-    pic.desc = "Cover"
-
-    # Embed in Opus file
-    opus = OggOpus("{opus_filepath}")
-    opus["METADATA_BLOCK_PICTURE"] = [base64.b64encode(pic.write()).decode("ascii")]
-    opus.save()
-
-    print("Album art embedded successfully!")
-except Exception as e:
-    print(f"Error embedding album art: {{e}}")
-    sys.exit(1)
-''')
-                
-                # Execute the Python script
-                python_cmd = [sys.executable, temp_script]
-                logger.debug("Running Python script to embed album art")
-                
-                python_process = subprocess.run(
-                    python_cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=60  # Set a 1-minute timeout for embedding
-                )
-                
-                if python_process.returncode == 0:
-                    logger.debug("Successfully embedded album art in Opus file")
+                # Use the centralized metadata module to embed album art
+                if metadata.set_album_art(opus_filepath, temp_art_file):
+                    logger.debug("Successfully embedded album art in Opus file using metadata module")
                 else:
-                    logger.warning(f"Failed to embed album art: {python_process.stderr}")
+                    logger.warning("Failed to embed album art using metadata module")
             else:
                 logger.warning(f"Failed to extract album art: {art_process.stderr}")
                 
@@ -334,13 +295,12 @@ except Exception as e:
         except Exception as e:
             logger.warning(f"Error during album art processing: {str(e)}")
         finally:
-            # Clean up temporary files
-            for temp_file in [temp_art_file, temp_script]:
-                if os.path.exists(temp_file):
-                    try:
-                        os.remove(temp_file)
-                    except:
-                        pass
+            # Clean up temporary art file
+            if os.path.exists(temp_art_file):
+                try:
+                    os.remove(temp_art_file)
+                except:
+                    pass
     
     def apply_gain_to_file(self, filepath: str, gain_db: float, output_dir: Optional[str] = None) -> bool:
         """

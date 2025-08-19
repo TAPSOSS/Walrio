@@ -12,6 +12,7 @@ Core Modules:
 - player: GStreamer-based audio player with advanced playback features
 - playlist: M3U playlist creation and management utilities
 - queue: Playback queue management with shuffle and repeat modes
+- metadata: Edit audio file metadata and album art using mutagen CLI tools
 
 Addon Modules:
 - convert: Audio format conversion using FFmpeg
@@ -29,7 +30,7 @@ __author__ = "Walrio Contributors"
 
 # Import core modules
 try:
-    from .core import database, player, playlist, queue
+    from .core import database, player, playlist, queue, metadata
 except ImportError:
     pass
 
@@ -48,7 +49,7 @@ except ImportError:
 # Make all modules available at package level
 __all__ = [
     # Core modules
-    'database', 'player', 'playlist', 'queue',
+    'database', 'player', 'playlist', 'queue', 'metadata',
     # Addon modules  
     'convert', 'file_relocater', 'rename', 'replaygain', 'organize',
     # Niche modules

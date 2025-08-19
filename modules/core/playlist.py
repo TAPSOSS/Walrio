@@ -14,7 +14,7 @@ import sqlite3
 import argparse
 from pathlib import Path
 from urllib.parse import urlparse
-from mutagen import File as MutagenFile
+from . import metadata
 
 # Default database path
 DEFAULT_DB_PATH = "walrio_library.db"
@@ -263,7 +263,7 @@ def load_m3u_playlist(playlist_path):
 
 def extract_metadata(file_path):
     """
-    Extract metadata from audio file using mutagen.
+    Extract metadata from audio file using the centralized metadata module.
     
     Args:
         file_path (str): Path to the audio file.
@@ -274,60 +274,7 @@ def extract_metadata(file_path):
             disc, year, genre.
     """
     try:
-        audio_file = MutagenFile(file_path)
-        if audio_file is None:
-            return None
-        
-        # Extract common metadata
-        title = None
-        artist = None
-        album = None
-        length = 0
-        
-        # Get title
-        if 'TIT2' in audio_file:  # ID3v2
-            title = str(audio_file['TIT2'][0])
-        elif 'TITLE' in audio_file:  # Vorbis/FLAC
-            title = str(audio_file['TITLE'][0])
-        elif '\xa9nam' in audio_file:  # MP4
-            title = str(audio_file['\xa9nam'][0])
-        
-        # Get artist
-        if 'TPE1' in audio_file:  # ID3v2
-            artist = str(audio_file['TPE1'][0])
-        elif 'ARTIST' in audio_file:  # Vorbis/FLAC
-            artist = str(audio_file['ARTIST'][0])
-        elif '\xa9ART' in audio_file:  # MP4
-            artist = str(audio_file['\xa9ART'][0])
-        
-        # Get album
-        if 'TALB' in audio_file:  # ID3v2
-            album = str(audio_file['TALB'][0])
-        elif 'ALBUM' in audio_file:  # Vorbis/FLAC
-            album = str(audio_file['ALBUM'][0])
-        elif '\xa9alb' in audio_file:  # MP4
-            album = str(audio_file['\xa9alb'][0])
-        
-        # Get length
-        if hasattr(audio_file, 'info') and hasattr(audio_file.info, 'length'):
-            length = int(audio_file.info.length)
-        
-        # Use filename as title if no title found
-        if not title:
-            title = Path(file_path).stem
-        
-        return {
-            'url': file_path,
-            'title': title or 'Unknown Title',
-            'artist': artist or 'Unknown Artist',
-            'album': album or 'Unknown Album',
-            'albumartist': artist or 'Unknown Artist',
-            'length': length,
-            'track': 0,
-            'disc': 0,
-            'year': 0,
-            'genre': 'Unknown'
-        }
+        return metadata.extract_metadata_for_playlist(file_path)
     except Exception as e:
         print(f"Warning: Could not extract metadata from {file_path}: {e}")
         return {
