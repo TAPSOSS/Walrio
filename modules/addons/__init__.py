@@ -9,5 +9,3 @@ Addon modules package for the Walrio audio library management system.
 These modules provide extended functionality for audio processing,
 file management, and metadata manipulation.
 """
-
-__all__ = ['convert', 'file_relocater', 'rename', 'replaygain', 'imageconverter']
