@@ -15,8 +15,7 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
-from mutagen import File
-from mutagen.id3 import ID3NoHeaderError
+from . import metadata
 
 # Import playlist loading function
 try:
@@ -161,7 +160,7 @@ def get_file_hash(filepath):
 
 def extract_metadata(filepath):
     """
-    Extract metadata from audio file using mutagen.
+    Extract metadata from audio file using the centralized metadata module.
     
     Args:
         filepath (str): Path to the audio file.
@@ -173,137 +172,7 @@ def extract_metadata(filepath):
             length, bitrate, samplerate, bitdepth, compilation, art_embedded.
     """
     try:
-        audio_file = File(filepath)
-        if audio_file is None:
-            return None
-            
-        metadata = {
-            'title': '',
-            'album': '',
-            'artist': '',
-            'albumartist': '',
-            'track': 0,
-            'disc': 0,
-            'year': 0,
-            'originalyear': 0,
-            'genre': '',
-            'composer': '',
-            'performer': '',
-            'grouping': '',
-            'comment': '',
-            'lyrics': '',
-            'length': 0,
-            'bitrate': 0,
-            'samplerate': 0,
-            'bitdepth': 0,
-            'compilation': 0,
-            'art_embedded': 0
-        }
-        
-        # Extract basic metadata
-        if audio_file.get('TIT2'):  # ID3v2 title
-            metadata['title'] = str(audio_file['TIT2'][0])
-        elif audio_file.get('TITLE'):  # Vorbis comment
-            metadata['title'] = str(audio_file['TITLE'][0])
-        elif audio_file.get('\xa9nam'):  # MP4
-            metadata['title'] = str(audio_file['\xa9nam'][0])
-            
-        if audio_file.get('TALB'):  # Album
-            metadata['album'] = str(audio_file['TALB'][0])
-        elif audio_file.get('ALBUM'):
-            metadata['album'] = str(audio_file['ALBUM'][0])
-        elif audio_file.get('\xa9alb'):
-            metadata['album'] = str(audio_file['\xa9alb'][0])
-            
-        if audio_file.get('TPE1'):  # Artist
-            metadata['artist'] = str(audio_file['TPE1'][0])
-        elif audio_file.get('ARTIST'):
-            metadata['artist'] = str(audio_file['ARTIST'][0])
-        elif audio_file.get('\xa9ART'):
-            metadata['artist'] = str(audio_file['\xa9ART'][0])
-            
-        if audio_file.get('TPE2'):  # Album artist
-            metadata['albumartist'] = str(audio_file['TPE2'][0])
-        elif audio_file.get('ALBUMARTIST'):
-            metadata['albumartist'] = str(audio_file['ALBUMARTIST'][0])
-        elif audio_file.get('aART'):
-            metadata['albumartist'] = str(audio_file['aART'][0])
-            
-        # Track number
-        if audio_file.get('TRCK'):
-            track_str = str(audio_file['TRCK'][0])
-            metadata['track'] = int(track_str.split('/')[0]) if track_str else 0
-        elif audio_file.get('TRACKNUMBER'):
-            metadata['track'] = int(audio_file['TRACKNUMBER'][0])
-        elif audio_file.get('trkn'):
-            metadata['track'] = int(audio_file['trkn'][0][0])
-            
-        # Disc number
-        if audio_file.get('TPOS'):
-            disc_str = str(audio_file['TPOS'][0])
-            metadata['disc'] = int(disc_str.split('/')[0]) if disc_str else 0
-        elif audio_file.get('DISCNUMBER'):
-            metadata['disc'] = int(audio_file['DISCNUMBER'][0])
-        elif audio_file.get('disk'):
-            metadata['disc'] = int(audio_file['disk'][0][0])
-            
-        # Year
-        if audio_file.get('TDRC'):  # Recording date
-            year_str = str(audio_file['TDRC'][0])
-            metadata['year'] = int(year_str[:4]) if len(year_str) >= 4 else 0
-        elif audio_file.get('DATE'):
-            year_str = str(audio_file['DATE'][0])
-            metadata['year'] = int(year_str[:4]) if len(year_str) >= 4 else 0
-        elif audio_file.get('\xa9day'):
-            year_str = str(audio_file['\xa9day'][0])
-            metadata['year'] = int(year_str[:4]) if len(year_str) >= 4 else 0
-            
-        # Genre
-        if audio_file.get('TCON'):
-            metadata['genre'] = str(audio_file['TCON'][0])
-        elif audio_file.get('GENRE'):
-            metadata['genre'] = str(audio_file['GENRE'][0])
-        elif audio_file.get('\xa9gen'):
-            metadata['genre'] = str(audio_file['\xa9gen'][0])
-            
-        # Composer
-        if audio_file.get('TCOM'):
-            metadata['composer'] = str(audio_file['TCOM'][0])
-        elif audio_file.get('COMPOSER'):
-            metadata['composer'] = str(audio_file['COMPOSER'][0])
-        elif audio_file.get('\xa9wrt'):
-            metadata['composer'] = str(audio_file['\xa9wrt'][0])
-            
-        # Comment
-        if audio_file.get('COMM'):
-            metadata['comment'] = str(audio_file['COMM'][0])
-        elif audio_file.get('COMMENT'):
-            metadata['comment'] = str(audio_file['COMMENT'][0])
-        elif audio_file.get('\xa9cmt'):
-            metadata['comment'] = str(audio_file['\xa9cmt'][0])
-            
-        # Audio properties
-        if hasattr(audio_file, 'info'):
-            info = audio_file.info
-            metadata['length'] = int(info.length) if hasattr(info, 'length') else 0
-            metadata['bitrate'] = int(info.bitrate) if hasattr(info, 'bitrate') else 0
-            metadata['samplerate'] = int(info.sample_rate) if hasattr(info, 'sample_rate') else 0
-            
-        # Check for embedded artwork
-        if hasattr(audio_file, 'tags') and audio_file.tags:
-            # Check for various artwork tags
-            artwork_tags = ['APIC', 'APIC:', 'covr', 'METADATA_BLOCK_PICTURE']
-            for tag in artwork_tags:
-                if tag in audio_file.tags:
-                    metadata['art_embedded'] = 1
-                    break
-                    
-        # Use filename as title if no title found
-        if not metadata['title']:
-            metadata['title'] = Path(filepath).stem
-            
-        return metadata
-        
+        return metadata.extract_metadata(filepath)
     except Exception as e:
         print(f"Error extracting metadata from {filepath}: {e}")
         return None

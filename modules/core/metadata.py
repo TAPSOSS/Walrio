@@ -573,6 +573,154 @@ class MetadataEditor:
         print(f"Comment: {metadata.get('comment', 'None')}")
         print(f"Album Art: {'Yes' if metadata.get('has_album_art') else 'No'}")
 
+    def extract_metadata_for_database(self, filepath: str) -> Dict[str, Any]:
+        """
+        Extract metadata in the format expected by database.py.
+        Returns a dictionary with all fields that database.py expects.
+        """
+        metadata = self.get_metadata(filepath)
+        if not metadata:
+            return None
+            
+        # Get audio properties using FFprobe
+        audio_info = self._get_audio_info(filepath)
+        
+        # Convert to database format
+        db_metadata = {
+            'title': metadata.get('title', ''),
+            'album': metadata.get('album', ''),
+            'artist': metadata.get('artist', ''),
+            'albumartist': metadata.get('albumartist', ''),
+            'track': self._parse_number(metadata.get('track', '0')),
+            'disc': self._parse_number(metadata.get('disc', '0')),
+            'year': self._parse_number(metadata.get('date', metadata.get('year', '0'))),
+            'originalyear': self._parse_number(metadata.get('originaldate', metadata.get('originalyear', '0'))),
+            'genre': metadata.get('genre', ''),
+            'composer': metadata.get('composer', ''),
+            'performer': metadata.get('performer', ''),
+            'grouping': metadata.get('grouping', ''),
+            'comment': metadata.get('comment', ''),
+            'lyrics': metadata.get('lyrics', ''),
+            'length': audio_info.get('duration', 0),
+            'bitrate': audio_info.get('bitrate', 0),
+            'samplerate': audio_info.get('sample_rate', 0),
+            'bitdepth': audio_info.get('bit_depth', 0),
+            'compilation': 1 if metadata.get('compilation', '').lower() in ['1', 'true', 'yes'] else 0,
+            'art_embedded': 1 if metadata.get('has_album_art', False) else 0
+        }
+        
+        return db_metadata
+    
+    def extract_metadata_for_playlist(self, filepath: str) -> Dict[str, Any]:
+        """
+        Extract metadata in the format expected by playlist.py.
+        Returns a dictionary with fields that playlist.py expects.
+        """
+        metadata = self.get_metadata(filepath)
+        if not metadata:
+            return None
+            
+        # Get audio properties
+        audio_info = self._get_audio_info(filepath)
+        
+        # Convert to playlist format
+        playlist_metadata = {
+            'url': filepath,
+            'title': metadata.get('title', ''),
+            'artist': metadata.get('artist', ''),
+            'album': metadata.get('album', ''),
+            'albumartist': metadata.get('albumartist', ''),
+            'length': audio_info.get('duration', 0),
+            'track': self._parse_number(metadata.get('track', '0')),
+            'disc': self._parse_number(metadata.get('disc', '0')),
+            'year': self._parse_number(metadata.get('date', metadata.get('year', '0'))),
+            'genre': metadata.get('genre', '')
+        }
+        
+        return playlist_metadata
+    
+    def _get_audio_info(self, filepath: str) -> Dict[str, Any]:
+        """Get audio information using FFprobe."""
+        try:
+            cmd = [
+                'ffprobe', '-v', 'error',
+                '-show_entries', 'format=duration,bit_rate:stream=sample_rate,bits_per_sample,bits_per_raw_sample',
+                '-of', 'csv=p=0',
+                str(filepath)
+            ]
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30
+            )
+            
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                info = {}
+                
+                # Parse the output
+                for line in lines:
+                    parts = line.split(',')
+                    if len(parts) >= 2:
+                        try:
+                            if 'duration' not in info and parts[0]:
+                                info['duration'] = float(parts[0])
+                            if 'bitrate' not in info and parts[1]:
+                                info['bitrate'] = int(float(parts[1]))
+                            if len(parts) >= 3 and parts[2]:
+                                info['sample_rate'] = int(parts[2])
+                            if len(parts) >= 4 and parts[3]:
+                                info['bit_depth'] = int(parts[3])
+                            elif len(parts) >= 5 and parts[4]:
+                                info['bit_depth'] = int(parts[4])
+                        except ValueError:
+                            continue
+                
+                return info
+            
+            return {}
+            
+        except Exception:
+            return {}
+    
+    def _parse_number(self, value: str) -> int:
+        """Parse a string value to extract the first number."""
+        if not value:
+            return 0
+        
+        # Handle track numbers like "1/10" or "1"
+        if '/' in str(value):
+            value = str(value).split('/')[0]
+        
+        try:
+            return int(float(str(value)))
+        except (ValueError, TypeError):
+            return 0
+    
+    def embed_opus_album_art(self, opus_filepath: str, image_path: str) -> bool:
+        """
+        Embed album art into OPUS files using the CLI-based approach.
+        This replaces the inline mutagen approach used in other modules.
+        """
+        if not os.path.exists(image_path):
+            logger.error(f"Image file not found: {image_path}")
+            return False
+            
+        if not os.path.exists(opus_filepath):
+            logger.error(f"OPUS file not found: {opus_filepath}")
+            return False
+        
+        try:
+            # Use our existing set_album_art method which handles OPUS via CLI tools
+            return self.set_album_art(opus_filepath, image_path)
+            
+        except Exception as e:
+            logger.error(f"Error embedding OPUS album art: {str(e)}")
+            return False
+
 
 def main():
     """Main function for command-line usage."""
@@ -689,3 +837,47 @@ Examples:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# Convenience functions for easy importing by other modules
+def extract_metadata(filepath: str) -> Dict[str, Any]:
+    """
+    Convenience function for database.py compatibility.
+    Extract metadata from an audio file in database format.
+    """
+    editor = MetadataEditor()
+    return editor.extract_metadata_for_database(filepath)
+
+
+def extract_metadata_for_playlist(filepath: str) -> Dict[str, Any]:
+    """
+    Convenience function for playlist.py compatibility.
+    Extract metadata from an audio file in playlist format.
+    """
+    editor = MetadataEditor()
+    return editor.extract_metadata_for_playlist(filepath)
+
+
+def set_metadata(filepath: str, metadata: Dict[str, Any]) -> bool:
+    """
+    Convenience function to set metadata for a file.
+    """
+    editor = MetadataEditor()
+    return editor.set_metadata(filepath, metadata)
+
+
+def set_album_art(filepath: str, image_path: str) -> bool:
+    """
+    Convenience function to set album art for a file.
+    """
+    editor = MetadataEditor()
+    return editor.set_album_art(filepath, image_path)
+
+
+def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
+    """
+    Convenience function to embed album art in OPUS files.
+    Replaces inline mutagen usage in other modules.
+    """
+    editor = MetadataEditor()
+    return editor.embed_opus_album_art(opus_filepath, image_path)
