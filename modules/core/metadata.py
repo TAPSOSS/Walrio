@@ -55,7 +55,11 @@ class MetadataEditor:
         self._check_mutagen_tools()
     
     def _check_mutagen_tools(self):
-        """Check if mutagen CLI tools are available."""
+        """
+        Check if mutagen CLI tools are available.
+        
+        Logs availability of mid3v2, mutagen-pony, and mutagen-inspect tools.
+        """
         tools = ['mid3v2', 'mutagen-pony', 'mutagen-inspect']
         available_tools = []
         
@@ -75,14 +79,28 @@ class MetadataEditor:
             logger.debug(f"Available mutagen tools: {', '.join(available_tools)}")
     
     def is_supported_format(self, filepath: str) -> bool:
-        """Check if the file format is supported."""
+        """
+        Check if the file format is supported.
+        
+        Args:
+            filepath (str): Path to the audio file to check
+            
+        Returns:
+            bool: True if the file format is supported, False otherwise
+        """
         ext = Path(filepath).suffix.lower()
         return ext in self.supported_formats
     
     def get_metadata(self, filepath: str) -> Dict[str, Any]:
         """
         Get all metadata from an audio file using mutagen CLI tools.
-        Returns a dictionary with standardized tag names.
+        
+        Args:
+            filepath (str): Path to the audio file to extract metadata from
+            
+        Returns:
+            Dict[str, Any]: Dictionary with standardized tag names and metadata values,
+                          or None if extraction fails
         """
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
@@ -119,7 +137,26 @@ class MetadataEditor:
             return {}
     
     def _parse_mutagen_output(self, output: str) -> Dict[str, Any]:
-        """Parse mutagen-inspect output into a standardized dictionary."""
+        """
+        Parse mutagen-inspect output into a standardized dictionary.
+        
+        Args:
+            output (str): Raw output from mutagen-inspect command
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing parsed metadata with standardized keys:
+                - title (str): Track title
+                - artist (str): Track artist
+                - album (str): Album name
+                - albumartist (str): Album artist
+                - date (str): Release date
+                - year (str): Release year
+                - genre (str): Genre
+                - track (str): Track number
+                - disc (str): Disc number
+                - comment (str): Comment field
+                - has_album_art (bool): Whether file has embedded album art
+        """
         metadata = {}
         lines = output.strip().split('\n')
         
@@ -195,12 +232,28 @@ class MetadataEditor:
         return metadata
     
     def _detect_format(self, filepath: str) -> str:
-        """Detect the audio format from file extension."""
+        """
+        Detect the audio format from file extension.
+        
+        Args:
+            filepath (str): Path to the audio file
+            
+        Returns:
+            str: Human-readable format name (e.g., 'MP3', 'FLAC', 'Unknown')
+        """
         ext = Path(filepath).suffix.lower()
         return self.supported_formats.get(ext, 'Unknown')
     
     def _has_album_art(self, filepath: str) -> bool:
-        """Check if the audio file has album art using mutagen CLI."""
+        """
+        Check if the audio file has album art using mutagen CLI.
+        
+        Args:
+            filepath (str): Path to the audio file to check
+            
+        Returns:
+            bool: True if file contains embedded album art, False otherwise
+        """
         if not filepath or not os.path.exists(filepath):
             return False
         
@@ -229,6 +282,13 @@ class MetadataEditor:
     def set_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
         """
         Set metadata for an audio file using appropriate CLI tools.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            metadata (Dict[str, Any]): Dictionary containing metadata to set
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise
         """
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
@@ -253,7 +313,26 @@ class MetadataEditor:
             return False
     
     def _set_mp3_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
-        """Set metadata for MP3 files using mid3v2."""
+        """
+        Set metadata for MP3 files using mid3v2.
+        
+        Args:
+            filepath (str): Path to the MP3 file to modify
+            metadata (Dict[str, Any]): Dictionary containing metadata to set with keys:
+                - title (str): Track title
+                - artist (str): Track artist  
+                - album (str): Album name
+                - albumartist (str): Album artist
+                - date (str): Release date
+                - year (str): Release year
+                - genre (str): Genre
+                - track (str): Track number
+                - disc (str): Disc number
+                - comment (str): Comment field
+                
+        Returns:
+            bool: True if metadata was successfully set, False otherwise
+        """
         try:
             cmd = ['mid3v2']
             
@@ -301,7 +380,26 @@ class MetadataEditor:
             return False
     
     def _set_generic_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
-        """Set metadata for non-MP3 files using mutagen-pony."""
+        """
+        Set metadata for non-MP3 files using mutagen-pony.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            metadata (Dict[str, Any]): Dictionary containing metadata to set with keys:
+                - title (str): Track title
+                - artist (str): Track artist
+                - album (str): Album name
+                - albumartist (str): Album artist
+                - date (str): Release date
+                - year (str): Release year
+                - genre (str): Genre
+                - track (str): Track number
+                - disc (str): Disc number
+                - comment (str): Comment field
+                
+        Returns:
+            bool: True if metadata was successfully set, False otherwise
+        """
         try:
             # Build mutagen-pony command
             cmd = ['mutagen-pony']
@@ -349,6 +447,13 @@ class MetadataEditor:
     def set_album_art(self, filepath: str, image_path: str) -> bool:
         """
         Set album art for an audio file using CLI tools.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            image_path (str): Path to the image file to embed as album art
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise
         """
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
@@ -370,13 +475,22 @@ class MetadataEditor:
             logger.error(f"Error setting album art for {os.path.basename(filepath)}: {str(e)}")
             return False
     
-    def _set_mp3_album_art(self, filepath: str, image_path: str) -> bool:
-        """Set album art for MP3 files using mid3v2."""
+    def _set_mp3_album_art(self, filepath: str, artwork_path: str) -> bool:
+        """
+        Set album art for MP3 files using eyeD3.
+        
+        Args:
+            filepath (str): Path to the MP3 file to modify
+            artwork_path (str): Path to the artwork image file to embed
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise
+        """
         try:
             cmd = [
                 'mid3v2',
                 '--APIC',
-                f'{image_path}:Cover (front)',
+                f'{artwork_path}:Cover (front)',
                 str(filepath)
             ]
             
@@ -400,7 +514,16 @@ class MetadataEditor:
             return False
     
     def _set_generic_album_art(self, filepath: str, image_path: str) -> bool:
-        """Set album art for non-MP3 files using eyeD3 or ffmpeg as fallback."""
+        """
+        Set album art for non-MP3 files using eyeD3 or ffmpeg as fallback.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            image_path (str): Path to the artwork image file to embed
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise
+        """
         try:
             # Try eyeD3 first (if available)
             try:
@@ -428,7 +551,16 @@ class MetadataEditor:
             return False
     
     def _set_album_art_ffmpeg(self, filepath: str, image_path: str) -> bool:
-        """Set album art using FFmpeg as a fallback method."""
+        """
+        Set album art using FFmpeg as a fallback method.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            image_path (str): Path to the image file to embed as album art
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise
+        """
         try:
             # Create temporary output file
             temp_file = filepath + '.tmp'
@@ -471,7 +603,15 @@ class MetadataEditor:
             return False
     
     def remove_album_art(self, filepath: str) -> bool:
-        """Remove album art from an audio file using CLI tools."""
+        """
+        Remove album art from an audio file using CLI tools.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            
+        Returns:
+            bool: True if album art was successfully removed, False otherwise
+        """
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
             return False
@@ -489,7 +629,15 @@ class MetadataEditor:
             return False
     
     def _remove_mp3_album_art(self, filepath: str) -> bool:
-        """Remove album art from MP3 files using mid3v2."""
+        """
+        Remove album art from MP3 files using mid3v2.
+        
+        Args:
+            filepath (str): Path to the MP3 file to modify
+            
+        Returns:
+            bool: True if album art was successfully removed, False otherwise
+        """
         try:
             cmd = ['mid3v2', '--delete-frames', 'APIC', str(filepath)]
             
@@ -513,7 +661,15 @@ class MetadataEditor:
             return False
     
     def _remove_generic_album_art(self, filepath: str) -> bool:
-        """Remove album art from non-MP3 files using available tools."""
+        """
+        Remove album art from non-MP3 files using available tools.
+        
+        Args:
+            filepath (str): Path to the audio file to modify
+            
+        Returns:
+            bool: True if album art was successfully removed, False otherwise
+        """
         try:
             # Try eyeD3 first
             try:
@@ -544,7 +700,15 @@ class MetadataEditor:
     def batch_edit_metadata(self, file_paths: List[str], metadata: Dict[str, Any]) -> Dict[str, int]:
         """
         Edit metadata for multiple files.
-        Returns statistics about the operation.
+        
+        Args:
+            file_paths (List[str]): List of file paths to modify
+            metadata (Dict[str, Any]): Dictionary containing metadata to set
+            
+        Returns:
+            Dict[str, int]: Statistics about the operation with keys:
+                - processed: Number of successfully processed files
+                - errors: Number of files that failed processing
         """
         self.processed_count = 0
         self.error_count = 0
@@ -569,7 +733,12 @@ class MetadataEditor:
         }
     
     def display_metadata(self, filepath: str):
-        """Display metadata for a file in a readable format."""
+        """
+        Display metadata for a file in a readable format.
+        
+        Args:
+            filepath (str): Path to the audio file to display metadata for
+        """
         metadata = self.get_metadata(filepath)
         
         if not metadata:
@@ -593,7 +762,13 @@ class MetadataEditor:
     def extract_metadata_for_database(self, filepath: str) -> Dict[str, Any]:
         """
         Extract metadata in the format expected by database.py.
-        Returns a dictionary with all fields that database.py expects.
+        
+        Args:
+            filepath (str): Path to the audio file to extract metadata from
+            
+        Returns:
+            Dict[str, Any]: Dictionary with all metadata fields that database.py expects,
+                          or None if metadata extraction fails
         """
         metadata = self.get_metadata(filepath)
         if not metadata:
@@ -631,7 +806,13 @@ class MetadataEditor:
     def extract_metadata_for_playlist(self, filepath: str) -> Dict[str, Any]:
         """
         Extract metadata in the format expected by playlist.py.
-        Returns a dictionary with fields that playlist.py expects.
+        
+        Args:
+            filepath (str): Path to the audio file to extract metadata from
+            
+        Returns:
+            Dict[str, Any]: Dictionary with metadata fields that playlist.py expects,
+                          or None if metadata extraction fails
         """
         metadata = self.get_metadata(filepath)
         if not metadata:
@@ -657,7 +838,16 @@ class MetadataEditor:
         return playlist_metadata
     
     def _get_audio_info(self, filepath: str) -> Dict[str, Any]:
-        """Get audio information using FFprobe."""
+        """
+        Get audio information using FFprobe.
+        
+        Args:
+            filepath (str): Path to the audio file to analyze
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing audio properties like duration,
+                          bitrate, sample rate, etc., or empty dict if analysis fails
+        """
         try:
             cmd = [
                 'ffprobe', '-v', 'error',
@@ -721,6 +911,13 @@ class MetadataEditor:
         """
         Embed album art into OPUS files using the CLI-based approach.
         This replaces the inline mutagen approach used in other modules.
+        
+        Args:
+            opus_filepath (str): Path to the OPUS audio file to modify
+            image_path (str): Path to the image file to embed as album art
+            
+        Returns:
+            bool: True if album art was successfully embedded, False otherwise
         """
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
@@ -861,6 +1058,13 @@ def extract_metadata(filepath: str) -> Dict[str, Any]:
     """
     Convenience function for database.py compatibility.
     Extract metadata from an audio file in database format.
+    
+    Args:
+        filepath (str): Path to the audio file to extract metadata from
+        
+    Returns:
+        Dict[str, Any]: Dictionary with metadata fields in database format,
+                      or None if extraction fails
     """
     editor = MetadataEditor()
     return editor.extract_metadata_for_database(filepath)
@@ -870,6 +1074,13 @@ def extract_metadata_for_playlist(filepath: str) -> Dict[str, Any]:
     """
     Convenience function for playlist.py compatibility.
     Extract metadata from an audio file in playlist format.
+    
+    Args:
+        filepath (str): Path to the audio file to extract metadata from
+        
+    Returns:
+        Dict[str, Any]: Dictionary with metadata fields in playlist format,
+                      or None if extraction fails
     """
     editor = MetadataEditor()
     return editor.extract_metadata_for_playlist(filepath)
@@ -878,6 +1089,13 @@ def extract_metadata_for_playlist(filepath: str) -> Dict[str, Any]:
 def set_metadata(filepath: str, metadata: Dict[str, Any]) -> bool:
     """
     Convenience function to set metadata for a file.
+    
+    Args:
+        filepath (str): Path to the audio file to modify
+        metadata (Dict[str, Any]): Dictionary containing metadata to set
+        
+    Returns:
+        bool: True if metadata was successfully set, False otherwise
     """
     editor = MetadataEditor()
     return editor.set_metadata(filepath, metadata)
@@ -886,6 +1104,13 @@ def set_metadata(filepath: str, metadata: Dict[str, Any]) -> bool:
 def set_album_art(filepath: str, image_path: str) -> bool:
     """
     Convenience function to set album art for a file.
+    
+    Args:
+        filepath (str): Path to the audio file to modify
+        image_path (str): Path to the image file to embed as album art
+        
+    Returns:
+        bool: True if album art was successfully set, False otherwise
     """
     editor = MetadataEditor()
     return editor.set_album_art(filepath, image_path)
@@ -895,6 +1120,13 @@ def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
     """
     Convenience function to embed album art in OPUS files.
     Replaces inline mutagen usage in other modules.
+    
+    Args:
+        opus_filepath (str): Path to the OPUS audio file to modify
+        image_path (str): Path to the image file to embed as album art
+        
+    Returns:
+        bool: True if album art was successfully embedded, False otherwise
     """
     editor = MetadataEditor()
     return editor.embed_opus_album_art(opus_filepath, image_path)
