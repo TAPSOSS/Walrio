@@ -19,7 +19,7 @@ from . import metadata
 
 # Import playlist loading function
 try:
-    from playlist import load_m3u_playlist
+    from .playlist import load_m3u_playlist
 except ImportError:
     print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
     load_m3u_playlist = None
