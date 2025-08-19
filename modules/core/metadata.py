@@ -33,7 +33,13 @@ class MetadataEditor:
     Supports reading and writing metadata for all major audio formats.
     """
     
-    def __init__(self):
+    def __init__(self, file_path: str):
+        """
+        Initialize MetadataEditor with a specific audio file.
+        
+        Args:
+            file_path (str): Path to the audio file to edit metadata for
+        """
         self.supported_formats = {
             '.mp3': 'MP3',
             '.flac': 'FLAC', 
@@ -945,7 +951,15 @@ class MetadataEditor:
             return {}
     
     def _parse_number(self, value: str) -> int:
-        """Parse a string value to extract the first number."""
+        """
+        Parse a string value to extract a numeric value for track/disc numbers.
+        
+        Args:
+            value (str): The string value to parse (e.g., "3/10" or "3")
+            
+        Returns:
+            int: The parsed numeric value, or 0 if parsing fails
+        """
         if not value:
             return 0
         
@@ -988,7 +1002,12 @@ class MetadataEditor:
 
 
 def main():
-    """Main function for command-line usage."""
+    """
+    Main function for command-line usage.
+    
+    Returns:
+        int: Exit code (0 for success, 1 for failure)
+    """
     parser = argparse.ArgumentParser(
         description="Modify audio file metadata using mutagen",
         formatter_class=argparse.RawDescriptionHelpFormatter,
