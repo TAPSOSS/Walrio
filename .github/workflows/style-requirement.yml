@@ -30,209 +30,42 @@ jobs:
       with:
         files: |
           **/*.py
+        files_ignore: |
+          .github/workflows/**
+          __pycache__/**
+          *.pyc
+          build/**
+          dist/**
     
-    - name: Check styling requirements
+    - name: Style Checker
       if: steps.changed-files.outputs.any_changed == 'true'
       run: |
-        # Create style checker script
-        cat > style_checker.py << 'EOF'
-        #!/usr/bin/env python3
-        """
-        Style checker for Walrio project
-        Checks BSD header and docstring requirements per CONTRIBUTING.md
-        """
-        
-        import ast
-        import sys
-        import re
-        from pathlib import Path
-        
-        def check_bsd_header(file_content, filename):
-            """Check if file has required BSD-3-Clause header."""
-            required_elements = [
-                "Copyright (c) 2025 TAPS OSS",
-                "Project: https://github.com/TAPSOSS/Walrio",
-                "Licensed under the BSD-3-Clause License"
-            ]
-            
-            # Check first 20 lines for header
-            lines = file_content.split('\n')[:20]
-            header_text = '\n'.join(lines)
-            
-            missing = []
-            for element in required_elements:
-                if element not in header_text:
-                    missing.append(element)
-            
-            if missing:
-                print(f"❌ {filename}: Missing required header elements:")
-                for item in missing:
-                    print(f"   - {item}")
-                return False
-            else:
-                print(f"✅ {filename}: BSD header check passed")
-                return True
-        
-        def check_docstrings(file_content, filename):
-            """Check if functions have proper docstrings with Args/Returns."""
-            try:
-                tree = ast.parse(file_content)
-            except SyntaxError as e:
-                print(f"❌ {filename}: Syntax error - {e}")
-                return False
-            
-            issues = []
-            
-            def visit_function_or_class(node, node_type):
-                """Check docstring for function or class."""
-                if not ast.get_docstring(node):
-                    issues.append(f"   - {node_type} '{node.name}' (line {node.lineno}) missing docstring")
-                    return
-                
-                docstring = ast.get_docstring(node)
-                
-                # For functions, check for Args/Returns if they have parameters/return
-                if isinstance(node, ast.FunctionDef):
-                    # Only check for Args if function has actual parameters (excluding 'self')
-                    params = [arg.arg for arg in node.args.args if arg.arg != 'self']
-                    has_params = len(params) > 0
-                    has_return = any(isinstance(n, ast.Return) and n.value for n in ast.walk(node))
-                    
-                    if has_params and "Args:" not in docstring and "Parameters:" not in docstring:
-                        issues.append(f"   - Function '{node.name}' (line {node.lineno}) has parameters but no 'Args:' section in docstring")
-                    
-                    if has_return and "Returns:" not in docstring and "Return:" not in docstring:
-                        issues.append(f"   - Function '{node.name}' (line {node.lineno}) has return statements but no 'Returns:' section in docstring")
-            
-            for node in ast.walk(tree):
-                if isinstance(node, ast.FunctionDef):
-                    visit_function_or_class(node, "Function")
-                elif isinstance(node, ast.ClassDef):
-                    visit_function_or_class(node, "Class")
-            
-            if issues:
-                print(f"❌ {filename}: Docstring issues found:")
-                for issue in issues:
-                    print(issue)
-                return False
-            else:
-                print(f"✅ {filename}: Docstring check passed")
-                return True
-        
-        def main():
-            if len(sys.argv) < 2:
-                print("Usage: python style_checker.py <file1.py> [file2.py ...]")
-                sys.exit(1)
-            
-            all_passed = True
-            failed_files = []
-            
-            for filename in sys.argv[1:]:
-                print(f"\n🔍 Checking {filename}...")
-                
-                try:
-                    with open(filename, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                except Exception as e:
-                    print(f"❌ {filename}: Could not read file - {e}")
-                    all_passed = False
-                    failed_files.append(f"{filename} (read error)")
-                    continue
-                
-                # Check BSD header
-                header_ok = check_bsd_header(content, filename)
-                
-                # Check docstrings
-                docstring_ok = check_docstrings(content, filename)
-                
-                if not (header_ok and docstring_ok):
-                    all_passed = False
-                    failure_reasons = []
-                    if not header_ok:
-                        failure_reasons.append("header")
-                    if not docstring_ok:
-                        failure_reasons.append("docstrings")
-                    failed_files.append(f"{filename} ({', '.join(failure_reasons)})")
-            
-            if all_passed:
-                print(f"\n🎉 All files passed styling requirements!")
-                print("📖 For detailed requirements, see: https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements")
-            else:
-                print(f"\n❌ Some files failed styling requirements")
-                print(f"\n📋 Failed files:")
-                for failed_file in failed_files:
-                    print(f"   - {failed_file}")
-                print("📖 Please review: https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements")
-                print("\n📋 Required BSD Header format:")
-                print('"""')
-                print("(Basic summary of function, 5 words max)")
-                print("Copyright (c) 2025 TAPS OSS") 
-                print("Project: https://github.com/TAPSOSS/Walrio")
-                print("Licensed under the BSD-3-Clause License (see LICENSE file for details)")
-                print("")
-                print("(longer description of what the file actually does)")
-                print('"""')
-                sys.exit(1)
-        
-        if __name__ == "__main__":
-            main()
-        EOF
-        
-        # Make executable
-        chmod +x style_checker.py
-        
-        # Run style check on changed Python files
-        echo "🚀 Running style check on changed Python files..."
+        echo "🚀 Running style checker on changed Python files..."
         echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
         
-        python3 style_checker.py ${{ steps.changed-files.outputs.all_changed_files }}
+        # Make the style checker executable and run it
+        chmod +x .github/scripts/enhanced_style_checker.py
+        python3 .github/scripts/enhanced_style_checker.py ${{ steps.changed-files.outputs.all_changed_files }}
     
-    - name: Comment on PR
-      if: failure()
-      uses: actions/github-script@v7
+    - name: Comment on PR if failures
+      if: failure() && steps.changed-files.outputs.any_changed == 'true'
+      uses: actions/github-script@v6
       with:
         script: |
-          const { data: comments } = await github.rest.issues.listComments({
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            issue_number: context.issue.number,
-          });
-          
-          const botComment = comments.find(comment => 
-            comment.user.type === 'Bot' && 
-            comment.body.includes('Style Check Failed')
-          );
-          
-          const commentBody = `## 🔍 Style Check Failed
-          
-          Some files in your pull request don't meet the styling requirements defined in [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements).
-          
-          ### Required fixes:
-          - ✅ **BSD Header**: Every Python file must have the exact header format with copyright notice
-          - ✅ **Docstrings**: Every function/class needs docstrings with Args/Returns sections (if applicable)
-          - ✅ **Sphinx Format**: Use Napoleon-style docstrings for auto-documentation
-          
-          ### Quick fixes:
-          1. Add the required BSD header to the top of each Python file
-          2. Add docstrings to any functions or classes missing them
-          3. Include \`Args:\` and \`Returns:\` sections in function docstrings
-          
-          📖 **Full requirements**: [CONTRIBUTING.md - Styling Requirements](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements)
-          
-          Once you fix these issues, the check will automatically re-run when you push your changes.`;
-          
-          if (botComment) {
-            await github.rest.issues.updateComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: botComment.id,
-              body: commentBody
-            });
-          } else {
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: commentBody
-            });
-          }
+            body: `## 🚨 Style Check Failed
+            
+            Some of your Python files don't meet our styling requirements. Please review the build logs above for detailed feedback.
+            
+            ### Quick fixes:
+            - **Missing BSD header**: Add the required copyright header to the top of your Python files
+            - **Missing docstrings**: Add docstrings to functions and classes
+            - **Incomplete docstrings**: Add \`Args:\` and \`Returns:\` sections where needed
+            
+            📖 **Full style guide**: [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements)
+            
+            Re-run this check by pushing new commits to your PR.`
+          })
