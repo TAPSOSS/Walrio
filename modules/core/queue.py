@@ -13,7 +13,6 @@ import os
 import sqlite3
 import argparse
 import random
-import subprocess
 import hashlib
 import time
 from pathlib import Path

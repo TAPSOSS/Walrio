@@ -16,7 +16,6 @@ import argparse
 import subprocess
 import logging
 import json
-import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 

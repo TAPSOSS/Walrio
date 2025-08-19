@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 sys.path.insert(0, os.path.abspath('../../modules'))
 sys.path.insert(0, os.path.abspath('../../modules/core'))
 sys.path.insert(0, os.path.abspath('../../modules/addons'))
+sys.path.insert(0, os.path.abspath('../../modules/niche'))
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
