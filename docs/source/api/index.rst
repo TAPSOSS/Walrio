@@ -6,15 +6,77 @@ This section contains the complete API reference for Walrio modules, automatical
 Core Modules
 ------------
 
-.. automodule:: modules.core
+Database
+~~~~~~~~
+
+.. automodule:: modules.core.database
    :members:
    :undoc-members:
    :show-inheritance:
 
-Addon Modules  
+Metadata
+~~~~~~~~
+
+.. automodule:: modules.core.metadata
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Player
+~~~~~~
+
+.. automodule:: modules.core.player
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Playlist
+~~~~~~~~
+
+.. automodule:: modules.core.playlist
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Queue
+~~~~~
+
+.. automodule:: modules.core.queue
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Addon Modules
 -------------
 
-.. automodule:: modules.addons
+Convert
+~~~~~~~
+
+.. automodule:: modules.addons.convert
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+File Relocater
+~~~~~~~~~~~~~~
+
+.. automodule:: modules.addons.file_relocater
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Rename
+~~~~~~
+
+.. automodule:: modules.addons.rename
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+ReplayGain
+~~~~~~~~~~
+
+.. automodule:: modules.addons.replaygain
    :members:
    :undoc-members:
    :show-inheritance:
@@ -22,7 +84,10 @@ Addon Modules
 Niche Modules
 -------------
 
-.. automodule:: modules.niche
+Apply Loudness
+~~~~~~~~~~~~~~
+
+.. automodule:: modules.niche.applyloudness
    :members:
    :undoc-members:
    :show-inheritance:
