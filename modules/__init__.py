@@ -22,6 +22,7 @@ Addon Modules:
 
 Niche Modules:
 - applyloudness: Apply gain adjustments directly to audio files using FFmpeg with ReplayGain or manual dB values (WARNING: can damage audio files irreversibly)
+- imageconverter: Convert images between different formats (JPEG, PNG, WebP, etc.) and resize them
 """
 
 __version__ = "1.0.0"
@@ -41,7 +42,7 @@ except ImportError:
 
 # Import niche modules
 try:
-    from .niche import applyloudness
+    from .niche import applyloudness, imageconverter
 except ImportError:
     pass
 
@@ -52,5 +53,5 @@ __all__ = [
     # Addon modules  
     'convert', 'file_relocater', 'rename', 'replaygain',
     # Niche modules
-    'applyloudness'
+    'applyloudness', 'imageconverter'
 ]
