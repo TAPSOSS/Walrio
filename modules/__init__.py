@@ -12,13 +12,13 @@ Core Modules:
 - player: GStreamer-based audio player with advanced playback features
 - playlist: M3U playlist creation and management utilities
 - queue: Playback queue management with shuffle and repeat modes
+- metadata: Edit audio file metadata and album art using mutagen CLI tools
 
 Addon Modules:
 - convert: Audio format conversion using FFmpeg
 - file_relocater: Organize audio files based on metadata into folder structures
 - rename: Standardize audio file names based on metadata
 - replaygain: ReplayGain LUFS analysis and tagging using rsgain
-- metadata: Edit audio file metadata and album art using mutagen
 - organize: Library organization tools and utilities
 
 Niche Modules:
@@ -30,13 +30,13 @@ __author__ = "Walrio Contributors"
 
 # Import core modules
 try:
-    from .core import database, player, playlist, queue
+    from .core import database, player, playlist, queue, metadata
 except ImportError:
     pass
 
 # Import addon modules
 try:
-    from .addons import convert, file_relocater, rename, replaygain, metadata, organize
+    from .addons import convert, file_relocater, rename, replaygain, organize
 except ImportError:
     pass
 
@@ -49,9 +49,9 @@ except ImportError:
 # Make all modules available at package level
 __all__ = [
     # Core modules
-    'database', 'player', 'playlist', 'queue',
+    'database', 'player', 'playlist', 'queue', 'metadata',
     # Addon modules  
-    'convert', 'file_relocater', 'rename', 'replaygain', 'metadata', 'organize',
+    'convert', 'file_relocater', 'rename', 'replaygain', 'organize',
     # Niche modules
     'applyloudness'
 ]
