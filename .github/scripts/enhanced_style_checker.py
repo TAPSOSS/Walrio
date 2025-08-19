@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 Enhanced style checker for Walrio project
+Copyright (c) 2025 TAPS OSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
 Provides detailed feedback on BSD header and docstring requirements
 """
 
@@ -11,14 +15,37 @@ from pathlib import Path
 from typing import List, Dict, Tuple
 
 class StyleIssue:
+    """
+    Represents a style violation found during code analysis.
+    
+    Stores information about style issues including severity, category, message, and line number.
+    """
     def __init__(self, severity: str, category: str, message: str, line: int = None):
+        """
+        Initialize a new style issue.
+        
+        Args:
+            severity (str): Severity level (ERROR, WARNING, INFO)
+            category (str): Issue category (HEADER, DOCSTRING, SYNTAX)
+            message (str): Descriptive message about the issue
+            line (int, optional): Line number where the issue occurs
+        """
         self.severity = severity  # ERROR, WARNING, INFO
         self.category = category  # HEADER, DOCSTRING, SYNTAX
         self.message = message
         self.line = line
 
 def check_bsd_header(file_content: str, filename: str) -> List[StyleIssue]:
-    """Check if file has required BSD-3-Clause header with detailed feedback."""
+    """
+    Check if file has required BSD-3-Clause header with detailed feedback.
+    
+    Args:
+        file_content (str): The content of the Python file to check
+        filename (str): Name of the file being checked for error reporting
+        
+    Returns:
+        List[StyleIssue]: List of style issues found in the BSD header
+    """
     issues = []
     required_elements = {
         "Copyright (c) 2025 TAPS OSS": "copyright notice",
@@ -48,7 +75,20 @@ def check_bsd_header(file_content: str, filename: str) -> List[StyleIssue]:
     return issues
 
 def analyze_function_signature(node: ast.FunctionDef) -> Dict:
-    """Analyze function signature to determine docstring requirements."""
+    """
+    Analyze function signature to determine docstring requirements.
+    
+    Args:
+        node (ast.FunctionDef): AST node representing the function definition
+        
+    Returns:
+        Dict: Dictionary containing signature analysis results with keys:
+            - params: List of parameter names (excluding self/cls)
+            - has_varargs: Boolean indicating presence of *args
+            - has_kwargs: Boolean indicating presence of **kwargs
+            - has_return: Boolean indicating meaningful return statements
+            - param_count: Number of parameters
+    """
     # Get parameters (excluding 'self' and 'cls')
     params = []
     for arg in node.args.args:
@@ -80,7 +120,17 @@ def analyze_function_signature(node: ast.FunctionDef) -> Dict:
     }
 
 def check_docstring_content(docstring: str, func_info: Dict, func_name: str) -> List[str]:
-    """Check if docstring has proper structure and content."""
+    """
+    Check if docstring has proper structure and content.
+    
+    Args:
+        docstring (str): The docstring content to analyze
+        func_info (Dict): Function signature information from analyze_function_signature
+        func_name (str): Name of the function being checked
+        
+    Returns:
+        List[str]: List of issues found in the docstring content
+    """
     issues = []
     
     # Check for basic description
@@ -129,7 +179,16 @@ def check_docstring_content(docstring: str, func_info: Dict, func_name: str) -> 
     return issues
 
 def check_docstrings(file_content: str, filename: str) -> List[StyleIssue]:
-    """Check docstrings with detailed analysis and feedback."""
+    """
+    Check docstrings with detailed analysis and feedback.
+    
+    Args:
+        file_content (str): The content of the Python file to analyze
+        filename (str): Name of the file being checked for error reporting
+        
+    Returns:
+        List[StyleIssue]: List of docstring-related style issues found
+    """
     issues = []
     
     try:
@@ -139,7 +198,16 @@ def check_docstrings(file_content: str, filename: str) -> List[StyleIssue]:
         return issues
     
     def check_node_docstring(node, node_type: str):
-        """Check individual function or class docstring."""
+        """
+        Check individual function or class docstring.
+        
+        Args:
+            node: AST node representing a function or class definition
+            node_type (str): Type of node being checked ("Function" or "Class")
+            
+        Returns:
+            List[StyleIssue]: List of docstring issues found for this node
+        """
         node_issues = []
         
         # Check if docstring exists
@@ -176,7 +244,16 @@ def check_docstrings(file_content: str, filename: str) -> List[StyleIssue]:
     return issues
 
 def format_issues_summary(issues: List[StyleIssue], filename: str) -> str:
-    """Format issues into a readable summary."""
+    """
+    Format issues into a readable summary.
+    
+    Args:
+        issues (List[StyleIssue]): List of style issues to format
+        filename (str): Name of the file being reported on
+        
+    Returns:
+        str: Formatted summary string with issue details
+    """
     if not issues:
         return f"✅ {filename}: All style checks passed"
     
@@ -198,7 +275,15 @@ def format_issues_summary(issues: List[StyleIssue], filename: str) -> str:
     return "\n".join(output)
 
 def generate_fix_suggestions(issues: List[StyleIssue]) -> str:
-    """Generate specific fix suggestions based on issues found."""
+    """
+    Generate specific fix suggestions based on issues found.
+    
+    Args:
+        issues (List[StyleIssue]): List of style issues to generate suggestions for
+        
+    Returns:
+        str: Formatted string containing fix suggestions
+    """
     suggestions = []
     
     header_issues = [i for i in issues if i.category == "HEADER"]
@@ -264,6 +349,12 @@ def generate_fix_suggestions(issues: List[StyleIssue]) -> str:
     return "\n".join(suggestions) if suggestions else ""
 
 def main():
+    """
+    Main function to run the enhanced style checker.
+    
+    Processes command line arguments and runs style checks on specified Python files.
+    Exits with code 1 if any style issues are found, 0 if all files pass.
+    """
     if len(sys.argv) < 2:
         print("Usage: python enhanced_style_checker.py <file1.py> [file2.py ...]")
         sys.exit(1)

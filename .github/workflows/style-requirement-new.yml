@@ -1,0 +1,71 @@
+name: Style Checker
+
+on:
+  pull_request:
+    branches: [ main ]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  style-check:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Get changed Python files
+      id: changed-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files: |
+          **/*.py
+        files_ignore: |
+          .github/workflows/**
+          __pycache__/**
+          *.pyc
+          build/**
+          dist/**
+    
+    - name: Enhanced style checking
+      if: steps.changed-files.outputs.any_changed == 'true'
+      run: |
+        echo "🚀 Running enhanced style check on changed Python files..."
+        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+        
+        # Make the enhanced style checker executable and run it
+        chmod +x .github/scripts/enhanced_style_checker.py
+        python3 .github/scripts/enhanced_style_checker.py ${{ steps.changed-files.outputs.all_changed_files }}
+    
+    - name: Comment on PR if failures
+      if: failure() && steps.changed-files.outputs.any_changed == 'true'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: `## 🚨 Style Check Failed
+            
+            Some of your Python files don't meet our styling requirements. Please review the build logs above for detailed feedback.
+            
+            ### Quick fixes:
+            - **Missing BSD header**: Add the required copyright header to the top of your Python files
+            - **Missing docstrings**: Add docstrings to functions and classes
+            - **Incomplete docstrings**: Add \`Args:\` and \`Returns:\` sections where needed
+            
+            📖 **Full style guide**: [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements)
+            
+            Re-run this check by pushing new commits to your PR.`
+          })
