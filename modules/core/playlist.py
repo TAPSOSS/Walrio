@@ -13,7 +13,6 @@ import os
 import sqlite3
 import argparse
 from pathlib import Path
-from urllib.parse import urlparse
 from . import metadata
 
 # Default database path
