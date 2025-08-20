@@ -452,7 +452,7 @@ class MetadataEditor:
     
     def set_album_art(self, filepath: str, image_path: str) -> bool:
         """
-        Set album art for an audio file using mutagen CLI tools with FFmpeg fallback.
+        Set album art for an audio file using FFmpeg.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -470,100 +470,17 @@ class MetadataEditor:
             return False
         
         try:
-            ext = Path(filepath).suffix.lower()
-            
-            if ext == '.mp3':
-                return self._set_mp3_album_art(filepath, image_path)
-            else:
-                return self._set_generic_album_art(filepath, image_path)
+            # Use FFmpeg for all album art operations
+            logger.info(f"Using FFmpeg for album art embedding in {os.path.basename(filepath)}")
+            return self._set_album_art_ffmpeg(filepath, image_path)
                 
         except Exception as e:
             logger.error(f"Error setting album art for {os.path.basename(filepath)}: {str(e)}")
             return False
     
-    def _set_mp3_album_art(self, filepath: str, artwork_path: str) -> bool:
-        """
-        Set album art for MP3 files using mid3v2.
-        
-        Args:
-            filepath (str): Path to the MP3 file to modify
-            artwork_path (str): Path to the artwork image file to embed
-            
-        Returns:
-            bool: True if album art was successfully set, False otherwise
-        """
-        try:
-            # Use mid3v2 for MP3 files
-            cmd = [
-                'mid3v2',
-                '--APIC',
-                f'{artwork_path}:Cover (front)',
-                str(filepath)
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully set album art for {os.path.basename(filepath)} using mid3v2")
-                return True
-            else:
-                logger.error(f"mid3v2 album art error: {result.stderr}")
-                # Fallback to FFmpeg
-                logger.info(f"Using FFmpeg fallback for album art embedding in {os.path.basename(filepath)}")
-                return self._set_album_art_ffmpeg(filepath, artwork_path)
-                
-        except Exception as e:
-            logger.error(f"Error setting MP3 album art: {str(e)}")
-            return False
-    
-    def _set_generic_album_art(self, filepath: str, image_path: str) -> bool:
-        """
-        Set album art for non-MP3 files using mutagen-pony with FFmpeg fallback.
-        
-        Args:
-            filepath (str): Path to the audio file to modify
-            image_path (str): Path to the artwork image file to embed
-            
-        Returns:
-            bool: True if album art was successfully set, False otherwise
-        """
-        try:
-            # Try mutagen-pony first for non-MP3 formats
-            try:
-                cmd = ['mutagen-pony', str(filepath), f'APIC:{image_path}']
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=30
-                )
-                
-                if result.returncode == 0:
-                    logger.info(f"Successfully set album art for {os.path.basename(filepath)} using mutagen-pony")
-                    return True
-                else:
-                    logger.debug(f"mutagen-pony error: {result.stderr}")
-            except FileNotFoundError:
-                logger.debug("mutagen-pony not available")
-            
-            # Fallback to ffmpeg for supported formats
-            logger.info(f"Using FFmpeg fallback for album art embedding in {os.path.basename(filepath)}")
-            return self._set_album_art_ffmpeg(filepath, image_path)
-            
-        except Exception as e:
-            logger.error(f"Error setting album art: {str(e)}")
-            return False
-    
     def _set_album_art_ffmpeg(self, filepath: str, image_path: str) -> bool:
         """
-        Set album art using FFmpeg as a fallback method.
+        Set album art using FFmpeg.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -586,10 +503,17 @@ class MetadataEditor:
                 '-map', '0',
                 '-map', '1',
                 '-c', 'copy',
-                '-id3v2_version', '3',
+                '-disposition:v:0', 'attached_pic'
+            ]
+            
+            # Add metadata for the attached picture
+            if file_ext == '.mp3':
+                cmd.extend(['-id3v2_version', '3'])
+            
+            cmd.extend([
                 '-metadata:s:v', 'title=Cover (front)',
                 '-metadata:s:v', 'comment=Cover (front)'
-            ]
+            ])
             
             # Add format specification for files that need it
             if file_ext in ['.flac', '.ogg', '.opus']:
@@ -628,7 +552,7 @@ class MetadataEditor:
     
     def remove_album_art(self, filepath: str) -> bool:
         """
-        Remove album art from an audio file using CLI tools.
+        Remove album art from an audio file using FFmpeg.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -641,86 +565,12 @@ class MetadataEditor:
             return False
         
         try:
-            ext = Path(filepath).suffix.lower()
-            
-            if ext == '.mp3':
-                return self._remove_mp3_album_art(filepath)
-            else:
-                return self._remove_generic_album_art(filepath)
+            # Use FFmpeg for all album art operations
+            logger.info(f"Using FFmpeg to remove album art from {os.path.basename(filepath)}")
+            return self._remove_album_art_ffmpeg(filepath)
                 
         except Exception as e:
             logger.error(f"Error removing album art from {os.path.basename(filepath)}: {str(e)}")
-            return False
-    
-    def _remove_mp3_album_art(self, filepath: str) -> bool:
-        """
-        Remove album art from MP3 files using mid3v2.
-        
-        Args:
-            filepath (str): Path to the MP3 file to modify
-            
-        Returns:
-            bool: True if album art was successfully removed, False otherwise
-        """
-        try:
-            # Use mid3v2 for MP3 files
-            cmd = ['mid3v2', '--delete-frames', 'APIC', str(filepath)]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using mid3v2")
-                return True
-            else:
-                logger.error(f"mid3v2 remove art error: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error removing MP3 album art: {str(e)}")
-            return False
-    
-    def _remove_generic_album_art(self, filepath: str) -> bool:
-        """
-        Remove album art from non-MP3 files using mutagen-pony with FFmpeg fallback.
-        
-        Args:
-            filepath (str): Path to the audio file to modify
-            
-        Returns:
-            bool: True if album art was successfully removed, False otherwise
-        """
-        try:
-            # Try mutagen-pony first for non-MP3 formats
-            try:
-                cmd = ['mutagen-pony', str(filepath), '--delete', 'APIC']
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=30
-                )
-                
-                if result.returncode == 0:
-                    logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using mutagen-pony")
-                    return True
-                else:
-                    logger.debug(f"mutagen-pony remove error: {result.stderr}")
-            except FileNotFoundError:
-                logger.debug("mutagen-pony not available")
-            
-            # Fallback to FFmpeg - remove album art by copying only audio streams
-            logger.info(f"Using FFmpeg fallback to remove album art from {os.path.basename(filepath)}")
-            return self._remove_album_art_ffmpeg(filepath)
-            
-        except Exception as e:
-            logger.error(f"Error removing album art: {str(e)}")
             return False
     
     def _remove_album_art_ffmpeg(self, filepath: str) -> bool:
@@ -743,8 +593,8 @@ class MetadataEditor:
             cmd = [
                 'ffmpeg', '-y',
                 '-i', str(filepath),
-                '-map', '0:a',  # Only copy audio streams
-                '-c', 'copy'    # Copy without re-encoding
+                '-map', '0:a',
+                '-c', 'copy'
             ]
             
             # Add format specification for files that need it
@@ -1002,8 +852,7 @@ class MetadataEditor:
     
     def embed_opus_album_art(self, opus_filepath: str, image_path: str) -> bool:
         """
-        Embed album art into OPUS files using the CLI-based approach.
-        This replaces the inline mutagen approach used in other modules.
+        Embed album art into OPUS files.
         
         Args:
             opus_filepath (str): Path to the OPUS audio file to modify
@@ -1021,7 +870,6 @@ class MetadataEditor:
             return False
         
         try:
-            # Use our existing set_album_art method which handles OPUS via CLI tools
             return self.set_album_art(opus_filepath, image_path)
             
         except Exception as e:
@@ -1217,7 +1065,6 @@ def set_album_art(filepath: str, image_path: str) -> bool:
 def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
     """
     Convenience function to embed album art in OPUS files.
-    Replaces inline mutagen usage in other modules.
     
     Args:
         opus_filepath (str): Path to the OPUS audio file to modify
