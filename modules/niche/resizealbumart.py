@@ -17,7 +17,7 @@ import logging
 import tempfile
 import subprocess
 from pathlib import Path
-from typing import Optional, List
+from typing import List
 
 # Add the modules directory to Python path to import modules
 modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -115,7 +115,7 @@ def resize_album_art(audio_file: str,
                     quality: int = 95,
                     format: str = "jpeg",
                     maintain_aspect: bool = False,
-                    backup: bool = True) -> bool:
+                    backup: bool = False) -> bool:
     """
     Resize album art in an audio file.
     
@@ -206,7 +206,7 @@ def process_directory(directory: str,
                      quality: int = 95,
                      format: str = "jpeg", 
                      maintain_aspect: bool = False,
-                     backup: bool = True,
+                     backup: bool = False,
                      recursive: bool = False) -> tuple[int, int]:
     """
     Process all audio files in a directory.
@@ -286,11 +286,11 @@ Examples:
   # Maintain aspect ratio instead of stretching
   python resizealbumart.py song.mp3 --maintain-aspect
 
-  # Process all audio files in a directory
+  # Process an entire directory recursively
   python resizealbumart.py /path/to/music/directory --recursive
 
-  # Process without creating backups
-  python resizealbumart.py song.mp3 --no-backup
+  # Process with creating backups  
+  python resizealbumart.py song.mp3 --backup
 
   # Use PNG format instead of JPEG
   python resizealbumart.py song.mp3 --format png
@@ -332,9 +332,9 @@ Supported audio formats: {}
     )
     
     parser.add_argument(
-        '--no-backup',
+        '--backup',
         action='store_true',
-        help='Do not create backup files'
+        help='Create backup files before processing'
     )
     
     parser.add_argument(
@@ -396,7 +396,7 @@ def main():
                 quality=args.quality,
                 format=args.format,
                 maintain_aspect=args.maintain_aspect,
-                backup=not args.no_backup,
+                backup=args.backup,
                 recursive=args.recursive
             )
             logger.info(f"Directory processing complete: {successful}/{total} successful")
@@ -417,7 +417,7 @@ def main():
                 quality=args.quality,
                 format=args.format,
                 maintain_aspect=args.maintain_aspect,
-                backup=not args.no_backup
+                backup=args.backup
             ):
                 successful += 1
         except Exception as e:
