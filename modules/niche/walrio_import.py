@@ -110,7 +110,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'applyloudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain']
+            'args': ['--replaygain', '--no-backup']
         },
         {
             'name': 'resizealbumart',
