@@ -30,6 +30,11 @@ def find_cli_tools(modules_dir: str) -> List[str]:
     cli_tools = []
     modules_path = Path(modules_dir)
     
+    # Add the unified walrio.py interface first
+    walrio_py = modules_path / 'walrio.py'
+    if walrio_py.exists():
+        cli_tools.append(str(walrio_py))
+    
     # Look in core, addons, niche, and any other subdirectories
     for subdir in modules_path.iterdir():
         if subdir.is_dir() and not subdir.name.startswith('__'):
@@ -230,7 +235,35 @@ def generate_cli_documentation(modules_dir: str, output_file: str):
     rst_content = """Command Line Usage
 ==================
 
-Walrio provides several command-line tools for audio file management and processing. These tools are located throughout the ``modules/`` directory and can be run directly as Python scripts.
+Walrio provides several command-line tools for audio file management and processing. These tools are located throughout the ``modules/`` directory and can be run directly as Python scripts, or accessed through the unified ``walrio.py`` interface.
+
+Unified Interface (Recommended)
+-------------------------------
+
+Use the unified interface for easier access to all modules:
+
+.. code-block:: bash
+
+    # General syntax
+    python modules/walrio.py <module> [module_args...]
+    
+    # Get help and list modules
+    python modules/walrio.py --help
+    python modules/walrio.py list
+    
+    # Get help for a specific module
+    python modules/walrio.py convert --help
+
+**Available Module Categories:**
+
+* **ADDONS**: convert, rename, replaygain, imageconverter, file_relocater
+* **NICHE**: applyloudness, resizealbumart  
+* **CORE**: database, metadata, player, playlist, queue
+
+Direct Module Access
+--------------------
+
+You can also run modules directly:
 
 Available Tools
 ---------------

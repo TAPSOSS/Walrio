@@ -20,6 +20,14 @@ Overview
 
 Walrio follows a modular architecture where functionality is provided through dynamically loaded modules. The core framework handles module discovery, loading, dependency management, and provides a plugin system for extending functionality.
 
+**Unified Interface**: All modules can be accessed through the unified ``walrio.py`` interface:
+
+.. code-block:: bash
+
+    python modules/walrio.py <module> [args...]
+    python modules/walrio.py --help  # Show all available modules
+    python modules/walrio.py list    # List modules by category
+
 Key Components
 --------------
 
@@ -27,6 +35,7 @@ Key Components
 * **Module System**: Dynamic module loading and dependency resolution  
 * **Addon System**: Plugin architecture for extending functionality
 * **GUI Components**: Optional graphical user interface modules
+* **Unified CLI**: Single entry point (``walrio.py``) for all command-line tools
 
 Architecture
 ------------
@@ -52,9 +61,24 @@ Getting Started
 
 To explore the codebase:
 
-1. **Browse the API Reference** - See :doc:`api/index` for detailed module documentation
-2. **Review Core Modules** - Check the modules/ directory for the main application logic
-3. **Examine Addons** - Look at modules/addons/ for extension examples
+1. **Use the Unified Interface** - Run ``python modules/walrio.py --help`` to see all available tools
+2. **Browse the API Reference** - See :doc:`api/index` for detailed module documentation
+3. **Review Core Modules** - Check the modules/ directory for the main application logic
+4. **Examine Addons** - Look at modules/addons/ for extension examples
+5. **Try Command Line Tools** - See :doc:`cli_usage` for practical examples
+
+**Quick Start with Command Line Tools:**
+
+.. code-block:: bash
+
+    # See all available modules
+    python modules/walrio.py list
+    
+    # Get help for any module
+    python modules/walrio.py <module> --help
+    
+    # Example: Convert audio files
+    python modules/walrio.py convert input.wav --format mp3
 
 Indices and tables
 ==================
