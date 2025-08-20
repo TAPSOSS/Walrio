@@ -1,3 +1,2 @@
 # Python package dependencies for Walrio
 mutagen>=1.45.0
-eyeD3>=0.9.0

@@ -17,7 +17,7 @@ import logging
 import tempfile
 import subprocess
 from pathlib import Path
-from typing import Optional, List
+from typing import List
 
 # Add the modules directory to Python path to import modules
 modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -115,7 +115,7 @@ def resize_album_art(audio_file: str,
                     quality: int = 95,
                     format: str = "jpeg",
                     maintain_aspect: bool = False,
-                    backup: bool = True) -> bool:
+                    backup: bool | str = False) -> bool:
     """
     Resize album art in an audio file.
     
@@ -126,6 +126,7 @@ def resize_album_art(audio_file: str,
         format (str): Output format for the resized image
         maintain_aspect (bool): Whether to maintain aspect ratio
         backup (bool): Whether to create a backup of the original file
+        backup_dir (str): Directory to store backup files (default: same as original)
         
     Returns:
         bool: True if resize operation successful, False otherwise
@@ -142,7 +143,15 @@ def resize_album_art(audio_file: str,
     
     # Create backup if requested
     if backup:
-        backup_path = f"{audio_file}.backup"
+        if isinstance(backup, str):
+            # Create backup directory if it doesn't exist
+            os.makedirs(backup, exist_ok=True)
+            backup_filename = os.path.basename(audio_file) + ".backup"
+            backup_path = os.path.join(backup, backup_filename)
+        else:
+            # Default: store backup next to original file
+            backup_path = f"{audio_file}.backup"
+            
         try:
             import shutil
             shutil.copy2(audio_file, backup_path)
@@ -206,7 +215,7 @@ def process_directory(directory: str,
                      quality: int = 95,
                      format: str = "jpeg", 
                      maintain_aspect: bool = False,
-                     backup: bool = True,
+                     backup: bool | str = False,
                      recursive: bool = False) -> tuple[int, int]:
     """
     Process all audio files in a directory.
@@ -217,7 +226,7 @@ def process_directory(directory: str,
         quality (int): JPEG quality
         format (str): Output format for resized images
         maintain_aspect (bool): Whether to maintain aspect ratio
-        backup (bool): Whether to create backups
+        backup (bool | str): Whether to create backups, or directory path for backups
         recursive (bool): Whether to process subdirectories
         
     Returns:
@@ -286,11 +295,14 @@ Examples:
   # Maintain aspect ratio instead of stretching
   python resizealbumart.py song.mp3 --maintain-aspect
 
-  # Process all audio files in a directory
+  # Process an entire directory recursively
   python resizealbumart.py /path/to/music/directory --recursive
 
-  # Process without creating backups
-  python resizealbumart.py song.mp3 --no-backup
+  # Process with creating backups  
+  python resizealbumart.py song.mp3 --backup
+
+  # Store backups in a specific directory
+  python resizealbumart.py song.mp3 --backup /path/to/backups
 
   # Use PNG format instead of JPEG
   python resizealbumart.py song.mp3 --format png
@@ -332,9 +344,10 @@ Supported audio formats: {}
     )
     
     parser.add_argument(
-        '--no-backup',
-        action='store_true',
-        help='Do not create backup files'
+        '--backup',
+        nargs='?',
+        const=True,
+        help='Create backup files before processing. Optionally specify a directory path to store backups (default: same location as original files)'
     )
     
     parser.add_argument(
@@ -381,6 +394,14 @@ def main():
         logger.error("Size must be in format 'WIDTHxHEIGHT' or percentage (e.g., '50%')")
         sys.exit(1)
     
+    # Validate backup directory if specified as a string
+    if isinstance(args.backup, str):
+        try:
+            os.makedirs(args.backup, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Cannot create backup directory '{args.backup}': {e}")
+            sys.exit(1)
+    
     # Collect input files
     input_files = []
     for input_path in args.input:
@@ -396,7 +417,7 @@ def main():
                 quality=args.quality,
                 format=args.format,
                 maintain_aspect=args.maintain_aspect,
-                backup=not args.no_backup,
+                backup=args.backup,
                 recursive=args.recursive
             )
             logger.info(f"Directory processing complete: {successful}/{total} successful")
@@ -417,7 +438,7 @@ def main():
                 quality=args.quality,
                 format=args.format,
                 maintain_aspect=args.maintain_aspect,
-                backup=not args.no_backup
+                backup=args.backup
             ):
                 successful += 1
         except Exception as e:
