@@ -115,7 +115,7 @@ def resize_album_art(audio_file: str,
                     quality: int = 95,
                     format: str = "jpeg",
                     maintain_aspect: bool = False,
-                    backup: bool = False) -> bool:
+                    backup: bool | str = False) -> bool:
     """
     Resize album art in an audio file.
     
@@ -126,6 +126,7 @@ def resize_album_art(audio_file: str,
         format (str): Output format for the resized image
         maintain_aspect (bool): Whether to maintain aspect ratio
         backup (bool): Whether to create a backup of the original file
+        backup_dir (str): Directory to store backup files (default: same as original)
         
     Returns:
         bool: True if resize operation successful, False otherwise
@@ -142,7 +143,15 @@ def resize_album_art(audio_file: str,
     
     # Create backup if requested
     if backup:
-        backup_path = f"{audio_file}.backup"
+        if isinstance(backup, str):
+            # Create backup directory if it doesn't exist
+            os.makedirs(backup, exist_ok=True)
+            backup_filename = os.path.basename(audio_file) + ".backup"
+            backup_path = os.path.join(backup, backup_filename)
+        else:
+            # Default: store backup next to original file
+            backup_path = f"{audio_file}.backup"
+            
         try:
             import shutil
             shutil.copy2(audio_file, backup_path)
@@ -206,7 +215,7 @@ def process_directory(directory: str,
                      quality: int = 95,
                      format: str = "jpeg", 
                      maintain_aspect: bool = False,
-                     backup: bool = False,
+                     backup: bool | str = False,
                      recursive: bool = False) -> tuple[int, int]:
     """
     Process all audio files in a directory.
@@ -217,7 +226,7 @@ def process_directory(directory: str,
         quality (int): JPEG quality
         format (str): Output format for resized images
         maintain_aspect (bool): Whether to maintain aspect ratio
-        backup (bool): Whether to create backups
+        backup (bool | str): Whether to create backups, or directory path for backups
         recursive (bool): Whether to process subdirectories
         
     Returns:
@@ -292,6 +301,9 @@ Examples:
   # Process with creating backups  
   python resizealbumart.py song.mp3 --backup
 
+  # Store backups in a specific directory
+  python resizealbumart.py song.mp3 --backup /path/to/backups
+
   # Use PNG format instead of JPEG
   python resizealbumart.py song.mp3 --format png
 
@@ -333,8 +345,9 @@ Supported audio formats: {}
     
     parser.add_argument(
         '--backup',
-        action='store_true',
-        help='Create backup files before processing'
+        nargs='?',
+        const=True,
+        help='Create backup files before processing. Optionally specify a directory path to store backups (default: same location as original files)'
     )
     
     parser.add_argument(
@@ -380,6 +393,14 @@ def main():
     if not ('x' in args.size or args.size.endswith('%')):
         logger.error("Size must be in format 'WIDTHxHEIGHT' or percentage (e.g., '50%')")
         sys.exit(1)
+    
+    # Validate backup directory if specified as a string
+    if isinstance(args.backup, str):
+        try:
+            os.makedirs(args.backup, exist_ok=True)
+        except Exception as e:
+            logger.error(f"Cannot create backup directory '{args.backup}': {e}")
+            sys.exit(1)
     
     # Collect input files
     input_files = []
