@@ -60,19 +60,17 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         cmd.extend(extra_args)
     
     print(f"Running: {' '.join(cmd)}")
+    print("-" * 50)
     
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        # Run with live output and user interaction enabled
+        result = subprocess.run(cmd, check=True)
+        print("-" * 50)
         print(f"✓ {module_name} completed successfully")
-        if result.stdout.strip():
-            print(f"Output: {result.stdout.strip()}")
         return True
     except subprocess.CalledProcessError as e:
+        print("-" * 50)
         print(f"✗ {module_name} failed with exit code {e.returncode}")
-        if e.stdout:
-            print(f"stdout: {e.stdout}")
-        if e.stderr:
-            print(f"stderr: {e.stderr}")
         return False
 
 def process_import_pipeline(input_path, recursive=False, dry_run=False):
