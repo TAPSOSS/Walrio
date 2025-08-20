@@ -490,11 +490,10 @@ class MetadataEditor:
             bool: True if album art was successfully set, False otherwise
         """
         try:
-            # Create temporary output file
-            temp_file = filepath + '.tmp'
-            
             # Get file extension to determine format
             file_ext = os.path.splitext(filepath)[1].lower()
+            # Create temporary output file with proper extension
+            temp_file = filepath + '.tmp' + file_ext
             
             cmd = [
                 'ffmpeg', '-y',
@@ -584,11 +583,10 @@ class MetadataEditor:
             bool: True if album art was successfully removed, False otherwise
         """
         try:
-            # Create temporary output file
-            temp_file = filepath + '.tmp'
-            
             # Get file extension to determine format
             file_ext = os.path.splitext(filepath)[1].lower()
+            # Create temporary output file with proper extension
+            temp_file = filepath + '.tmp' + file_ext
             
             cmd = [
                 'ffmpeg', '-y',
