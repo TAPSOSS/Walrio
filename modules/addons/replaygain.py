@@ -206,8 +206,8 @@ class ReplayGainAnalyzer:
             return None
         
         try:
-            # Build rsgain command for analysis and tagging
-            lufs_str = f"-{abs(self.target_lufs)}"
+            # Build rsgain command for analysis and tagging (following MuseAmp pattern)
+            lufs_str = f"-{abs(self.target_lufs)}"  # MuseAmp pattern: always negative
             cmd = [
                 "rsgain", "custom",
                 "-s", "i",  # Apply tags (single file mode, integrated mode)
@@ -219,6 +219,8 @@ class ReplayGainAnalyzer:
             # Add skip option if requested
             if skip_tagged:
                 cmd.insert(2, "-S")  # Skip files with existing ReplayGain tags
+
+            logger.debug(f"Running command: {' '.join(cmd)}")  # Debug the exact command
             
             result = subprocess.run(
                 cmd,
@@ -226,22 +228,24 @@ class ReplayGainAnalyzer:
                 text=True,
                 check=False
             )
-            
+
             if result.returncode != 0:
                 logger.error(f"rsgain tagging failed for {os.path.basename(filepath)}: {result.stderr or result.stdout}")
                 self.error_count += 1
                 return None
-            
+
             # Parse the output (same format as analyze_file)
             lines = result.stdout.strip().splitlines()
             if len(lines) < 2:
                 logger.error(f"Unexpected rsgain output format for {os.path.basename(filepath)}")
                 self.error_count += 1
                 return None
-            
+
             # Parse header and values
             header = lines[0].split('\t')
             values = lines[1].split('\t')
+            logger.debug(f"Header: {header}")  # Debug output
+            logger.debug(f"Values: {values}")  # Debug output
             
             if len(header) != len(values):
                 logger.error(f"Header/value mismatch in rsgain output for {os.path.basename(filepath)}")
@@ -501,8 +505,8 @@ Requirements:
     parser.add_argument(
         "--skip-tagged",
         action="store_true",
-        default=True,
-        help="Skip files that already have ReplayGain tags (default: True)"
+        default=False,
+        help="Skip files that already have ReplayGain tags (default: False - process all files)"
     )
     parser.add_argument(
         "--no-skip-tagged",
@@ -611,9 +615,12 @@ def main():
             elif os.path.isdir(input_path):
                 # Directory
                 logger.info(f"Processing directory: {input_path}")
-                results = analyzer.analyze_directory(input_path, recursive, args.analyze_only)
-                if not args.analyze_only:
-                    # For tagging mode, we need to process each file individually with proper settings
+                
+                if args.analyze_only:
+                    # Use the analyze_directory method for analysis-only mode
+                    results = analyzer.analyze_directory(input_path, recursive, args.analyze_only)
+                else:
+                    # For tagging mode, process each file individually with proper settings
                     results = []
                     for root, _, files in os.walk(input_path) if recursive else [(input_path, [], os.listdir(input_path))]:
                         for file in files:
