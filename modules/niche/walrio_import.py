@@ -1,6 +1,9 @@
-#!/usr/bin/env python3
-"""
+
+'''
 Walrio Import Pipeline - Complete audio library import processing
+Copyright (c) 2025 TAPS OSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 This script orchestrates a complete import pipeline for audio files through the Walrio system.
 It processes input directories through the following stages in order:
@@ -9,20 +12,20 @@ It processes input directories through the following stages in order:
 3. Apply ReplayGain analysis with -16 LUFS target
 4. Apply loudness normalization using ReplayGain tags
 5. Resize album artwork to 1000x1000 JPEG format
+'''
 
-Project: Walrio (Audio Library Management System)
-Copyright (c) 2024 TAPSOSS
-Licensed under GPLv3
-"""
-
-import os
 import sys
 import argparse
 import subprocess
 from pathlib import Path
 
 def get_walrio_path():
-    """Get the path to the walrio.py unified interface."""
+    """
+    Get the path to the walrio.py unified interface.
+
+    Returns:
+        str: Absolute path to walrio.py
+    """
     # Get the parent directory (modules) from current file location
     current_dir = Path(__file__).parent
     walrio_path = current_dir.parent / "walrio.py"
