@@ -597,6 +597,9 @@ class MetadataEditor:
             # Create temporary output file
             temp_file = filepath + '.tmp'
             
+            # Get file extension to determine format
+            file_ext = os.path.splitext(filepath)[1].lower()
+            
             cmd = [
                 'ffmpeg', '-y',
                 '-i', str(filepath),
@@ -606,9 +609,19 @@ class MetadataEditor:
                 '-c', 'copy',
                 '-id3v2_version', '3',
                 '-metadata:s:v', 'title=Cover (front)',
-                '-metadata:s:v', 'comment=Cover (front)',
-                temp_file
+                '-metadata:s:v', 'comment=Cover (front)'
             ]
+            
+            # Add format specification for files that need it
+            if file_ext in ['.flac', '.ogg', '.opus']:
+                if file_ext == '.flac':
+                    cmd.extend(['-f', 'flac'])
+                elif file_ext == '.ogg':
+                    cmd.extend(['-f', 'ogg'])
+                elif file_ext == '.opus':
+                    cmd.extend(['-f', 'opus'])
+            
+            cmd.append(temp_file)
             
             result = subprocess.run(
                 cmd,
