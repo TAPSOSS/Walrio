@@ -195,7 +195,7 @@ def convert_image(input_path: str,
                  output_path: str = None,
                  output_format: str = None,
                  geometry: str = None,
-                 quality: int = 95,
+                 quality: int = 100,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
                  background_color: str = "white") -> bool:
@@ -282,7 +282,7 @@ def convert_batch(input_paths: List[str],
                  output_dir: str = None,
                  output_format: str = 'jpeg',
                  geometry: str = None,
-                 quality: int = 95,
+                 quality: int = 100,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
                  background_color: str = "white",
@@ -476,8 +476,8 @@ ImageMagick geometry examples:
     parser.add_argument(
         '-q', '--quality',
         type=int,
-        default=95,
-        help='Quality for lossy formats (1-100, default: 95)'
+        default=100,
+        help='Quality for lossy formats (1-100, default: 100)'
     )
     
     parser.add_argument(
