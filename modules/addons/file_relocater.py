@@ -39,8 +39,8 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 # Default folder structure format
 DEFAULT_FOLDER_FORMAT = "{album}/{year}/{albumartist}"
 
-# Default character replacements (applied before other sanitization)
-DEFAULT_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
+# Standard character replacements (applied before other sanitization when --standard is used)
+STANDARD_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
 
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
@@ -111,8 +111,8 @@ class FileRelocater:
         if not text:
             return "Unknown"
         
-        # Get character replacements from options (default to standard replacements)
-        char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
+        # Get character replacements from options (default to no replacements)
+        char_replacements = self.options.get('char_replacements', {})
         
         # Apply custom character replacements first
         sanitized = text
@@ -120,7 +120,7 @@ class FileRelocater:
             sanitized = sanitized.replace(old_char, new_char)
         
         # Check if sanitization is disabled
-        if self.options.get('dont_sanitize', False):
+        if self.options.get('dont_sanitize', True):  # Default to disabled sanitization
             # Only apply character replacements, skip character filtering
             final_sanitized = sanitized
         else:
@@ -431,17 +431,20 @@ def parse_arguments():
         description="Audio Library Organizer - Organize files into folder structures using metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Organize music library using default format: album/albumartist
+  # Organize music library using default format (no character changes): album/albumartist
   python organize.py /path/to/music/library /path/to/organized/library
 
-  # Custom folder format with year and genre
+  # For music player compatibility, use conservative character replacements and sanitization
+  python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize
+
+  # Custom folder format with year and genre (keeping original characters)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
 
-  # Artist-based organization
-  python organize.py /music /organized --folder-format "{artist}/{album}"
+  # Artist-based organization with conservative sanitization
+  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize
 
-  # Detailed organization with track info
-  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}"
+  # Detailed organization with track info and custom character replacement
+  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
 
 Available pre-defined metadata fields:
   {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
@@ -460,23 +463,22 @@ You can also use any raw metadata tag name (case-sensitive):
   {TPE1}        - Use ID3v2 tag directly
   {Custom_Tag}  - Use any custom tag present in the file
 
-Character replacement examples (default: problematic chars become safe alternatives):
-  --replace-char "/" "-"             # Replace forward slashes with dashes (default)
-  --rc ":" "-"                       # Replace colons with dashes (default, using shortcut)
+Character replacement examples (default: no replacements, files kept as-is):
+  --replace-char "/" "-"             # Replace forward slashes with dashes only
+  --rc ":" "-"                       # Replace colons with dashes only (using shortcut)
   --replace-char "&" "and"           # Replace ampersands with 'and'
   --rc "/" "-" --rc "&" "and"        # Multiple replacements using shortcuts
   --replace-char "?" ""              # Remove question marks (replace with nothing)
-  --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
-  --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
+  --rc "/" "-" --rc "\\" "-" --rc ":" "-" --rc "|" "-"  # Conservative set for music players
 
-Sanitization examples (default: sanitize enabled with conservative character set):
-  --sanitize                         # Explicitly enable character filtering (default behavior)
-  --s                                # Same as above using shortcut
-  --dont-sanitize                    # Disable character filtering, keep all characters
+Sanitization examples (default: no sanitization, keep all characters):
+  --sanitize                         # Enable character filtering using conservative character set
+  -s                                 # Same as above using shortcut
+  --dont-sanitize                    # Explicitly disable character filtering (default behavior)
   --ds                               # Same as above using shortcut
-  --ds --rc "/" "-"                  # No filtering, but still replace / with -
-  --dont-sanitize --dontreplace      # No filtering or replacements at all
-  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
+  --sanitize --rc "&" "and"          # Sanitize with additional custom replacements
+  --sanitize --rc "/" "-"            # Sanitize with custom replacements
+  -s --rc "/" "-"                    # Same as above using shortcut
   --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
   --cs "0123456789"                  # Only allow numbers using shortcut
 
@@ -492,7 +494,8 @@ Folder format tips:
   - Use --skip-no-metadata to skip files missing critical metadata
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - Default character set excludes apostrophes and special chars for music player compatibility
+  - For music player compatibility, consider using: --sanitize --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
+  - Default character set excludes apostrophes and special chars for maximum compatibility
 """)
     
     # Input/Output options
@@ -526,12 +529,12 @@ Folder format tips:
     parser.add_argument(
         "--dontreplace", "--dr",
         action="store_true",
-        help="Disable default character replacements. Only use custom --replace-char replacements."
+        help="Disable standard character replacements. Only use custom --replace-char replacements."
     )
     parser.add_argument(
-        "--sanitize", "--s",
+        "--sanitize", "-s",
         action="store_true",
-        help="Enable folder name sanitization using the allowed character set (default behavior)."
+        help="Enable folder name sanitization using the allowed character set."
     )
     parser.add_argument(
         "--dont-sanitize", "--ds",
@@ -589,18 +592,17 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     
     Args:
         replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include default replacements
+        no_defaults (bool): If True, don't include any default replacements
         
     Returns:
         dict: Dictionary mapping old characters to new characters
     """
     replacements = {}
     
-    # Start with defaults unless explicitly disabled
-    if not no_defaults:
-        replacements.update(DEFAULT_CHAR_REPLACEMENTS)
+    # Note: By default, no character replacements are applied
+    # Users can add custom replacements using --replace-char
     
-    # Add custom replacements (these override defaults if there are conflicts)
+    # Add custom replacements
     if replace_char_list:
         for replacement_pair in replace_char_list:
             if len(replacement_pair) != 2:
@@ -684,18 +686,17 @@ def main():
     # Parse character replacements
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
-    # Determine sanitization setting (default is True)
+    # Determine sanitization setting (default is False)
     # If both flags are set, the disable flag takes priority
-    sanitize_enabled = True
+    sanitize_enabled = False  # Default to disabled
+    if args.sanitize:
+        sanitize_enabled = True  # --sanitize explicitly enables
     if args.dont_sanitize:
-        sanitize_enabled = False
+        sanitize_enabled = False  # --dont-sanitize always disables
         if args.sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
+            logger.warning("Disable sanitization flag takes priority - sanitization disabled.")
         if args.custom_sanitize:
             logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
-    elif args.sanitize:
-        sanitize_enabled = True
-    # If neither flag is specified, use default (True)
     
     # Prepare options
     options = {
@@ -725,8 +726,12 @@ def main():
         if char_replacements:
             replacement_info = ", ".join([f"'{old}' -> '{new}'" for old, new in char_replacements.items()])
             logger.info(f"Character replacements: {replacement_info}")
+        else:
+            logger.info("Character replacements: none (keeping original characters)")
         if not sanitize_enabled:
             logger.info("Folder name sanitization disabled - keeping all characters except replacements")
+        else:
+            logger.info("Folder name sanitization enabled - filtering to allowed character set")
         
         # Organize the library
         logger.info(f"Organizing audio library from: {args.source}")
