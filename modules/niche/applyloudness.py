@@ -7,8 +7,6 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A tool to apply gain adjustments directly to audio files using FFmpeg while preserving metadata and album art.
 Can apply gain based on ReplayGain values or direct dB adjustments.
-
-This implementation is inspired by the MuseAmp project by tapscodes.
 """
 
 import os
@@ -635,8 +633,8 @@ Requirements:
     parser.add_argument(
         "--recursive", "-r",
         action="store_true",
-        default=True,
-        help="Process directories recursively (default: True)"
+        default=False,
+        help="Process directories recursively (default: False)"
     )
     parser.add_argument(
         "--non-recursive",
