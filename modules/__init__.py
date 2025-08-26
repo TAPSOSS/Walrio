@@ -20,6 +20,9 @@ def _discover_modules():
     """
     Automatically discover all modules in the package and extract their descriptions.
     
+    Only searches in subdirectories (core/, addons/, niche/) to avoid including
+    the global CLI interface (walrio.py) or other non-module files in the root.
+    
     Returns:
         dict: Dictionary with module info organized by category
     """
