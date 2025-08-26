@@ -124,5 +124,21 @@ for module_name in _discovered_modules.get('niche', {}):
     except ImportError:
         pass
 
+# Also make submodules available for autodoc
+try:
+    from . import core
+except ImportError:
+    pass
+
+try:
+    from . import addons
+except ImportError:
+    pass
+
+try:
+    from . import niche
+except ImportError:
+    pass
+
 # Make all discovered modules available at package level
 __all__ = sorted(_imported_modules)
