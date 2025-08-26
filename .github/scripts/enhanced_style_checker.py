@@ -258,8 +258,14 @@ def check_emoji_usage(file_content: str, filename: str) -> List[StyleIssue]:
     """
     issues = []
     
-    # Only check files in the modules directory
-    if 'modules' not in filename:
+    # Only check files in the modules directory (must start with "modules/" or be exactly "modules/...")
+    # This ensures we don't check files outside the modules folder even if they contain "modules" in their path
+    import os
+    normalized_path = filename.replace('\\', '/')  # Handle Windows paths
+    if not (normalized_path.startswith('modules/') or 
+            normalized_path.startswith('./modules/') or 
+            normalized_path.startswith('../modules/') or
+            os.path.basename(os.path.dirname(normalized_path)) == 'modules'):
         return issues
     
     lines = file_content.split('\n')
