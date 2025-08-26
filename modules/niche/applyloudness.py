@@ -572,7 +572,7 @@ def parse_arguments():
   python applyloudness.py /path/to/music --gain +1.5 --output /path/to/output
 
   # Apply gain without creating backup files
-  python applyloudness.py /path/to/music --gain -1 --no-backup
+  python applyloudness.py /path/to/music --gain -1 --backup false
 
   # Dry run to see what would be processed
   python applyloudness.py /path/to/music --gain +2 --dry-run
@@ -637,9 +637,10 @@ Requirements:
         help="Process directories recursively (default: False)"
     )
     parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Don't create backup files when modifying in-place"
+        "--backup",
+        choices=['true', 'false'],
+        default='true',
+        help="Create backup files when modifying in-place (default: true)"
     )
     parser.add_argument(
         "--dry-run",
@@ -707,7 +708,7 @@ def main():
     
     # Resolve settings
     recursive = args.recursive
-    create_backup = not args.no_backup and not args.output  # No backup needed if using output dir
+    create_backup = args.backup == 'true' and not args.output  # No backup needed if using output dir
     
     try:
         # Create applicator
