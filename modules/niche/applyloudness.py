@@ -637,11 +637,6 @@ Requirements:
         help="Process directories recursively (default: False)"
     )
     parser.add_argument(
-        "--non-recursive",
-        action="store_true",
-        help="Only process files in the top level of directories"
-    )
-    parser.add_argument(
         "--no-backup",
         action="store_true",
         help="Don't create backup files when modifying in-place"
@@ -711,7 +706,7 @@ def main():
         logger.warning(f"Large gain adjustment ({args.gain} dB) may cause severe distortion or clipping")
     
     # Resolve settings
-    recursive = args.recursive and not args.non_recursive
+    recursive = args.recursive
     create_backup = not args.no_backup and not args.output  # No backup needed if using output dir
     
     try:
