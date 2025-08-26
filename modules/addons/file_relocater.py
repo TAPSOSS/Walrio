@@ -251,13 +251,18 @@ class FileRelocater:
         
         # Handle special case where we have no metadata at all for any field
         if all(not value for value in format_values.values()):
-            if not self.options.get('skip_no_metadata', False):
-                # Use "Unknown" values
+            if self.options.get('skip_no_metadata', True):
+                return None
+            elif self.options.get('process_no_metadata', False):
+                # Use filename (without extension) as the folder name
+                filename = os.path.splitext(os.path.basename(filepath))[0]
+                sanitized_filename = self.sanitize_folder_name(filename)
+                return sanitized_filename
+            else:
+                # Use "Unknown" values (legacy behavior)
                 for field in format_values:
                     if not format_values[field]:
                         format_values[field] = f"Unknown {field.title()}"
-            else:
-                return None
         
         try:
             # Apply the format string
@@ -431,17 +436,20 @@ def parse_arguments():
         description="Audio Library Organizer - Organize files into folder structures using metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Organize music library using default format (no character changes): album/albumartist
+  # Organize music library using default format (skips files with no metadata): album/albumartist
   python organize.py /path/to/music/library /path/to/organized/library
+
+  # Process files with no metadata using filename as folder name
+  python organize.py /music /organized --process-no-metadata
 
   # For music player compatibility, use conservative character replacements and sanitization
   python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize
 
-  # Custom folder format with year and genre (keeping original characters)
+  # Custom folder format with year and genre (skipping files with no metadata)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
 
-  # Artist-based organization with conservative sanitization
-  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize
+  # Artist-based organization with conservative sanitization, process files with no metadata
+  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --process-no-metadata
 
   # Detailed organization with track info and custom character replacement
   python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
@@ -491,7 +499,8 @@ Custom sanitization examples:
 Folder format tips:
   - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
   - Missing fields will be empty (logged as warnings)
-  - Use --skip-no-metadata to skip files missing critical metadata
+  - Files with no metadata are skipped by default (use --process-no-metadata to include them)
+  - When --process-no-metadata is used, files with no metadata use filename as folder name
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
   - For music player compatibility, consider using: --sanitize --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
@@ -567,7 +576,13 @@ Folder format tips:
     parser.add_argument(
         "--skip-no-metadata",
         action="store_true",
-        help="Skip files that have no metadata for the specified format fields"
+        default=True,
+        help="Skip files that have no metadata for the specified format fields (default: True)"
+    )
+    parser.add_argument(
+        "--process-no-metadata",
+        action="store_true",
+        help="Process files with no metadata by using filename as folder name (overrides --skip-no-metadata)"
     )
     
     # Utility options
@@ -698,13 +713,17 @@ def main():
         if args.custom_sanitize:
             logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
     
+    # Determine metadata processing behavior
+    skip_no_metadata = args.skip_no_metadata and not args.process_no_metadata
+    
     # Prepare options
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
         'copy_mode': args.copy,
         'skip_existing': args.skip_existing,
-        'skip_no_metadata': args.skip_no_metadata,
+        'skip_no_metadata': skip_no_metadata,
+        'process_no_metadata': args.process_no_metadata,
         'folder_format': args.folder_format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
@@ -770,7 +789,7 @@ def main():
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
-            logger.error("- For skipped files: Use --skip-no-metadata=false to force organization")
+            logger.error("- For skipped files: Use --process-no-metadata to include files with no metadata")
             logger.error("=" * 60)
             sys.exit(1)
         
