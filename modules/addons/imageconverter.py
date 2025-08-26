@@ -506,7 +506,8 @@ ImageMagick geometry examples:
     parser.add_argument(
         '-r', '--recursive',
         action='store_true',
-        help='Process directories recursively'
+        default=False,
+        help='Process directories recursively (default: False)'
     )
     
     parser.add_argument(
