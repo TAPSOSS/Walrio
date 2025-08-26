@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import tempfile
 
+# Add the modules directory to Python path to import modules
+modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, modules_dir)
+
+from addons.replaygain import ReplayGainAnalyzer
+
 # Import the centralized metadata module for OPUS album art handling
 try:
     from ..core import metadata
@@ -95,7 +101,7 @@ class LoudnessApplicator:
     
     def get_replaygain_value(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
         """
-        Get ReplayGain value for a file using rsgain.
+        Get ReplayGain value for a file using the ReplayGain analyzer.
         
         Args:
             filepath (str): Path to the audio file
@@ -105,54 +111,31 @@ class LoudnessApplicator:
             float or None: ReplayGain value in dB, or None if analysis failed
         """
         try:
-            # Use rsgain to get ReplayGain value
-            lufs_str = f"-{abs(target_lufs)}"
-            cmd = [
-                "rsgain", "custom",
-                "-s", "i",  # Single file mode, integrated mode
-                "-l", lufs_str,  # Target LUFS
-                "-O",  # Output format: tab-separated values
-                str(filepath)
-            ]
+            # Create analyzer instance with the target LUFS
+            analyzer = ReplayGainAnalyzer(target_lufs=target_lufs)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # Analyze the file
+            result = analyzer.analyze_file(filepath)
             
-            if result.returncode != 0:
-                logger.error(f"rsgain analysis failed for {os.path.basename(filepath)}: {result.stderr or result.stdout}")
+            if result is None:
+                logger.error(f"ReplayGain analysis failed for {os.path.basename(filepath)}")
                 return None
             
-            # Parse the output
-            lines = result.stdout.strip().splitlines()
-            if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {os.path.basename(filepath)}")
+            # Extract the gain value
+            gain_db = result.get('gain_db')
+            if gain_db is None:
+                logger.error(f"No gain value found in ReplayGain analysis for {os.path.basename(filepath)}")
                 return None
             
-            # Parse header and values
-            header = lines[0].split('\t')
-            values = lines[1].split('\t')
-            
-            if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {os.path.basename(filepath)}")
-                return None
-            
-            # Create column mapping and get gain value
-            colmap = {k: i for i, k in enumerate(header)}
-            gain_col = colmap.get("Gain (dB)", -1)
-            
-            if gain_col != -1 and gain_col < len(values):
+            if isinstance(gain_db, str):
                 try:
-                    return float(values[gain_col])
+                    gain_db = float(gain_db)
                 except ValueError:
-                    logger.error(f"Invalid gain value in rsgain output for {os.path.basename(filepath)}")
+                    logger.error(f"Invalid gain value in ReplayGain analysis for {os.path.basename(filepath)}: {gain_db}")
                     return None
             
-            logger.error(f"No gain value found in rsgain output for {os.path.basename(filepath)}")
-            return None
+            logger.debug(f"ReplayGain analysis for {os.path.basename(filepath)}: {result.get('loudness_lufs')} LUFS, {gain_db} dB gain")
+            return gain_db
             
         except Exception as e:
             logger.error(f"Error getting ReplayGain value for {os.path.basename(filepath)}: {str(e)}")
