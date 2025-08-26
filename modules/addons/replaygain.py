@@ -521,11 +521,6 @@ Requirements:
         default=False,
         help="Process directories recursively (default: False)"
     )
-    parser.add_argument(
-        "--non-recursive",
-        action="store_true",
-        help="Only process files in the top level of directories"
-    )
     
     # Output options
     parser.add_argument(
@@ -577,8 +572,8 @@ def main():
     # Resolve skip-tagged setting
     skip_tagged = args.skip_tagged and not args.no_skip_tagged
     
-    # Resolve recursive setting
-    recursive = args.recursive and not args.non_recursive
+    # Use recursive setting directly
+    recursive = args.recursive
     
     # Validate target LUFS range
     if not (-30 <= args.target_lufs <= -5):
