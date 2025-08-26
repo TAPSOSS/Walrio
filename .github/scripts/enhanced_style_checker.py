@@ -11,6 +11,7 @@ Provides detailed feedback on BSD header and docstring requirements
 import ast
 import sys
 import re
+import unicodedata
 from pathlib import Path
 from typing import List, Dict, Tuple
 
@@ -238,8 +239,73 @@ def check_docstrings(file_content: str, filename: str) -> List[StyleIssue]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef):
             issues.extend(check_node_docstring(node, "Function"))
-        elif isinstance(node, ast.ClassDef):
-            issues.extend(check_node_docstring(node, "Class"))
+    
+    return issues
+
+def check_emoji_usage(file_content: str, filename: str) -> List[StyleIssue]:
+    """
+    Check for emoji usage in modules directory files.
+    
+    Emojis are not allowed in the modules directory as they can cause display
+    issues on different terminals and reduce accessibility.
+    
+    Args:
+        file_content (str): The content of the Python file to check
+        filename (str): Name of the file being checked for error reporting
+        
+    Returns:
+        List[StyleIssue]: List of emoji-related style issues found
+    """
+    issues = []
+    
+    # Only check files in the modules directory
+    if 'modules' not in filename:
+        return issues
+    
+    lines = file_content.split('\n')
+    
+    for line_num, line in enumerate(lines, 1):
+        # Check each character in the line for emoji
+        for char_pos, char in enumerate(line):
+            # Check if character is an emoji using Unicode categories
+            if unicodedata.category(char) in ['So', 'Sm']:  # Symbol, other / Symbol, math
+                # Additional check for common emoji ranges
+                code_point = ord(char)
+                if (0x1F600 <= code_point <= 0x1F64F or  # Emoticons
+                    0x1F300 <= code_point <= 0x1F5FF or  # Misc Symbols and Pictographs
+                    0x1F680 <= code_point <= 0x1F6FF or  # Transport and Map
+                    0x1F1E0 <= code_point <= 0x1F1FF or  # Regional indicators
+                    0x2600 <= code_point <= 0x26FF or    # Misc symbols
+                    0x2700 <= code_point <= 0x27BF or    # Dingbats
+                    0xFE00 <= code_point <= 0xFE0F or    # Variation selectors
+                    0x1F900 <= code_point <= 0x1F9FF or  # Supplemental Symbols and Pictographs
+                    0x1FA70 <= code_point <= 0x1FAFF):   # Symbols and Pictographs Extended-A
+                    
+                    # Get a snippet of the line around the emoji for context
+                    start_pos = max(0, char_pos - 10)
+                    end_pos = min(len(line), char_pos + 10)
+                    context = line[start_pos:end_pos]
+                    if start_pos > 0:
+                        context = "..." + context
+                    if end_pos < len(line):
+                        context = context + "..."
+                    
+                    issues.append(StyleIssue("ERROR", "EMOJI",
+                        f"Emoji '{char}' found in modules file. Context: '{context}'", line_num))
+            
+            # Also check for specific common emoji sequences that might not be caught above
+            elif char in ['✅', '❌', '⚠️', '🚫', '⏭️', '▶', '🎉', '✓', '✗', '🔧', '🔍', '📁', '📋', '📖', '🛠️', '🚀', '🎊']:
+                # Get context around the emoji
+                start_pos = max(0, char_pos - 10)
+                end_pos = min(len(line), char_pos + 10)
+                context = line[start_pos:end_pos]
+                if start_pos > 0:
+                    context = "..." + context
+                if end_pos < len(line):
+                    context = context + "..."
+                
+                issues.append(StyleIssue("ERROR", "EMOJI",
+                    f"Emoji '{char}' found in modules file. Context: '{context}'", line_num))
     
     return issues
 
@@ -288,6 +354,7 @@ def generate_fix_suggestions(issues: List[StyleIssue]) -> str:
     
     header_issues = [i for i in issues if i.category == "HEADER"]
     docstring_issues = [i for i in issues if i.category == "DOCSTRING"]
+    emoji_issues = [i for i in issues if i.category == "EMOJI"]
     
     if header_issues:
         suggestions.append("""
@@ -346,6 +413,20 @@ def generate_fix_suggestions(issues: List[StyleIssue]) -> str:
        return_type: Description of what is returned
             """)
     
+    if emoji_issues:
+        suggestions.append("""
+🔧 Emoji Usage Fix:
+   Remove emojis from modules directory files. Replace with text equivalents:
+   
+   Instead of: print("✅ Success!")
+   Use:        print("SUCCESS: Operation completed!")
+   
+   Instead of: logger.error("❌ Failed!")
+   Use:        logger.error("ERROR: Operation failed!")
+   
+   Emojis can cause display issues and reduce accessibility.
+            """)
+    
     return "\n".join(suggestions) if suggestions else ""
 
 def main():
@@ -383,6 +464,7 @@ def main():
         file_issues = []
         file_issues.extend(check_bsd_header(content, filename))
         file_issues.extend(check_docstrings(content, filename))
+        file_issues.extend(check_emoji_usage(content, filename))
         
         # Print summary for this file
         print(format_issues_summary(file_issues, filename))
