@@ -14,10 +14,51 @@ import sys
 import argparse
 import logging
 import subprocess
-import json
-import tempfile
+import base64
+import io
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('MetadataEditor')
+
+# Import mutagen directly
+try:
+    from mutagen import File as MutagenFile
+    from mutagen.id3 import ID3, APIC, TIT2, TPE1, TALB, TPE2, TDRC, TCON, TRCK, TPOS, COMM
+    from mutagen.mp3 import MP3
+    from mutagen.flac import FLAC, Picture
+    from mutagen.oggvorbis import OggVorbis
+    from mutagen.oggopus import OggOpus
+    from mutagen.mp4 import MP4
+    from mutagen.apev2 import APEv2
+    from mutagen.trueaudio import TrueAudio
+    from mutagen.wavpack import WavPack
+    from mutagen.asf import ASF
+    from mutagen._util import total_ordering
+    MUTAGEN_AVAILABLE = True
+except ImportError:
+    MUTAGEN_AVAILABLE = False
+
+# Import Pillow for image processing
+try:
+    from PIL import Image
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
+    # Logger will be available here since it's defined above
+
+# Import Pillow for image processing
+try:
+    from PIL import Image
+    PILLOW_AVAILABLE = True
+except ImportError:
+    PILLOW_AVAILABLE = False
 
 # Configure logging
 logging.basicConfig(
@@ -33,12 +74,9 @@ class MetadataEditor:
     Supports reading and writing metadata for all major audio formats.
     """
     
-    def __init__(self, file_path: str):
+    def __init__(self):
         """
-        Initialize MetadataEditor with a specific audio file.
-        
-        Args:
-            file_path (str): Path to the audio file to edit metadata for
+        Initialize MetadataEditor for working with audio file metadata.
         """
         self.supported_formats = {
             '.mp3': 'MP3',
@@ -57,32 +95,25 @@ class MetadataEditor:
         self.processed_count = 0
         self.error_count = 0
         
-        # Check for mutagen CLI tools
-        self._check_mutagen_tools()
+        # Check for mutagen library
+        self._check_mutagen_library()
     
-    def _check_mutagen_tools(self):
+    def _check_mutagen_library(self):
         """
-        Check if mutagen CLI tools are available.
+        Check if mutagen library is available and log warnings if needed.
         
-        Logs availability of mid3v2, mutagen-pony, and mutagen-inspect tools.
+        Logs availability of mutagen library and PIL for image processing.
         """
-        tools = ['mid3v2', 'mutagen-pony', 'mutagen-inspect']
-        available_tools = []
-        
-        for tool in tools:
-            try:
-                result = subprocess.run([tool, '--help'], capture_output=True, text=True, timeout=5)
-                if result.returncode == 0:
-                    available_tools.append(tool)
-            except (subprocess.TimeoutExpired, FileNotFoundError):
-                pass
-        
-        if not available_tools:
-            logger.warning("No mutagen CLI tools found. Please install mutagen-tools package.")
-            logger.warning("Ubuntu/Debian: sudo apt install python3-mutagen")
-            logger.warning("Or via pip: pip install mutagen")
-        else:
-            logger.debug(f"Available mutagen tools: {', '.join(available_tools)}")
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not found. Please install with: pip install mutagen")
+            logger.error("This module requires mutagen for direct metadata manipulation.")
+            
+        if not PILLOW_AVAILABLE:
+            logger.warning("Pillow not found. Image format detection will be limited.")
+            logger.warning("Install with: pip install Pillow")
+            
+        if MUTAGEN_AVAILABLE:
+            logger.debug("Mutagen library loaded successfully - using direct metadata access")
     
     def is_supported_format(self, filepath: str) -> bool:
         """
@@ -97,146 +128,6 @@ class MetadataEditor:
         ext = Path(filepath).suffix.lower()
         return ext in self.supported_formats
     
-    def get_metadata(self, filepath: str) -> Dict[str, Any]:
-        """
-        Get all metadata from an audio file using mutagen CLI tools.
-        
-        Args:
-            filepath (str): Path to the audio file to extract metadata from
-            
-        Returns:
-            Dict[str, Any]: Dictionary with standardized tag names and metadata values,
-                          or None if extraction fails
-        """
-        if not os.path.exists(filepath):
-            logger.error(f"File not found: {filepath}")
-            return {}
-        
-        try:
-            # Use mutagen-inspect to get raw metadata
-            cmd = ['mutagen-inspect', str(filepath)]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"Could not read metadata from {os.path.basename(filepath)}")
-                logger.debug(f"mutagen-inspect error: {result.stderr}")
-                return {}
-            
-            # Parse the output
-            metadata = self._parse_mutagen_output(result.stdout)
-            metadata['filepath'] = filepath
-            metadata['format'] = self._detect_format(filepath)
-            
-            return metadata
-            
-        except subprocess.TimeoutExpired:
-            logger.error(f"Timeout reading metadata from {os.path.basename(filepath)}")
-            return {}
-        except Exception as e:
-            logger.error(f"Error reading metadata from {os.path.basename(filepath)}: {str(e)}")
-            return {}
-    
-    def _parse_mutagen_output(self, output: str) -> Dict[str, Any]:
-        """
-        Parse mutagen-inspect output into a standardized dictionary.
-        
-        Args:
-            output (str): Raw output from mutagen-inspect command
-            
-        Returns:
-            Dict[str, Any]: Dictionary containing parsed metadata with standardized keys:
-                - title (str): Track title
-                - artist (str): Track artist
-                - album (str): Album name
-                - albumartist (str): Album artist
-                - date (str): Release date
-                - year (str): Release year
-                - genre (str): Genre
-                - track (str): Track number
-                - disc (str): Disc number
-                - comment (str): Comment field
-                - has_album_art (bool): Whether file has embedded album art
-        """
-        metadata = {}
-        lines = output.strip().split('\n')
-        
-        # Standard tag mappings
-        tag_mappings = {
-            'TIT2': 'title',
-            'TITLE': 'title',
-            '\xa9nam': 'title',
-            'TPE1': 'artist', 
-            'ARTIST': 'artist',
-            '\xa9ART': 'artist',
-            'TALB': 'album',
-            'ALBUM': 'album', 
-            '\xa9alb': 'album',
-            'TPE2': 'albumartist',
-            'ALBUMARTIST': 'albumartist',
-            'aART': 'albumartist',
-            'TDRC': 'date',
-            'DATE': 'date',
-            '\xa9day': 'date',
-            'TYER': 'year',
-            'YEAR': 'year',
-            'TCON': 'genre',
-            'GENRE': 'genre',
-            '\xa9gen': 'genre',
-            'TRCK': 'track',
-            'TRACKNUMBER': 'track',
-            'trkn': 'track',
-            'TPOS': 'disc',
-            'DISCNUMBER': 'disc',
-            'disk': 'disc',
-            'COMM::eng': 'comment',
-            'COMMENT': 'comment',
-            '\xa9cmt': 'comment',
-            'TCOM': 'composer',
-            'COMPOSER': 'composer',
-            '\xa9wrt': 'composer',
-            'TPE3': 'performer',
-            'PERFORMER': 'performer',
-            'TIT1': 'grouping',
-            'GROUPING': 'grouping',
-            '\xa9grp': 'grouping',
-            'USLT::eng': 'lyrics',
-            'LYRICS': 'lyrics',
-            '\xa9lyr': 'lyrics',
-            'TORY': 'originalyear',
-            'ORIGINALDATE': 'originaldate',
-            'ORIGINALYEAR': 'originalyear',
-            'TCMP': 'compilation',
-            'COMPILATION': 'compilation',
-            'cpil': 'compilation'
-        }
-        
-        for line in lines:
-            if '=' in line:
-                key, value = line.split('=', 1)
-                key = key.strip()
-                value = value.strip()
-                
-                # Remove quotes if present
-                if value.startswith('"') and value.endswith('"'):
-                    value = value[1:-1]
-                elif value.startswith("'") and value.endswith("'"):
-                    value = value[1:-1]
-                
-                # Map to standardized keys
-                standard_key = tag_mappings.get(key, key.lower())
-                metadata[standard_key] = value
-        
-        # Check for album art
-        metadata['has_album_art'] = self._has_album_art(metadata.get('filepath', ''))
-        
-        return metadata
-    
     def _detect_format(self, filepath: str) -> str:
         """
         Detect the audio format from file extension.
@@ -250,44 +141,296 @@ class MetadataEditor:
         ext = Path(filepath).suffix.lower()
         return self.supported_formats.get(ext, 'Unknown')
     
-    def _has_album_art(self, filepath: str) -> bool:
+    def get_metadata(self, filepath: str) -> Dict[str, Any]:
         """
-        Check if the audio file has album art using mutagen CLI.
+        Get all metadata from an audio file using mutagen library directly.
         
         Args:
-            filepath (str): Path to the audio file to check
+            filepath (str): Path to the audio file to extract metadata from
+            
+        Returns:
+            Dict[str, Any]: Dictionary with standardized tag names and metadata values,
+                          or empty dict if extraction fails
+        """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return {}
+            
+        if not os.path.exists(filepath):
+            logger.error(f"File not found: {filepath}")
+            return {}
+        
+        try:
+            # Load the audio file using mutagen
+            audio_file = MutagenFile(filepath)
+            if audio_file is None:
+                logger.error(f"Could not load audio file: {os.path.basename(filepath)}")
+                return {}
+            
+            # Extract metadata using mutagen's direct access
+            metadata = self._extract_mutagen_metadata(audio_file)
+            metadata['filepath'] = filepath
+            metadata['format'] = self._detect_format(filepath)
+            metadata['has_album_art'] = self._has_album_art_mutagen(audio_file)
+            
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"Error reading metadata from {os.path.basename(filepath)}: {str(e)}")
+            return {}
+    
+    def _extract_mutagen_metadata(self, audio_file) -> Dict[str, Any]:
+        """
+        Extract metadata from a mutagen audio file object.
+        
+        Args:
+            audio_file: Mutagen audio file object
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing parsed metadata with standardized keys
+        """
+        metadata = {}
+        
+        if audio_file is None:
+            return metadata
+            
+        # Handle different file formats
+        if isinstance(audio_file, MP3):
+            metadata = self._extract_id3_metadata(audio_file)
+        elif isinstance(audio_file, FLAC):
+            metadata = self._extract_vorbis_metadata(audio_file)
+        elif isinstance(audio_file, (OggVorbis, OggOpus)):
+            metadata = self._extract_vorbis_metadata(audio_file)
+        elif isinstance(audio_file, MP4):
+            metadata = self._extract_mp4_metadata(audio_file)
+        else:
+            # Generic extraction for other formats
+            metadata = self._extract_generic_metadata(audio_file)
+            
+        # Add audio properties if available
+        if hasattr(audio_file, 'info') and audio_file.info:
+            info = audio_file.info
+            if hasattr(info, 'length'):
+                metadata['length'] = getattr(info, 'length', 0)
+            if hasattr(info, 'bitrate'):
+                metadata['bitrate'] = getattr(info, 'bitrate', 0)
+            if hasattr(info, 'sample_rate'):
+                metadata['sample_rate'] = getattr(info, 'sample_rate', 0)
+            if hasattr(info, 'bits_per_sample'):
+                metadata['bit_depth'] = getattr(info, 'bits_per_sample', 0)
+                
+        return metadata
+    
+    def _extract_id3_metadata(self, audio_file) -> Dict[str, Any]:
+        """Extract metadata from ID3 tags (MP3).
+        
+        Args:
+            audio_file: Mutagen audio file object with ID3 tags.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
+        metadata = {}
+        
+        if not hasattr(audio_file, 'tags') or audio_file.tags is None:
+            return metadata
+            
+        tags = audio_file.tags
+        
+        # ID3 tag mappings
+        tag_map = {
+            'TIT2': 'title',
+            'TPE1': 'artist', 
+            'TALB': 'album',
+            'TPE2': 'albumartist',
+            'TDRC': 'date',
+            'TYER': 'year',
+            'TCON': 'genre',
+            'TRCK': 'track',
+            'TPOS': 'disc',
+            'COMM::eng': 'comment',
+            'TCOM': 'composer',
+            'TPE3': 'performer',
+            'TIT1': 'grouping',
+            'USLT::eng': 'lyrics',
+            'TORY': 'originalyear',
+            'TCMP': 'compilation'
+        }
+        
+        for tag_id, std_key in tag_map.items():
+            if tag_id in tags:
+                value = str(tags[tag_id].text[0]) if tags[tag_id].text else ''
+                if value:
+                    metadata[std_key] = value
+                    
+        return metadata
+    
+    def _extract_vorbis_metadata(self, audio_file) -> Dict[str, Any]:
+        """Extract metadata from Vorbis comments (FLAC, OGG, OPUS).
+        
+        Args:
+            audio_file: Mutagen audio file object with Vorbis comments.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
+        metadata = {}
+        
+        if not hasattr(audio_file, 'tags') or audio_file.tags is None:
+            return metadata
+            
+        tags = audio_file.tags
+        
+        # Vorbis comment mappings
+        tag_map = {
+            'TITLE': 'title',
+            'ARTIST': 'artist',
+            'ALBUM': 'album',
+            'ALBUMARTIST': 'albumartist',
+            'DATE': 'date',
+            'YEAR': 'year',
+            'GENRE': 'genre',
+            'TRACKNUMBER': 'track',
+            'DISCNUMBER': 'disc',
+            'COMMENT': 'comment',
+            'COMPOSER': 'composer',
+            'PERFORMER': 'performer',
+            'GROUPING': 'grouping',
+            'LYRICS': 'lyrics',
+            'ORIGINALDATE': 'originaldate',
+            'ORIGINALYEAR': 'originalyear',
+            'COMPILATION': 'compilation'
+        }
+        
+        for tag_name, std_key in tag_map.items():
+            if tag_name in tags:
+                value = tags[tag_name][0] if tags[tag_name] else ''
+                if value:
+                    metadata[std_key] = value
+                    
+        return metadata
+    
+    def _extract_mp4_metadata(self, audio_file) -> Dict[str, Any]:
+        """Extract metadata from MP4/M4A tags.
+        
+        Args:
+            audio_file: Mutagen audio file object with MP4 tags.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
+        metadata = {}
+        
+        if not hasattr(audio_file, 'tags') or audio_file.tags is None:
+            return metadata
+            
+        tags = audio_file.tags
+        
+        # MP4 tag mappings
+        tag_map = {
+            '\xa9nam': 'title',
+            '\xa9ART': 'artist',
+            '\xa9alb': 'album', 
+            'aART': 'albumartist',
+            '\xa9day': 'date',
+            '\xa9gen': 'genre',
+            'trkn': 'track',
+            'disk': 'disc',
+            '\xa9cmt': 'comment',
+            '\xa9wrt': 'composer',
+            '\xa9grp': 'grouping',
+            '\xa9lyr': 'lyrics',
+            'cpil': 'compilation'
+        }
+        
+        for tag_name, std_key in tag_map.items():
+            if tag_name in tags:
+                value = tags[tag_name]
+                if isinstance(value, list) and value:
+                    if tag_name in ['trkn', 'disk'] and isinstance(value[0], tuple):
+                        metadata[std_key] = str(value[0][0])
+                    else:
+                        metadata[std_key] = str(value[0])
+                elif value:
+                    metadata[std_key] = str(value)
+                    
+        return metadata
+    
+    def _extract_generic_metadata(self, audio_file) -> Dict[str, Any]:
+        """Extract metadata from generic formats.
+        
+        Args:
+            audio_file: Mutagen audio file object.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
+        metadata = {}
+        
+        if not hasattr(audio_file, 'tags') or audio_file.tags is None:
+            return metadata
+            
+        # Try to extract common fields
+        tags = audio_file.tags
+        
+        # Common field names to try
+        common_fields = ['title', 'artist', 'album', 'albumartist', 'date', 'year', 
+                        'genre', 'track', 'disc', 'comment', 'composer']
+                        
+        for field in common_fields:
+            for case_variant in [field.upper(), field.lower(), field.title()]:
+                if case_variant in tags:
+                    value = tags[case_variant]
+                    if isinstance(value, list) and value:
+                        metadata[field] = str(value[0])
+                    elif value:
+                        metadata[field] = str(value)
+                    break
+                    
+        return metadata
+    
+    def _has_album_art_mutagen(self, audio_file) -> bool:
+        """
+        Check if the audio file has album art using mutagen directly.
+        
+        Args:
+            audio_file: Mutagen audio file object
             
         Returns:
             bool: True if file contains embedded album art, False otherwise
         """
-        if not filepath or not os.path.exists(filepath):
+        if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
             return False
-        
+            
         try:
-            # Use mutagen-inspect to check for album art
-            cmd = ['mutagen-inspect', str(filepath)]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                output = result.stdout.lower()
-                # Look for common album art indicators
-                art_indicators = ['apic:', 'covr', 'metadata_block_picture', 'picture']
-                return any(indicator in output for indicator in art_indicators)
-            
-            return False
-            
+            # Check for album art based on file type
+            if isinstance(audio_file, MP3):
+                # Check for APIC frames in ID3 tags
+                return any(key.startswith('APIC:') for key in audio_file.tags.keys())
+            elif isinstance(audio_file, FLAC):
+                # Check for pictures in FLAC
+                return len(audio_file.pictures) > 0
+            elif isinstance(audio_file, (OggVorbis, OggOpus)):
+                # Check for METADATA_BLOCK_PICTURE in Vorbis comments
+                return 'METADATA_BLOCK_PICTURE' in audio_file.tags
+            elif isinstance(audio_file, MP4):
+                # Check for cover art in MP4
+                return 'covr' in audio_file.tags
+            else:
+                # Generic check for picture-related tags
+                tags = audio_file.tags
+                picture_indicators = ['APIC', 'covr', 'METADATA_BLOCK_PICTURE', 'PICTURE']
+                return any(any(indicator in str(key) for indicator in picture_indicators) 
+                          for key in tags.keys())
+                          
         except Exception:
             return False
     
+        return self.supported_formats.get(ext, 'Unknown')
+    
     def set_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
         """
-        Set metadata for an audio file using appropriate CLI tools.
+        Set metadata for an audio file using mutagen library directly.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -296,6 +439,10 @@ class MetadataEditor:
         Returns:
             bool: True if metadata was successfully set, False otherwise
         """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return False
+            
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
             return False
@@ -305,154 +452,240 @@ class MetadataEditor:
             return False
         
         try:
-            ext = Path(filepath).suffix.lower()
+            # Load the audio file using mutagen
+            audio_file = MutagenFile(filepath)
+            if audio_file is None:
+                logger.error(f"Could not load audio file: {os.path.basename(filepath)}")
+                return False
+                
+            # Set metadata based on file type
+            success = self._set_metadata_mutagen(audio_file, metadata, filepath)
             
-            # Use different tools based on format
-            if ext == '.mp3':
-                return self._set_mp3_metadata(filepath, metadata)
+            if success:
+                logger.info(f"Successfully updated metadata for {os.path.basename(filepath)}")
+                self.processed_count += 1
+                return True
             else:
-                return self._set_generic_metadata(filepath, metadata)
+                self.error_count += 1
+                return False
                 
         except Exception as e:
             logger.error(f"Error setting metadata for {os.path.basename(filepath)}: {str(e)}")
             self.error_count += 1
             return False
     
-    def _set_mp3_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
+    def _set_metadata_mutagen(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
         """
-        Set metadata for MP3 files using mid3v2.
+        Set metadata using mutagen library directly.
         
         Args:
-            filepath (str): Path to the MP3 file to modify
-            metadata (Dict[str, Any]): Dictionary containing metadata to set with keys:
-                - title (str): Track title
-                - artist (str): Track artist  
-                - album (str): Album name
-                - albumartist (str): Album artist
-                - date (str): Release date
-                - year (str): Release year
-                - genre (str): Genre
-                - track (str): Track number
-                - disc (str): Disc number
-                - comment (str): Comment field
-                
+            audio_file: Mutagen audio file object
+            metadata (Dict[str, Any]): Dictionary containing metadata to set
+            filepath (str): Path to the audio file for saving
+            
         Returns:
             bool: True if metadata was successfully set, False otherwise
         """
         try:
-            cmd = ['mid3v2']
-            
-            # Map metadata to mid3v2 options
-            tag_map = {
-                'title': '--TIT2',
-                'artist': '--TPE1',
-                'album': '--TALB',
-                'albumartist': '--TPE2',
-                'date': '--TDRC',
-                'year': '--TDRC',
-                'genre': '--TCON',
-                'track': '--TRCK',
-                'disc': '--TPOS',
-                'comment': '--COMM'
-            }
-            
-            for key, value in metadata.items():
-                if key in tag_map and value:
-                    cmd.extend([tag_map[key], str(value)])
-            
-            cmd.append(str(filepath))
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully updated MP3 metadata for {os.path.basename(filepath)}")
-                self.processed_count += 1
-                return True
+            # Handle different file formats
+            if isinstance(audio_file, MP3):
+                return self._set_id3_metadata(audio_file, metadata, filepath)
+            elif isinstance(audio_file, FLAC):
+                return self._set_vorbis_metadata(audio_file, metadata, filepath)
+            elif isinstance(audio_file, (OggVorbis, OggOpus)):
+                return self._set_vorbis_metadata(audio_file, metadata, filepath)
+            elif isinstance(audio_file, MP4):
+                return self._set_mp4_metadata(audio_file, metadata, filepath)
             else:
-                logger.error(f"mid3v2 error: {result.stderr}")
-                return False
+                return self._set_generic_metadata_mutagen(audio_file, metadata, filepath)
                 
-        except subprocess.TimeoutExpired:
-            logger.error(f"Timeout setting MP3 metadata for {os.path.basename(filepath)}")
-            return False
         except Exception as e:
-            logger.error(f"Error setting MP3 metadata: {str(e)}")
+            logger.error(f"Error setting metadata with mutagen: {str(e)}")
             return False
     
-    def _set_generic_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
-        """
-        Set metadata for non-MP3 files using mutagen-pony.
+    def _set_id3_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
+        """Set metadata for MP3 files using ID3 tags.
         
         Args:
-            filepath (str): Path to the audio file to modify
-            metadata (Dict[str, Any]): Dictionary containing metadata to set with keys:
-                - title (str): Track title
-                - artist (str): Track artist
-                - album (str): Album name
-                - albumartist (str): Album artist
-                - date (str): Release date
-                - year (str): Release year
-                - genre (str): Genre
-                - track (str): Track number
-                - disc (str): Disc number
-                - comment (str): Comment field
-                
+            audio_file: Mutagen MP3 audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
         Returns:
-            bool: True if metadata was successfully set, False otherwise
+            bool: True if metadata was successfully set, False otherwise.
         """
         try:
-            # Build mutagen-pony command
-            cmd = ['mutagen-pony']
+            # Ensure ID3 tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            tags = audio_file.tags
             
-            # Add metadata as key=value pairs
+            # ID3 tag mappings
+            if 'title' in metadata and metadata['title']:
+                tags['TIT2'] = TIT2(encoding=3, text=metadata['title'])
+            if 'artist' in metadata and metadata['artist']:
+                tags['TPE1'] = TPE1(encoding=3, text=metadata['artist'])
+            if 'album' in metadata and metadata['album']:
+                tags['TALB'] = TALB(encoding=3, text=metadata['album'])
+            if 'albumartist' in metadata and metadata['albumartist']:
+                tags['TPE2'] = TPE2(encoding=3, text=metadata['albumartist'])
+            if 'date' in metadata and metadata['date']:
+                tags['TDRC'] = TDRC(encoding=3, text=metadata['date'])
+            elif 'year' in metadata and metadata['year']:
+                tags['TDRC'] = TDRC(encoding=3, text=metadata['year'])
+            if 'genre' in metadata and metadata['genre']:
+                tags['TCON'] = TCON(encoding=3, text=metadata['genre'])
+            if 'track' in metadata and metadata['track']:
+                tags['TRCK'] = TRCK(encoding=3, text=str(metadata['track']))
+            if 'disc' in metadata and metadata['disc']:
+                tags['TPOS'] = TPOS(encoding=3, text=str(metadata['disc']))
+            if 'comment' in metadata and metadata['comment']:
+                tags['COMM::eng'] = COMM(encoding=3, lang='eng', desc='', text=metadata['comment'])
+                
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting ID3 metadata: {str(e)}")
+            return False
+    
+    def _set_vorbis_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
+        """Set metadata for Vorbis comment based files (FLAC, OGG, OPUS).
+        
+        Args:
+            audio_file: Mutagen audio file object with Vorbis comments.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
+        try:
+            # Ensure tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            tags = audio_file.tags
+            
+            # Vorbis comment mappings
+            if 'title' in metadata and metadata['title']:
+                tags['TITLE'] = [metadata['title']]
+            if 'artist' in metadata and metadata['artist']:
+                tags['ARTIST'] = [metadata['artist']]
+            if 'album' in metadata and metadata['album']:
+                tags['ALBUM'] = [metadata['album']]
+            if 'albumartist' in metadata and metadata['albumartist']:
+                tags['ALBUMARTIST'] = [metadata['albumartist']]
+            if 'date' in metadata and metadata['date']:
+                tags['DATE'] = [metadata['date']]
+            elif 'year' in metadata and metadata['year']:
+                tags['DATE'] = [metadata['year']]
+            if 'genre' in metadata and metadata['genre']:
+                tags['GENRE'] = [metadata['genre']]
+            if 'track' in metadata and metadata['track']:
+                tags['TRACKNUMBER'] = [str(metadata['track'])]
+            if 'disc' in metadata and metadata['disc']:
+                tags['DISCNUMBER'] = [str(metadata['disc'])]
+            if 'comment' in metadata and metadata['comment']:
+                tags['COMMENT'] = [metadata['comment']]
+                
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting Vorbis metadata: {str(e)}")
+            return False
+    
+    def _set_mp4_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
+        """Set metadata for MP4/M4A files.
+        
+        Args:
+            audio_file: Mutagen MP4 audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
+        try:
+            # Ensure tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            tags = audio_file.tags
+            
+            # MP4 tag mappings
+            if 'title' in metadata and metadata['title']:
+                tags['\xa9nam'] = [metadata['title']]
+            if 'artist' in metadata and metadata['artist']:
+                tags['\xa9ART'] = [metadata['artist']]
+            if 'album' in metadata and metadata['album']:
+                tags['\xa9alb'] = [metadata['album']]
+            if 'albumartist' in metadata and metadata['albumartist']:
+                tags['aART'] = [metadata['albumartist']]
+            if 'date' in metadata and metadata['date']:
+                tags['\xa9day'] = [metadata['date']]
+            elif 'year' in metadata and metadata['year']:
+                tags['\xa9day'] = [metadata['year']]
+            if 'genre' in metadata and metadata['genre']:
+                tags['\xa9gen'] = [metadata['genre']]
+            if 'track' in metadata and metadata['track']:
+                try:
+                    track_num = int(metadata['track'])
+                    tags['trkn'] = [(track_num, 0)]
+                except ValueError:
+                    pass
+            if 'disc' in metadata and metadata['disc']:
+                try:
+                    disc_num = int(metadata['disc'])
+                    tags['disk'] = [(disc_num, 0)]
+                except ValueError:
+                    pass
+            if 'comment' in metadata and metadata['comment']:
+                tags['\xa9cmt'] = [metadata['comment']]
+                
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting MP4 metadata: {str(e)}")
+            return False
+    
+    def _set_generic_metadata_mutagen(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
+        """Set metadata for generic formats.
+        
+        Args:
+            audio_file: Mutagen audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
+        try:
+            # Ensure tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            tags = audio_file.tags
+            
+            # Try to set common fields
             for key, value in metadata.items():
                 if value:
-                    # Use uppercase for standard Vorbis comment tags
-                    if key in ['title', 'artist', 'album', 'albumartist', 'date', 'year', 'genre', 'track', 'disc', 'comment']:
-                        tag_name = key.upper()
-                        if key == 'track':
-                            tag_name = 'TRACKNUMBER'
-                        elif key == 'disc':
-                            tag_name = 'DISCNUMBER'
-                        elif key == 'albumartist':
-                            tag_name = 'ALBUMARTIST'
-                        
-                        cmd.extend(['-t', f'{tag_name}={value}'])
+                    # Try uppercase version (common for many formats)
+                    tags[key.upper()] = [str(value)]
+                    
+            audio_file.save()
+            return True
             
-            cmd.append(str(filepath))
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                logger.info(f"Successfully updated metadata for {os.path.basename(filepath)}")
-                self.processed_count += 1
-                return True
-            else:
-                logger.error(f"mutagen-pony error: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            logger.error(f"Timeout setting metadata for {os.path.basename(filepath)}")
-            return False
         except Exception as e:
-            logger.error(f"Error setting metadata: {str(e)}")
+            logger.error(f"Error setting generic metadata: {str(e)}")
             return False
     
     def set_album_art(self, filepath: str, image_path: str) -> bool:
         """
-        Set album art for an audio file using FFmpeg.
+        Set album art for an audio file using mutagen library directly.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -461,6 +694,10 @@ class MetadataEditor:
         Returns:
             bool: True if album art was successfully set, False otherwise
         """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return False
+            
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
             return False
@@ -470,12 +707,267 @@ class MetadataEditor:
             return False
         
         try:
-            # Use FFmpeg for all album art operations
-            logger.info(f"Using FFmpeg for album art embedding in {os.path.basename(filepath)}")
-            return self._set_album_art_ffmpeg(filepath, image_path)
+            # Load the audio file using mutagen
+            audio_file = MutagenFile(filepath)
+            if audio_file is None:
+                logger.error(f"Could not load audio file: {os.path.basename(filepath)}")
+                return False
+                
+            # Set album art based on file type
+            success = self._set_album_art_mutagen(audio_file, image_path, filepath)
+            
+            if success:
+                logger.info(f"Successfully set album art for {os.path.basename(filepath)} using mutagen")
+                return True
+            else:
+                # Fallback to FFmpeg if mutagen fails
+                logger.info(f"Mutagen album art failed, falling back to FFmpeg for {os.path.basename(filepath)}")
+                return self._set_album_art_ffmpeg(filepath, image_path)
                 
         except Exception as e:
             logger.error(f"Error setting album art for {os.path.basename(filepath)}: {str(e)}")
+            # Fallback to FFmpeg
+            return self._set_album_art_ffmpeg(filepath, image_path)
+    
+    def _set_album_art_mutagen(self, audio_file, image_path: str, filepath: str) -> bool:
+        """
+        Set album art using mutagen library directly.
+        
+        Args:
+            audio_file: Mutagen audio file object
+            image_path (str): Path to the image file to embed as album art
+            filepath (str): Path to the audio file for saving
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise
+        """
+        try:
+            # Read the image file
+            with open(image_path, 'rb') as img_file:
+                image_data = img_file.read()
+            
+            # Detect image format
+            image_format = self._detect_image_format(image_data, image_path)
+            if not image_format:
+                logger.error(f"Unsupported image format: {os.path.basename(image_path)}")
+                return False
+                
+            # Set album art based on audio file type
+            if isinstance(audio_file, MP3):
+                return self._set_mp3_album_art(audio_file, image_data, image_format, filepath)
+            elif isinstance(audio_file, FLAC):
+                return self._set_flac_album_art(audio_file, image_data, image_format, filepath)
+            elif isinstance(audio_file, (OggVorbis, OggOpus)):
+                return self._set_ogg_album_art(audio_file, image_data, image_format, filepath)
+            elif isinstance(audio_file, MP4):
+                return self._set_mp4_album_art(audio_file, image_data, image_format, filepath)
+            else:
+                logger.warning(f"Album art embedding not supported for this format via mutagen: {type(audio_file)}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error setting album art with mutagen: {str(e)}")
+            return False
+    
+    def _detect_image_format(self, image_data: bytes, image_path: str) -> Optional[str]:
+        """Detect image format from data or filename.
+        
+        Args:
+            image_data: Binary data of the image.
+            image_path: Path to the image file.
+            
+        Returns:
+            Optional[str]: MIME type of the image format, or None if unsupported.
+        """
+        # Try to detect from data first
+        if image_data.startswith(b'\xff\xd8\xff'):
+            return 'image/jpeg'
+        elif image_data.startswith(b'\x89PNG\r\n\x1a\n'):
+            return 'image/png'
+        elif image_data.startswith(b'GIF87a') or image_data.startswith(b'GIF89a'):
+            return 'image/gif'
+        elif image_data.startswith(b'WEBP', 8):
+            return 'image/webp'
+        
+        # Fallback to file extension
+        ext = Path(image_path).suffix.lower()
+        format_map = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp'
+        }
+        return format_map.get(ext)
+    
+    def _set_mp3_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
+        """Set album art for MP3 files using ID3 APIC frame.
+        
+        Args:
+            audio_file: Mutagen MP3 audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
+        try:
+            # Ensure ID3 tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            # Remove existing album art
+            audio_file.tags.delall('APIC')
+            
+            # Add new album art
+            audio_file.tags.add(
+                APIC(
+                    encoding=3,  # UTF-8
+                    mime=image_format,
+                    type=3,  # Cover (front)
+                    desc='Cover',
+                    data=image_data
+                )
+            )
+            
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting MP3 album art: {str(e)}")
+            return False
+    
+    def _set_flac_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
+        """Set album art for FLAC files using Picture blocks.
+        
+        Args:
+            audio_file: Mutagen FLAC audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
+        try:
+            # Clear existing pictures
+            audio_file.clear_pictures()
+            
+            # Create new picture
+            picture = Picture()
+            picture.type = 3  # Cover (front)
+            picture.mime = image_format
+            picture.desc = 'Cover'
+            picture.data = image_data
+            
+            # Add picture dimensions if possible
+            if PILLOW_AVAILABLE:
+                try:
+                    from PIL import Image
+                    img = Image.open(io.BytesIO(image_data))
+                    picture.width, picture.height = img.size
+                    picture.depth = img.mode.count('A') and 32 or 24  # 32 for RGBA, 24 for RGB
+                except Exception:
+                    pass
+            
+            audio_file.add_picture(picture)
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting FLAC album art: {str(e)}")
+            return False
+    
+    def _set_ogg_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
+        """Set album art for OGG files using METADATA_BLOCK_PICTURE.
+        
+        Args:
+            audio_file: Mutagen OGG audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
+        try:
+            # Ensure tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            # Create FLAC picture block for embedding in Vorbis comment
+            picture = Picture()
+            picture.type = 3  # Cover (front)
+            picture.mime = image_format
+            picture.desc = 'Cover'
+            picture.data = image_data
+            
+            # Add picture dimensions if possible
+            if PILLOW_AVAILABLE:
+                try:
+                    from PIL import Image
+                    img = Image.open(io.BytesIO(image_data))
+                    picture.width, picture.height = img.size
+                    picture.depth = img.mode.count('A') and 32 or 24
+                except Exception:
+                    pass
+            
+            # Encode picture as base64 for METADATA_BLOCK_PICTURE
+            picture_data = picture.write()
+            encoded_data = base64.b64encode(picture_data).decode('ascii')
+            
+            # Remove existing album art
+            if 'METADATA_BLOCK_PICTURE' in audio_file.tags:
+                del audio_file.tags['METADATA_BLOCK_PICTURE']
+                
+            # Add new album art
+            audio_file.tags['METADATA_BLOCK_PICTURE'] = [encoded_data]
+            
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting OGG album art: {str(e)}")
+            return False
+    
+    def _set_mp4_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
+        """Set album art for MP4/M4A files.
+        
+        Args:
+            audio_file: Mutagen MP4 audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
+        try:
+            # Ensure tags exist
+            if audio_file.tags is None:
+                audio_file.add_tags()
+                
+            # Determine format code for MP4
+            if image_format == 'image/jpeg':
+                format_code = MP4.MP4Cover.FORMAT_JPEG
+            elif image_format == 'image/png':
+                format_code = MP4.MP4Cover.FORMAT_PNG
+            else:
+                # Default to JPEG for other formats
+                format_code = MP4.MP4Cover.FORMAT_JPEG
+            
+            # Create cover object
+            cover = MP4.MP4Cover(image_data, format_code)
+            
+            # Set album art
+            audio_file.tags['covr'] = [cover]
+            
+            audio_file.save()
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error setting MP4 album art: {str(e)}")
             return False
     
     def _set_album_art_ffmpeg(self, filepath: str, image_path: str) -> bool:
@@ -551,7 +1043,7 @@ class MetadataEditor:
     
     def remove_album_art(self, filepath: str) -> bool:
         """
-        Remove album art from an audio file using FFmpeg.
+        Remove album art from an audio file using mutagen library directly.
         
         Args:
             filepath (str): Path to the audio file to modify
@@ -559,17 +1051,77 @@ class MetadataEditor:
         Returns:
             bool: True if album art was successfully removed, False otherwise
         """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return False
+            
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
             return False
         
         try:
-            # Use FFmpeg for all album art operations
-            logger.info(f"Using FFmpeg to remove album art from {os.path.basename(filepath)}")
-            return self._remove_album_art_ffmpeg(filepath)
+            # Load the audio file using mutagen
+            audio_file = MutagenFile(filepath)
+            if audio_file is None:
+                logger.error(f"Could not load audio file: {os.path.basename(filepath)}")
+                return False
+                
+            # Remove album art based on file type
+            success = self._remove_album_art_mutagen(audio_file, filepath)
+            
+            if success:
+                logger.info(f"Successfully removed album art from {os.path.basename(filepath)} using mutagen")
+                return True
+            else:
+                # Fallback to FFmpeg if mutagen fails
+                logger.info(f"Mutagen album art removal failed, falling back to FFmpeg for {os.path.basename(filepath)}")
+                return self._remove_album_art_ffmpeg(filepath)
                 
         except Exception as e:
             logger.error(f"Error removing album art from {os.path.basename(filepath)}: {str(e)}")
+            # Fallback to FFmpeg
+            return self._remove_album_art_ffmpeg(filepath)
+    
+    def _remove_album_art_mutagen(self, audio_file, filepath: str) -> bool:
+        """
+        Remove album art using mutagen library directly.
+        
+        Args:
+            audio_file: Mutagen audio file object
+            filepath (str): Path to the audio file for saving
+            
+        Returns:
+            bool: True if album art was successfully removed, False otherwise
+        """
+        try:
+            # Remove album art based on audio file type
+            if isinstance(audio_file, MP3):
+                if audio_file.tags is not None:
+                    audio_file.tags.delall('APIC')
+                    audio_file.save()
+                    return True
+            elif isinstance(audio_file, FLAC):
+                audio_file.clear_pictures()
+                audio_file.save()
+                return True
+            elif isinstance(audio_file, (OggVorbis, OggOpus)):
+                if audio_file.tags is not None and 'METADATA_BLOCK_PICTURE' in audio_file.tags:
+                    del audio_file.tags['METADATA_BLOCK_PICTURE']
+                    audio_file.save()
+                    return True
+            elif isinstance(audio_file, MP4):
+                if audio_file.tags is not None and 'covr' in audio_file.tags:
+                    del audio_file.tags['covr']
+                    audio_file.save()
+                    return True
+            else:
+                logger.warning(f"Album art removal not supported for this format via mutagen: {type(audio_file)}")
+                return False
+                
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error removing album art with mutagen: {str(e)}")
             return False
     
     def _remove_album_art_ffmpeg(self, filepath: str) -> bool:

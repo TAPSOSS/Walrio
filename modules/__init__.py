@@ -5,54 +5,140 @@ Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-Main modules package containing all Walrio functionality:
-
-Core Modules:
-- database: SQLite database management for music metadata and playlists
-- player: GStreamer-based audio player with advanced playback features
-- playlist: M3U playlist creation and management utilities
-- queue: Playback queue management with shuffle and repeat modes
-- metadata: Edit audio file metadata and album art using mutagen CLI tools
-
-Addon Modules:
-- convert: Audio format conversion using FFmpeg
-- file_relocater: Organize audio files based on metadata into folder structures
-- rename: Standardize audio file names based on metadata
-- replaygain: ReplayGain LUFS analysis and tagging using rsgain
-- imageconverter: Convert images between different formats (JPEG, PNG, WebP, etc.) and resize them
-
-Niche Modules:
-- applyloudness: Apply gain adjustments directly to audio files using FFmpeg with ReplayGain or manual dB values (WARNING: can damage audio files irreversibly)
-- resizealbumart: Extract, resize, and re-embed album art in audio files using imageconverter and metadata tools
+Main modules package containing all Walrio functionality.
+Module descriptions are automatically extracted from module headers.
 """
+
+import os
+import re
+from pathlib import Path
 
 __version__ = "1.0.0"
 __author__ = "Walrio Contributors"
 
-# Import core modules
-try:
-    from .core import database, player, playlist, queue, metadata
-except ImportError:
-    pass
+def _discover_modules():
+    """
+    Automatically discover all modules in the package and extract their descriptions.
+    
+    Only searches in subdirectories (core/, addons/, niche/) to avoid including
+    the global CLI interface (walrio.py) or other non-module files in the root.
+    
+    Returns:
+        dict: Dictionary with module info organized by category
+    """
+    current_dir = Path(__file__).parent
+    modules_by_category = {
+        'core': {},
+        'addons': {},
+        'niche': {}
+    }
+    
+    for category in modules_by_category.keys():
+        category_path = current_dir / category
+        if category_path.exists():
+            for py_file in category_path.glob('*.py'):
+                if not py_file.name.startswith('__'):
+                    module_name = py_file.stem
+                    description = _extract_module_description(str(py_file))
+                    modules_by_category[category][module_name] = description
+    
+    return modules_by_category
 
-# Import addon modules
-try:
-    from .addons import convert, file_relocater, rename, replaygain, imageconverter
-except ImportError:
-    pass
+def _extract_module_description(file_path: str) -> str:
+    """
+    Extract description from a Python module's docstring or header comments.
+    
+    Args:
+        file_path (str): Path to the Python file
+        
+    Returns:
+        str: Description of the module
+    """
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # First try to extract from docstring
+        docstring_match = re.search(r'"""([^"]*?)"""', content, re.DOTALL)
+        if docstring_match:
+            docstring = docstring_match.group(1).strip()
+            # Look for the first line that's not just metadata
+            lines = docstring.split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and not line.startswith('Copyright') and not line.startswith('Project:') and not line.startswith('Licensed'):
+                    return line
+        
+        # If no docstring, look for header comments
+        lines = content.split('\n')
+        for line in lines:
+            line = line.strip()
+            if line.startswith('#') and len(line) > 1:
+                comment = line[1:].strip()
+                if comment and not comment.startswith('!'):
+                    return comment
+        
+        return "Module description not available"
+        
+    except Exception:
+        return "Module description not available"
+
+# Discover all modules automatically
+_discovered_modules = _discover_modules()
+
+# Generate dynamic docstring with current module info
+_doc_parts = [__doc__, "\nDiscovered Modules:\n"]
+
+for category, modules in _discovered_modules.items():
+    if modules:  # Only include categories that have modules
+        _doc_parts.append(f"\n{category.title()} Modules:")
+        for name, description in modules.items():
+            _doc_parts.append(f"- {name}: {description}")
+
+__doc__ = '\n'.join(_doc_parts)
+
+# Import all discovered modules with error handling
+_imported_modules = []
+
+# Import core modules
+for module_name in _discovered_modules.get('core', {}):
+    try:
+        exec(f"from .core import {module_name}")
+        _imported_modules.append(module_name)
+    except ImportError:
+        pass
+
+# Import addon modules  
+for module_name in _discovered_modules.get('addons', {}):
+    try:
+        exec(f"from .addons import {module_name}")
+        _imported_modules.append(module_name)
+    except ImportError:
+        pass
 
 # Import niche modules
+for module_name in _discovered_modules.get('niche', {}):
+    try:
+        exec(f"from .niche import {module_name}")
+        _imported_modules.append(module_name)
+    except ImportError:
+        pass
+
+# Also make submodules available for autodoc
 try:
-    from .niche import applyloudness, resizealbumart
+    from . import core
 except ImportError:
     pass
 
-# Make all modules available at package level
-__all__ = [
-    # Core modules
-    'database', 'player', 'playlist', 'queue', 'metadata',
-    # Addon modules  
-    'convert', 'file_relocater', 'rename', 'replaygain', 'imageconverter',
-    # Niche modules
-    'applyloudness', 'resizealbumart'
-]
+try:
+    from . import addons
+except ImportError:
+    pass
+
+try:
+    from . import niche
+except ImportError:
+    pass
+
+# Make all discovered modules available at package level
+__all__ = sorted(_imported_modules)

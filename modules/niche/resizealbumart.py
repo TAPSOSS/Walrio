@@ -188,7 +188,7 @@ def resize_album_art(audio_file: str,
             
             # Step 3: Embed the resized image back into the audio file
             logger.info(f"Embedding resized album art back into {os.path.basename(audio_file)}")
-            metadata_editor = MetadataEditor(audio_file)
+            metadata_editor = MetadataEditor()
             
             # Remove old album art first
             metadata_editor.remove_album_art(audio_file)
