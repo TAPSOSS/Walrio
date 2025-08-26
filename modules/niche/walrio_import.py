@@ -113,12 +113,12 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'applyloudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--no-backup']
+            'args': ['--replaygain', '--backup', 'false']
         },
         {
             'name': 'resizealbumart',
             'description': 'Resize album art to 1000x1000 JPEG',
-            'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '95']
+            'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '100']
         }
     ]
     
