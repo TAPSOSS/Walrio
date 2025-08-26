@@ -746,14 +746,14 @@ def parse_arguments():
         help="Recursively process directories"
     )
     parser.add_argument(
-        "--skip-existing",
-        action="store_true",
-        help="Skip existing files"
+        "--skip-existing", "--se",
+        choices=["y", "n"],
+        help="Skip existing files: y=yes, n=no (prompt)"
     )
     parser.add_argument(
-        "-y", "--force-overwrite",
-        action="store_true",
-        help="Force overwrite of existing files without prompting"
+        "--force-overwrite", "--fo",
+        choices=["y", "n"],
+        help="Force overwrite of existing files: y=yes (force), n=no (prompt)"
     )
     
     # Format options
@@ -853,9 +853,9 @@ def main():
     if args.recursive:
         options['recursive'] = True
     if args.skip_existing:
-        options['skip_existing'] = True
+        options['skip_existing'] = args.skip_existing == 'y'
     if args.force_overwrite:
-        options['force_overwrite'] = True
+        options['force_overwrite'] = args.force_overwrite == 'y'
     
     # Create converter
     try:
