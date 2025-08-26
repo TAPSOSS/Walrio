@@ -663,7 +663,8 @@ Format string tips:
     parser.add_argument(
         "-r", "--recursive",
         action="store_true",
-        help="Recursively process subdirectories"
+        default=False,
+        help="Recursively process subdirectories (default: False)"
     )
     
     # Format options
