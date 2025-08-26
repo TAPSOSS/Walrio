@@ -103,7 +103,27 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
-            'args': ['--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ', '--rc', '/', '~', '--rc', '\\', '~']  # Use music player compatible character set with reasonable replacements
+            'args': [
+                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ',
+                '--rc', '/', '~',           # Forward slash to tilde
+                '--rc', '\\', '~',          # Backslash to tilde  
+                '--rc', '&', '+',           # Ampersand to plus
+                '--rc', '?', '',            # Remove question marks
+                '--rc', '!', '',            # Remove exclamation marks
+                '--rc', '|', '~',           # Pipe to tidle
+                '--rc', '.', '',            # Remove periods
+                '--rc', ',', '',            # Remove commas
+                '--rc', '%', '',            # Remove percent signs
+                '--rc', '*', '',            # Remove asterisks
+                '--rc', '"', '',            # Remove double quotes
+                '--rc', ':', '-',           # Colon to dash
+                '--rc', ';', '',            # Remove semicolons
+                '--rc', "'", '',            # Remove single quotes
+                '--rc', '>', '',            # Remove greater than
+                '--rc', '<', '',            # Remove less than
+                '--rc', '{', '(',           # Left curly brace to left parenthesis
+                '--rc', '}', ')',           # Right curly brace to right parenthesis
+            ]
         },
         {
             'name': 'replaygain',
