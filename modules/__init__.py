@@ -12,7 +12,7 @@ Core Modules:
 - player: GStreamer-based audio player with advanced playback features
 - playlist: M3U playlist creation and management utilities
 - queue: Playback queue management with shuffle and repeat modes
-- metadata: Edit audio file metadata and album art using mutagen CLI tools
+- metadata: Edit audio file metadata and album art using mutagen library
 
 Addon Modules:
 - convert: Audio format conversion using FFmpeg
