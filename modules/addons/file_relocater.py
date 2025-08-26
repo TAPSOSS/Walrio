@@ -72,6 +72,7 @@ class FileRelocater:
         self.moved_count = 0
         self.error_count = 0
         self.skipped_count = 0
+        self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
         
@@ -311,8 +312,9 @@ class FileRelocater:
         # Generate folder path
         folder_path = self.generate_folder_path(source_filepath)
         if not folder_path:
-            logger.error(f"⚠️  SKIPPED: File has insufficient metadata for organization: {os.path.basename(source_filepath)}")
+            logger.debug(f"⚠️  SKIPPED (no metadata): {os.path.basename(source_filepath)}")
             self.skipped_count += 1
+            self.skipped_files.append(source_filepath)  # Track the full path
             return True
         
         # Construct destination path
@@ -420,6 +422,10 @@ class FileRelocater:
         for i, file_path in enumerate(files_to_process, 1):
             logger.debug(f"Processing file {i}/{total_files}: {os.path.basename(file_path)}")
             self.move_file(file_path, destination_root)
+        
+        # Log summary of skipped files during processing
+        if self.skipped_count > 0:
+            logger.info(f"Processed {total_files} files: {self.moved_count - initial_moved_count} organized, {self.skipped_count} skipped (no metadata)")
         
         successful_moves = self.moved_count - initial_moved_count
         return (successful_moves, total_files)
@@ -765,6 +771,11 @@ def main():
         else:
             logger.info(f"Organization completed: {organizer.moved_count} files {operation_verb} successfully")
         
+        # Show summary of what was processed
+        total_processed = organizer.moved_count + organizer.skipped_count + organizer.error_count + organizer.conflict_count
+        if total_processed > 0:
+            logger.info(f"Summary: {organizer.moved_count} organized, {organizer.skipped_count} skipped, {organizer.error_count + organizer.conflict_count} errors")
+        
         # Report any issues that occurred
         issues_found = False
         if organizer.error_count > 0:
@@ -781,6 +792,9 @@ def main():
         
         if organizer.skipped_count > 0:
             logger.error(f"⏭️  SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
+            logger.error("Files skipped (no metadata):")
+            for skipped_file in organizer.skipped_files:
+                logger.error(f"  - {skipped_file}")
             issues_found = True
         
         if issues_found:
