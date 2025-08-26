@@ -15,7 +15,7 @@ import argparse
 import subprocess
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict
 
 # Add the current directory to Python path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
