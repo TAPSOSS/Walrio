@@ -518,8 +518,8 @@ Requirements:
     parser.add_argument(
         "--recursive", "-r",
         action="store_true",
-        default=True,
-        help="Process directories recursively (default: True)"
+        default=False,
+        help="Process directories recursively (default: False)"
     )
     parser.add_argument(
         "--non-recursive",
