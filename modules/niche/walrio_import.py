@@ -103,7 +103,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
-            'args': ['--sanitize']  # Use default character filtering explicitly
+            'args': ['--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ', '--rc', '/', '~', '--rc', '\\', '~']  # Use music player compatible character set with reasonable replacements
         },
         {
             'name': 'replaygain',
