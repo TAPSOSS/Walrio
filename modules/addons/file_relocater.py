@@ -442,8 +442,11 @@ def parse_arguments():
         description="Audio Library Organizer - Organize files into folder structures using metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Organize music library using default format (skips files with no metadata): album/albumartist
+  # Organize music library using default format (copies files, skips files with no metadata): album/albumartist
   python organize.py /path/to/music/library /path/to/organized/library
+
+  # Move files instead of copying them
+  python organize.py /music /organized --copy n
 
   # Process files with no metadata using filename as folder name
   python organize.py /music /organized --process-no-metadata y
@@ -452,11 +455,11 @@ def parse_arguments():
   # For music player compatibility, use conservative character replacements and sanitization
   python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize
 
-  # Custom folder format with year and genre (skipping files with no metadata)
+  # Custom folder format with year and genre (copying files, skipping files with no metadata)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
 
-  # Artist-based organization with conservative sanitization, process files with no metadata
-  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --pnm y
+  # Artist-based organization with conservative sanitization, process files with no metadata, move files
+  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --pnm y --copy n
 
   # Detailed organization with track info and custom character replacement
   python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
@@ -571,8 +574,9 @@ Folder format tips:
     )
     parser.add_argument(
         "--copy",
-        action="store_true",
-        help="Copy files instead of moving them (preserves original library)"
+        choices=["y", "n"],
+        default="y",
+        help="Copy files instead of moving them: y=yes (copy, default), n=no (move files)"
     )
     parser.add_argument(
         "--skip-existing",
@@ -723,7 +727,7 @@ def main():
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
-        'copy_mode': args.copy,
+        'copy_mode': args.copy == 'y',
         'skip_existing': args.skip_existing,
         'skip_no_metadata': skip_no_metadata,
         'process_no_metadata': process_no_metadata,
@@ -742,7 +746,7 @@ def main():
         organizer = FileRelocater(options)
         
         # Show organization settings
-        operation = "copy" if args.copy else "move"
+        operation = "copy" if args.copy == 'y' else "move"
         logger.info(f"Using folder format: '{args.folder_format}'")
         logger.info(f"Operation mode: {operation} files")
         if char_replacements:
@@ -762,7 +766,7 @@ def main():
         moved_count, total_files = organizer.organize_directory(args.source, args.destination)
         
         # Final summary
-        operation_verb = "copied" if args.copy else "moved"
+        operation_verb = "copied" if args.copy == 'y' else "moved"
         if args.dry_run:
             logger.info(f"Dry run completed: {organizer.moved_count} files would be {operation_verb}")
         else:
@@ -775,6 +779,7 @@ def main():
         
         # Report any issues that occurred
         issues_found = False
+        operation = "copy" if args.copy == 'y' else "move"
         if organizer.error_count > 0:
             logger.error(f"❌ ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
             issues_found = True
