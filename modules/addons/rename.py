@@ -38,9 +38,6 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 # Default naming format
 DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
 
-# Default character replacements (applied before other sanitization)
-DEFAULT_CHAR_REPLACEMENTS = {'/': '~', '\\': '~'}
-
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
@@ -158,8 +155,8 @@ class AudioRenamer:
         # Store original for comparison
         original_text = text
         
-        # Get character replacements from options (default to standard replacements)
-        char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
+        # Get character replacements from options (default to no replacements)
+        char_replacements = self.options.get('char_replacements', {})
         
         # Apply custom character replacements first
         sanitized = text
@@ -167,7 +164,7 @@ class AudioRenamer:
             sanitized = sanitized.replace(old_char, new_char)
         
         # Check if sanitization is disabled
-        if self.options.get('dont_sanitize', False):
+        if self.options.get('dont_sanitize', True):  # Default to disabled sanitization
             # Only apply character replacements, skip character filtering
             final_sanitized = sanitized
         else:
@@ -764,18 +761,17 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     
     Args:
         replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include default replacements
+        no_defaults (bool): If True, don't include any default replacements (deprecated parameter)
         
     Returns:
         dict: Dictionary mapping old characters to new characters
     """
     replacements = {}
     
-    # Start with defaults unless explicitly disabled
-    if not no_defaults:
-        replacements.update(DEFAULT_CHAR_REPLACEMENTS)
+    # Note: By default, no character replacements are applied
+    # Users can add custom replacements using --replace-char
     
-    # Add custom replacements (these override defaults if there are conflicts)
+    # Add custom replacements
     if replace_char_list:
         for replacement_pair in replace_char_list:
             if len(replacement_pair) != 2:
@@ -850,18 +846,20 @@ def main():
     # Parse character replacements
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
-    # Determine sanitization setting (default is True)
-    # If both flags are set, the disable flag takes priority
-    sanitize_enabled = True
-    if args.dont_sanitize:
-        sanitize_enabled = False
-        if args.sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
-        if args.custom_sanitize:
-            logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
-    elif args.sanitize:
+    # Determine sanitization setting (default is False - disabled)
+    # If both flags are set, the enable flag takes priority for explicit user choice
+    sanitize_enabled = False  # Default is disabled
+    if args.sanitize:
         sanitize_enabled = True
-    # If neither flag is specified, use default (True)
+        if args.dont_sanitize:
+            logger.warning("Both --sanitize and --dont-sanitize specified. Enable flag takes priority - sanitization enabled.")
+    elif args.dont_sanitize:
+        sanitize_enabled = False
+    # If neither flag is specified, use default (False - disabled)
+    
+    # Handle custom sanitize conflicts
+    if args.custom_sanitize and not sanitize_enabled:
+        logger.warning("Custom sanitization characters specified but sanitization is disabled. Use --sanitize to enable.")
     
     # Handle conflict resolution (enabled by default, unless explicitly disabled)
     resolve_conflicts = args.resolve_conflicts and not args.no_resolve_conflicts
