@@ -222,7 +222,14 @@ class MetadataEditor:
         return metadata
     
     def _extract_id3_metadata(self, audio_file) -> Dict[str, Any]:
-        """Extract metadata from ID3 tags (MP3)."""
+        """Extract metadata from ID3 tags (MP3).
+        
+        Args:
+            audio_file: Mutagen audio file object with ID3 tags.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
         metadata = {}
         
         if not hasattr(audio_file, 'tags') or audio_file.tags is None:
@@ -259,7 +266,14 @@ class MetadataEditor:
         return metadata
     
     def _extract_vorbis_metadata(self, audio_file) -> Dict[str, Any]:
-        """Extract metadata from Vorbis comments (FLAC, OGG, OPUS)."""
+        """Extract metadata from Vorbis comments (FLAC, OGG, OPUS).
+        
+        Args:
+            audio_file: Mutagen audio file object with Vorbis comments.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
         metadata = {}
         
         if not hasattr(audio_file, 'tags') or audio_file.tags is None:
@@ -297,7 +311,14 @@ class MetadataEditor:
         return metadata
     
     def _extract_mp4_metadata(self, audio_file) -> Dict[str, Any]:
-        """Extract metadata from MP4/M4A tags."""
+        """Extract metadata from MP4/M4A tags.
+        
+        Args:
+            audio_file: Mutagen audio file object with MP4 tags.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
         metadata = {}
         
         if not hasattr(audio_file, 'tags') or audio_file.tags is None:
@@ -336,7 +357,14 @@ class MetadataEditor:
         return metadata
     
     def _extract_generic_metadata(self, audio_file) -> Dict[str, Any]:
-        """Extract metadata from generic formats."""
+        """Extract metadata from generic formats.
+        
+        Args:
+            audio_file: Mutagen audio file object.
+            
+        Returns:
+            Dict[str, Any]: Dictionary containing extracted metadata.
+        """
         metadata = {}
         
         if not hasattr(audio_file, 'tags') or audio_file.tags is None:
@@ -476,7 +504,16 @@ class MetadataEditor:
             return False
     
     def _set_id3_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
-        """Set metadata for MP3 files using ID3 tags."""
+        """Set metadata for MP3 files using ID3 tags.
+        
+        Args:
+            audio_file: Mutagen MP3 audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
         try:
             # Ensure ID3 tags exist
             if audio_file.tags is None:
@@ -514,7 +551,16 @@ class MetadataEditor:
             return False
     
     def _set_vorbis_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
-        """Set metadata for Vorbis comment based files (FLAC, OGG, OPUS)."""
+        """Set metadata for Vorbis comment based files (FLAC, OGG, OPUS).
+        
+        Args:
+            audio_file: Mutagen audio file object with Vorbis comments.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
         try:
             # Ensure tags exist
             if audio_file.tags is None:
@@ -552,7 +598,16 @@ class MetadataEditor:
             return False
     
     def _set_mp4_metadata(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
-        """Set metadata for MP4/M4A files."""
+        """Set metadata for MP4/M4A files.
+        
+        Args:
+            audio_file: Mutagen MP4 audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
         try:
             # Ensure tags exist
             if audio_file.tags is None:
@@ -598,7 +653,16 @@ class MetadataEditor:
             return False
     
     def _set_generic_metadata_mutagen(self, audio_file, metadata: Dict[str, Any], filepath: str) -> bool:
-        """Set metadata for generic formats."""
+        """Set metadata for generic formats.
+        
+        Args:
+            audio_file: Mutagen audio file object.
+            metadata: Dictionary containing metadata to set.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if metadata was successfully set, False otherwise.
+        """
         try:
             # Ensure tags exist
             if audio_file.tags is None:
@@ -706,7 +770,15 @@ class MetadataEditor:
             return False
     
     def _detect_image_format(self, image_data: bytes, image_path: str) -> Optional[str]:
-        """Detect image format from data or filename."""
+        """Detect image format from data or filename.
+        
+        Args:
+            image_data: Binary data of the image.
+            image_path: Path to the image file.
+            
+        Returns:
+            Optional[str]: MIME type of the image format, or None if unsupported.
+        """
         # Try to detect from data first
         if image_data.startswith(b'\xff\xd8\xff'):
             return 'image/jpeg'
@@ -729,7 +801,17 @@ class MetadataEditor:
         return format_map.get(ext)
     
     def _set_mp3_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
-        """Set album art for MP3 files using ID3 APIC frame."""
+        """Set album art for MP3 files using ID3 APIC frame.
+        
+        Args:
+            audio_file: Mutagen MP3 audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
         try:
             # Ensure ID3 tags exist
             if audio_file.tags is None:
@@ -757,7 +839,17 @@ class MetadataEditor:
             return False
     
     def _set_flac_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
-        """Set album art for FLAC files using Picture blocks."""
+        """Set album art for FLAC files using Picture blocks.
+        
+        Args:
+            audio_file: Mutagen FLAC audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
         try:
             # Clear existing pictures
             audio_file.clear_pictures()
@@ -788,7 +880,17 @@ class MetadataEditor:
             return False
     
     def _set_ogg_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
-        """Set album art for OGG files using METADATA_BLOCK_PICTURE."""
+        """Set album art for OGG files using METADATA_BLOCK_PICTURE.
+        
+        Args:
+            audio_file: Mutagen OGG audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
         try:
             # Ensure tags exist
             if audio_file.tags is None:
@@ -830,7 +932,17 @@ class MetadataEditor:
             return False
     
     def _set_mp4_album_art(self, audio_file, image_data: bytes, image_format: str, filepath: str) -> bool:
-        """Set album art for MP4/M4A files."""
+        """Set album art for MP4/M4A files.
+        
+        Args:
+            audio_file: Mutagen MP4 audio file object.
+            image_data: Binary data of the image.
+            image_format: MIME type of the image.
+            filepath: Path to the audio file.
+            
+        Returns:
+            bool: True if album art was successfully set, False otherwise.
+        """
         try:
             # Ensure tags exist
             if audio_file.tags is None:
