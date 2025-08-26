@@ -54,7 +54,7 @@ DEFAULT_SETTINGS = {
     'sample_rate': '48000',
     'channels': '2',
     'quality': 'maximum',  # standard, high, maximum
-    'skip_existing': False,
+    'skip_existing': True,
     'recursive': False,
     'force_overwrite': False,  # Don't force overwrite by default
 }
