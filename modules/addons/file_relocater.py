@@ -446,7 +446,8 @@ def parse_arguments():
   python organize.py /path/to/music/library /path/to/organized/library
 
   # Process files with no metadata using filename as folder name
-  python organize.py /music /organized --process-no-metadata
+  python organize.py /music /organized --process-no-metadata y
+  python organize.py /music /organized --pnm y
 
   # For music player compatibility, use conservative character replacements and sanitization
   python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize
@@ -455,7 +456,7 @@ def parse_arguments():
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
 
   # Artist-based organization with conservative sanitization, process files with no metadata
-  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --process-no-metadata
+  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --pnm y
 
   # Detailed organization with track info and custom character replacement
   python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
@@ -505,8 +506,8 @@ Custom sanitization examples:
 Folder format tips:
   - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
   - Missing fields will be empty (logged as warnings)
-  - Files with no metadata are skipped by default (use --process-no-metadata to include them)
-  - When --process-no-metadata is used, files with no metadata use filename as folder name
+  - Files with no metadata are skipped by default (use --process-no-metadata y to include them)
+  - When --process-no-metadata y is used, files with no metadata use filename as folder name
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
   - For music player compatibility, consider using: --sanitize --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
@@ -580,15 +581,10 @@ Folder format tips:
         help="Skip organization if target file already exists (default: True)"
     )
     parser.add_argument(
-        "--skip-no-metadata",
-        action="store_true",
-        default=True,
-        help="Skip files that have no metadata for the specified format fields (default: True)"
-    )
-    parser.add_argument(
-        "--process-no-metadata",
-        action="store_true",
-        help="Process files with no metadata by using filename as folder name (overrides --skip-no-metadata)"
+        "--process-no-metadata", "--pnm",
+        choices=["y", "n"],
+        default="n",
+        help="Process files with no metadata: y=yes (use filename as folder), n=no (skip files, default)"
     )
     
     # Utility options
@@ -720,7 +716,8 @@ def main():
             logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
     
     # Determine metadata processing behavior
-    skip_no_metadata = args.skip_no_metadata and not args.process_no_metadata
+    process_no_metadata = args.process_no_metadata == 'y'
+    skip_no_metadata = not process_no_metadata
     
     # Prepare options
     options = {
@@ -729,7 +726,7 @@ def main():
         'copy_mode': args.copy,
         'skip_existing': args.skip_existing,
         'skip_no_metadata': skip_no_metadata,
-        'process_no_metadata': args.process_no_metadata,
+        'process_no_metadata': process_no_metadata,
         'folder_format': args.folder_format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
@@ -803,7 +800,7 @@ def main():
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
-            logger.error("- For skipped files: Use --process-no-metadata to include files with no metadata")
+            logger.error("- For skipped files: Use --process-no-metadata y to include files with no metadata")
             logger.error("=" * 60)
             sys.exit(1)
         
