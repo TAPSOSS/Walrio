@@ -110,14 +110,14 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
                 '--rc', '&', '+',           # Ampersand to plus
                 '--rc', '?', '',            # Remove question marks
                 '--rc', '!', '',            # Remove exclamation marks
-                '--rc', '|', '~',           # Pipe to tidle
+                '--rc', '|', '~',           # Pipe to tilde
                 '--rc', '.', '',            # Remove periods
-                '--rc', ',', '',            # Remove commas
+                '--rc', ',', '~',           # Comma to tilde
                 '--rc', '%', '',            # Remove percent signs
                 '--rc', '*', '',            # Remove asterisks
                 '--rc', '"', '',            # Remove double quotes
-                '--rc', ':', '-',           # Colon to dash
-                '--rc', ';', '',            # Remove semicolons
+                '--rc', ':', '~',           # Colon to tilde
+                '--rc', ';', '~',           # Semicolon to tilde
                 '--rc', "'", '',            # Remove single quotes
                 '--rc', '>', '',            # Remove greater than
                 '--rc', '<', '',            # Remove less than
