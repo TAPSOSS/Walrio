@@ -14,12 +14,10 @@ import sys
 import argparse
 import logging
 import subprocess
-import json
-import tempfile
 import base64
 import io
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 
 # Configure logging
 logging.basicConfig(
