@@ -583,7 +583,7 @@ def parse_arguments():
   python rename.py /music
 
   # Disable conflict resolution, skip conflicting files instead
-  python rename.py /music --no-resolve-conflicts
+  python rename.py /music --resolve-conflicts false
 
   # Custom format with conflict resolution
   python rename.py /music --format "{artist} - {title}" --resolve-conflicts
@@ -629,9 +629,9 @@ Sanitization examples (default: sanitize enabled, prompt for special chars):
 
 Conflict resolution examples (default: resolve conflicts enabled):
   python rename.py /music                       # Resolve conflicts by adding (2), (3) to title (default)
-  python rename.py /music --no-resolve-conflicts # Skip files with conflicting names instead
-  python rename.py /music --resolve-conflicts    # Explicitly enable conflict resolution
-  python rename.py /music --skip-existing        # Also skip existing files (when combined with --no-resolve-conflicts)
+  python rename.py /music --resolve-conflicts false # Skip files with conflicting names instead
+  python rename.py /music --resolve-conflicts true  # Explicitly enable conflict resolution
+  python rename.py /music --skip-existing        # Also skip existing files (when combined with --resolve-conflicts false)
 
 Custom sanitization examples:
   --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
@@ -725,14 +725,9 @@ Format string tips:
     )
     parser.add_argument(
         "--resolve-conflicts",
-        action="store_true",
-        default=True,
-        help="Resolve filename conflicts by adding counter to title instead of skipping (default: True)"
-    )
-    parser.add_argument(
-        "--no-resolve-conflicts",
-        action="store_true",
-        help="Don't resolve conflicts, skip files with conflicting names instead"
+        choices=["true", "false"],
+        default="true",
+        help="Resolve filename conflicts by adding counter to title (default: true)"
     )
     parser.add_argument(
         "--skip-no-metadata",
@@ -862,11 +857,8 @@ def main():
     if args.custom_sanitize and not sanitize_enabled:
         logger.warning("Custom sanitization characters specified but sanitization is disabled. Use --sanitize to enable.")
     
-    # Handle conflict resolution (enabled by default, unless explicitly disabled)
-    resolve_conflicts = args.resolve_conflicts and not args.no_resolve_conflicts
-    if args.no_resolve_conflicts and args.resolve_conflicts:
-        logger.warning("Both --resolve-conflicts and --no-resolve-conflicts specified. Disable flag takes priority - conflict resolution disabled.")
-        resolve_conflicts = False
+    # Handle conflict resolution
+    resolve_conflicts = args.resolve_conflicts == "true"
     
     # Prepare options
     options = {
