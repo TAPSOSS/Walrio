@@ -452,8 +452,8 @@ def parse_arguments():
   python organize.py /music /organized --process-no-metadata y
   python organize.py /music /organized --pnm y
 
-  # For music player compatibility, use conservative character replacements and sanitization
-  python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize
+  # For music player compatibility (in the english language), use conservative character replacements and sanitization
+  python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
 
   # Custom folder format with year and genre (copying files, skipping files with no metadata)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
@@ -494,17 +494,15 @@ Sanitization examples (default: no sanitization, keep all characters):
   -s                                 # Same as above using shortcut
   --dont-sanitize                    # Explicitly disable character filtering (default behavior)
   --ds                               # Same as above using shortcut
-  --sanitize --rc "&" "and"          # Sanitize with additional custom replacements
-  --sanitize --rc "/" "-"            # Sanitize with custom replacements
-  -s --rc "/" "-"                    # Same as above using shortcut
-  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
-  --cs "0123456789"                  # Only allow numbers using shortcut
+  --sanitize "abcABC123-_ "          # Enable filtering with custom allowed character set
+  --s "0123456789"                   # Only allow numbers using shortcut
+  --sanitize ""                      # Enable filtering with default character set
 
 Custom sanitization examples:
-  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
-  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
-  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
-  --cs "あいうえおかきくけこ"              # Japanese characters
+  --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
+  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
+  --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --s "あいうえおかきくけこ"              # Japanese characters
 
 Folder format tips:
   - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
@@ -513,7 +511,7 @@ Folder format tips:
   - When --process-no-metadata y is used, files with no metadata use filename as folder name
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - For music player compatibility, consider using: --sanitize --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
+  - For music player compatibility (with the english language), consider using: --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ " --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
   - Default character set excludes apostrophes and special chars for maximum compatibility
 """)
     
@@ -553,18 +551,13 @@ Folder format tips:
     )
     parser.add_argument(
         "--sanitize", "-s",
-        action="store_true",
-        help="Enable folder name sanitization using the allowed character set."
+        metavar="CHARS",
+        help="Enable folder name sanitization with custom character set. Provide all allowed characters as a string (e.g., --sanitize 'abcABC123-_ '). If no characters provided, uses default set."
     )
     parser.add_argument(
         "--dont-sanitize", "--ds",
         action="store_true",
-        help="Disable folder name sanitization using the allowed character set. Only apply character replacements."
-    )
-    parser.add_argument(
-        "--custom-sanitize", "--cs",
-        metavar="CHARS",
-        help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
+        help="Disable folder name sanitization (default: disabled). Use this to explicitly override --sanitize in longer commands where you might have accidentally included it."
     )
     
     # Behavior options
@@ -709,16 +702,17 @@ def main():
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
     # Determine sanitization setting (default is False)
-    # If both flags are set, the disable flag takes priority
     sanitize_enabled = False  # Default to disabled
-    if args.sanitize:
-        sanitize_enabled = True  # --sanitize explicitly enables
-    if args.dont_sanitize:
-        sanitize_enabled = False  # --dont-sanitize always disables
-        if args.sanitize:
-            logger.warning("Disable sanitization flag takes priority - sanitization disabled.")
-        if args.custom_sanitize:
-            logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
+    custom_sanitize_chars = None
+    
+    if args.sanitize is not None:
+        sanitize_enabled = True
+        custom_sanitize_chars = args.sanitize if args.sanitize else None
+        if args.dont_sanitize:
+            logger.warning("Both --sanitize and --dont-sanitize specified. --dont-sanitize takes priority - sanitization disabled.")
+            sanitize_enabled = False
+    elif args.dont_sanitize:
+        sanitize_enabled = False
     
     # Determine metadata processing behavior
     process_no_metadata = args.process_no_metadata == 'y'
@@ -738,9 +732,9 @@ def main():
     }
     
     # Add custom sanitization character set if provided
-    if args.custom_sanitize:
-        options['custom_sanitize_chars'] = set(args.custom_sanitize)
-        logger.info(f"Using custom character set for sanitization: '{args.custom_sanitize}'")
+    if custom_sanitize_chars:
+        options['custom_sanitize_chars'] = set(custom_sanitize_chars)
+        logger.info(f"Using custom character set for sanitization: '{custom_sanitize_chars}'")
     
     # Create organizer
     try:

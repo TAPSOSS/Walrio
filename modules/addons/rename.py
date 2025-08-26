@@ -617,13 +617,13 @@ Character replacement examples (default: / and \\ become ~):
 Sanitization examples (default: sanitize enabled, prompt for special chars):
   --sanitize                         # Explicitly enable character filtering (default behavior)
   --s                                # Same as above using shortcut
-  --dont-sanitize                    # Disable character filtering, keep all characters
+  --dont-sanitize                    # Disable character filtering, keep all characters (default)
   --ds                               # Same as above using shortcut
   --ds --rc "/" "~"                  # No filtering, but still replace / with ~
   --dont-sanitize --dontreplace      # No filtering or replacements at all
-  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
-  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
-  --cs "0123456789"                  # Only allow numbers using shortcut
+  --sanitize "abcABC123-_ "          # Enable filtering with custom allowed character set
+  --s "0123456789"                   # Only allow numbers using shortcut
+  --sanitize ""                      # Enable filtering with default character set
   --auto-sanitize                    # Automatically remove special chars without prompting
   --force-allow-special              # Always keep special chars without prompting
 
@@ -634,10 +634,10 @@ Conflict resolution examples (default: resolve conflicts enabled):
   python rename.py /music --skip-existing        # Also skip existing files (when combined with --resolve-conflicts false)
 
 Custom sanitization examples:
-  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
-  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols
-  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
-  --cs "あいうえおかきくけこ"              # Japanese characters
+  --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic english set
+  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols
+  --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --s "あいうえおかきくけこ"              # Japanese characters
 
 Format string tips:
   - Use Python string formatting: {track:02d} for zero-padded numbers
@@ -645,7 +645,7 @@ Format string tips:
   - Use --skip-no-metadata to skip files missing critical metadata
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - Use --custom-sanitize to define your own allowed character set
+  - Use --sanitize "your_chars" to define your own allowed character set
 """)
     
     # Input options
@@ -687,18 +687,13 @@ Format string tips:
     )
     parser.add_argument(
         "--sanitize", "--s",
-        action="store_true",
-        help="Enable filename sanitization using the allowed character set (default behavior)."
+        metavar="CHARS",
+        help="Enable filename sanitization with custom character set. Provide all allowed characters as a string (e.g., --sanitize 'abcABC123-_ '). If no characters provided, uses default set."
     )
     parser.add_argument(
         "--dont-sanitize", "--ds",
         action="store_true",
-        help="Disable filename sanitization using the allowed character set. Only apply character replacements."
-    )
-    parser.add_argument(
-        "--custom-sanitize", "--cs",
-        metavar="CHARS",
-        help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
+        help="Disable filename sanitization (default: disabled). Use this to explicitly override --sanitize in longer commands where you might have accidentally included it."
     )
     parser.add_argument(
         "--auto-sanitize",
@@ -843,19 +838,18 @@ def main():
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
     # Determine sanitization setting (default is False - disabled)
-    # If both flags are set, the enable flag takes priority for explicit user choice
     sanitize_enabled = False  # Default is disabled
-    if args.sanitize:
+    custom_sanitize_chars = None
+    
+    if args.sanitize is not None:
         sanitize_enabled = True
+        custom_sanitize_chars = args.sanitize if args.sanitize else None
         if args.dont_sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. Enable flag takes priority - sanitization enabled.")
+            logger.warning("Both --sanitize and --dont-sanitize specified. --dont-sanitize takes priority - sanitization disabled.")
+            sanitize_enabled = False
     elif args.dont_sanitize:
         sanitize_enabled = False
     # If neither flag is specified, use default (False - disabled)
-    
-    # Handle custom sanitize conflicts
-    if args.custom_sanitize and not sanitize_enabled:
-        logger.warning("Custom sanitization characters specified but sanitization is disabled. Use --sanitize to enable.")
     
     # Handle conflict resolution
     resolve_conflicts = args.resolve_conflicts == "true"
@@ -874,9 +868,9 @@ def main():
     }
     
     # Add custom sanitization character set if provided
-    if args.custom_sanitize:
-        options['custom_sanitize_chars'] = set(args.custom_sanitize)
-        logger.info(f"Using custom character set for sanitization: '{args.custom_sanitize}'")
+    if custom_sanitize_chars:
+        options['custom_sanitize_chars'] = set(custom_sanitize_chars)
+        logger.info(f"Using custom character set for sanitization: '{custom_sanitize_chars}'")
     
     # Create renamer
     try:
