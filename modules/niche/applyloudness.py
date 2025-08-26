@@ -19,17 +19,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import tempfile
 
-# Add the modules directory to Python path to import modules
-modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, modules_dir)
-
-from addons.replaygain import ReplayGainAnalyzer
-
-# Import the centralized metadata module for OPUS album art handling
-try:
-    from ..core import metadata
-except ImportError:
-    metadata = None
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.addons.replaygain import ReplayGainAnalyzer
+from modules.core import metadata
 
 # Configure logging format
 logging.basicConfig(
@@ -230,10 +223,6 @@ class LoudnessApplicator:
         """
         if not self._has_album_art(original_filepath):
             logger.debug(f"No album art detected in {os.path.basename(original_filepath)}")
-            return
-        
-        if metadata is None:
-            logger.warning("Metadata module not available for OPUS album art handling")
             return
         
         logger.info("Extracting and embedding album art for Opus file using metadata module")

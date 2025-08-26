@@ -19,11 +19,9 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional, Union
 
-# Import the centralized metadata module for OPUS album art handling
-try:
-    from ..core import metadata
-except ImportError:
-    metadata = None
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.core import metadata
 
 # Configure logging format
 logging.basicConfig(
