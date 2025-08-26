@@ -39,8 +39,8 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 # Default folder structure format
 DEFAULT_FOLDER_FORMAT = "{album}/{year}/{albumartist}"
 
-# Default character replacements (applied before other sanitization)
-DEFAULT_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
+# Standard character replacements (applied before other sanitization when --standard is used)
+STANDARD_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
 
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
@@ -72,6 +72,7 @@ class FileRelocater:
         self.moved_count = 0
         self.error_count = 0
         self.skipped_count = 0
+        self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
         
@@ -111,8 +112,8 @@ class FileRelocater:
         if not text:
             return "Unknown"
         
-        # Get character replacements from options (default to standard replacements)
-        char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
+        # Get character replacements from options (default to no replacements)
+        char_replacements = self.options.get('char_replacements', {})
         
         # Apply custom character replacements first
         sanitized = text
@@ -120,7 +121,7 @@ class FileRelocater:
             sanitized = sanitized.replace(old_char, new_char)
         
         # Check if sanitization is disabled
-        if self.options.get('dont_sanitize', False):
+        if self.options.get('dont_sanitize', True):  # Default to disabled sanitization
             # Only apply character replacements, skip character filtering
             final_sanitized = sanitized
         else:
@@ -197,7 +198,7 @@ class FileRelocater:
             return metadata
             
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            logger.error(f"⚠️  METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
+            logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
             return {}
     
@@ -235,12 +236,12 @@ class FileRelocater:
                     format_values[field] = ""
                 else:
                     # For custom fields, log warning and use empty string
-                    logger.warning(f"⚠️  Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
+                    logger.warning(f"Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
                     format_values[field] = ""
         
         # Log missing pre-defined fields
         if missing_fields:
-            logger.warning(f"⚠️  Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
+            logger.warning(f"Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
         
         # If skip_no_metadata is enabled and we're missing critical fields, skip the file
         if self.options.get('skip_no_metadata', False):
@@ -251,13 +252,18 @@ class FileRelocater:
         
         # Handle special case where we have no metadata at all for any field
         if all(not value for value in format_values.values()):
-            if not self.options.get('skip_no_metadata', False):
-                # Use "Unknown" values
+            if self.options.get('skip_no_metadata', True):
+                return None
+            elif self.options.get('process_no_metadata', False):
+                # Use filename (without extension) as the folder name
+                filename = os.path.splitext(os.path.basename(filepath))[0]
+                sanitized_filename = self.sanitize_folder_name(filename)
+                return sanitized_filename
+            else:
+                # Use "Unknown" values (legacy behavior)
                 for field in format_values:
                     if not format_values[field]:
                         format_values[field] = f"Unknown {field.title()}"
-            else:
-                return None
         
         try:
             # Apply the format string
@@ -306,8 +312,9 @@ class FileRelocater:
         # Generate folder path
         folder_path = self.generate_folder_path(source_filepath)
         if not folder_path:
-            logger.error(f"⚠️  SKIPPED: File has insufficient metadata for organization: {os.path.basename(source_filepath)}")
+            logger.debug(f"SKIPPED (no metadata): {os.path.basename(source_filepath)}")
             self.skipped_count += 1
+            self.skipped_files.append(source_filepath)  # Track the full path
             return True
         
         # Construct destination path
@@ -331,7 +338,7 @@ class FileRelocater:
         # Check if target file already exists
         if os.path.exists(destination_filepath):
             if self.options.get('skip_existing', True):
-                logger.error(f"🚫 FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
+                logger.error(f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
                 self.conflict_count += 1
                 return True
             else:
@@ -416,6 +423,10 @@ class FileRelocater:
             logger.debug(f"Processing file {i}/{total_files}: {os.path.basename(file_path)}")
             self.move_file(file_path, destination_root)
         
+        # Log summary of skipped files during processing
+        if self.skipped_count > 0:
+            logger.info(f"Processed {total_files} files: {self.moved_count - initial_moved_count} organized, {self.skipped_count} skipped (no metadata)")
+        
         successful_moves = self.moved_count - initial_moved_count
         return (successful_moves, total_files)
 
@@ -431,17 +442,27 @@ def parse_arguments():
         description="Audio Library Organizer - Organize files into folder structures using metadata",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Organize music library using default format: album/albumartist
+  # Organize music library using default format (copies files, skips files with no metadata): album/albumartist
   python organize.py /path/to/music/library /path/to/organized/library
 
-  # Custom folder format with year and genre
+  # Move files instead of copying them
+  python organize.py /music /organized --copy n
+
+  # Process files with no metadata using filename as folder name
+  python organize.py /music /organized --process-no-metadata y
+  python organize.py /music /organized --pnm y
+
+  # For music player compatibility (in the english language), use conservative character replacements and sanitization
+  python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
+
+  # Custom folder format with year and genre (copying files, skipping files with no metadata)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
 
-  # Artist-based organization
-  python organize.py /music /organized --folder-format "{artist}/{album}"
+  # Artist-based organization with conservative sanitization, process files with no metadata, move files
+  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --pnm y --copy n
 
-  # Detailed organization with track info
-  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}"
+  # Detailed organization with track info and custom character replacement
+  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
 
 Available pre-defined metadata fields:
   {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
@@ -460,39 +481,38 @@ You can also use any raw metadata tag name (case-sensitive):
   {TPE1}        - Use ID3v2 tag directly
   {Custom_Tag}  - Use any custom tag present in the file
 
-Character replacement examples (default: problematic chars become safe alternatives):
-  --replace-char "/" "-"             # Replace forward slashes with dashes (default)
-  --rc ":" "-"                       # Replace colons with dashes (default, using shortcut)
+Character replacement examples (default: no replacements, files kept as-is):
+  --replace-char "/" "-"             # Replace forward slashes with dashes only
+  --rc ":" "-"                       # Replace colons with dashes only (using shortcut)
   --replace-char "&" "and"           # Replace ampersands with 'and'
   --rc "/" "-" --rc "&" "and"        # Multiple replacements using shortcuts
   --replace-char "?" ""              # Remove question marks (replace with nothing)
-  --dontreplace --rc "/" "-"         # Disable defaults, only replace / with -
-  --dr --rc "=" "_"                  # Disable defaults using shortcut, replace = with _
+  --rc "/" "-" --rc "\\" "-" --rc ":" "-" --rc "|" "-"  # Conservative set for music players
 
-Sanitization examples (default: sanitize enabled with conservative character set):
-  --sanitize                         # Explicitly enable character filtering (default behavior)
-  --s                                # Same as above using shortcut
-  --dont-sanitize                    # Disable character filtering, keep all characters
+Sanitization examples (default: no sanitization, keep all characters):
+  --sanitize                         # Enable character filtering using conservative character set
+  -s                                 # Same as above using shortcut
+  --dont-sanitize                    # Explicitly disable character filtering (default behavior)
   --ds                               # Same as above using shortcut
-  --ds --rc "/" "-"                  # No filtering, but still replace / with -
-  --dont-sanitize --dontreplace      # No filtering or replacements at all
-  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
-  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
-  --cs "0123456789"                  # Only allow numbers using shortcut
+  --sanitize "abcABC123-_ "          # Enable filtering with custom allowed character set
+  --s "0123456789"                   # Only allow numbers using shortcut
+  --sanitize ""                      # Enable filtering with default character set
 
 Custom sanitization examples:
-  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
-  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
-  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
-  --cs "あいうえおかきくけこ"              # Japanese characters
+  --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
+  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
+  --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --s "あいうえおかきくけこ"              # Japanese characters
 
 Folder format tips:
   - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
   - Missing fields will be empty (logged as warnings)
-  - Use --skip-no-metadata to skip files missing critical metadata
+  - Files with no metadata are skipped by default (use --process-no-metadata y to include them)
+  - When --process-no-metadata y is used, files with no metadata use filename as folder name
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - Default character set excludes apostrophes and special chars for music player compatibility
+  - For music player compatibility (with the english language), consider using: --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ " --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
+  - Default character set excludes apostrophes and special chars for maximum compatibility
 """)
     
     # Input/Output options
@@ -507,7 +527,8 @@ Folder format tips:
     parser.add_argument(
         "-r", "--recursive",
         action="store_true",
-        help="Recursively process subdirectories in source"
+        default=False,
+        help="Recursively process subdirectories in source (default: False)"
     )
     
     # Organization options
@@ -526,22 +547,17 @@ Folder format tips:
     parser.add_argument(
         "--dontreplace", "--dr",
         action="store_true",
-        help="Disable default character replacements. Only use custom --replace-char replacements."
+        help="Disable standard character replacements. Only use custom --replace-char replacements."
     )
     parser.add_argument(
-        "--sanitize", "--s",
-        action="store_true",
-        help="Enable folder name sanitization using the allowed character set (default behavior)."
+        "--sanitize", "-s",
+        metavar="CHARS",
+        help="Enable folder name sanitization with custom character set. Provide all allowed characters as a string (e.g., --sanitize 'abcABC123-_ '). If no characters provided, uses default set."
     )
     parser.add_argument(
         "--dont-sanitize", "--ds",
         action="store_true",
-        help="Disable folder name sanitization using the allowed character set. Only apply character replacements."
-    )
-    parser.add_argument(
-        "--custom-sanitize", "--cs",
-        metavar="CHARS",
-        help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
+        help="Disable folder name sanitization (default: disabled). Use this to explicitly override --sanitize in longer commands where you might have accidentally included it."
     )
     
     # Behavior options
@@ -552,8 +568,9 @@ Folder format tips:
     )
     parser.add_argument(
         "--copy",
-        action="store_true",
-        help="Copy files instead of moving them (preserves original library)"
+        choices=["y", "n"],
+        default="y",
+        help="Copy files instead of moving them: y=yes (copy, default), n=no (move files)"
     )
     parser.add_argument(
         "--skip-existing",
@@ -562,9 +579,10 @@ Folder format tips:
         help="Skip organization if target file already exists (default: True)"
     )
     parser.add_argument(
-        "--skip-no-metadata",
-        action="store_true",
-        help="Skip files that have no metadata for the specified format fields"
+        "--process-no-metadata", "--pnm",
+        choices=["y", "n"],
+        default="n",
+        help="Process files with no metadata: y=yes (use filename as folder), n=no (skip files, default)"
     )
     
     # Utility options
@@ -589,18 +607,17 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     
     Args:
         replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include default replacements
+        no_defaults (bool): If True, don't include any default replacements
         
     Returns:
         dict: Dictionary mapping old characters to new characters
     """
     replacements = {}
     
-    # Start with defaults unless explicitly disabled
-    if not no_defaults:
-        replacements.update(DEFAULT_CHAR_REPLACEMENTS)
+    # Note: By default, no character replacements are applied
+    # Users can add custom replacements using --replace-char
     
-    # Add custom replacements (these override defaults if there are conflicts)
+    # Add custom replacements
     if replace_char_list:
         for replacement_pair in replace_char_list:
             if len(replacement_pair) != 2:
@@ -684,49 +701,58 @@ def main():
     # Parse character replacements
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
-    # Determine sanitization setting (default is True)
-    # If both flags are set, the disable flag takes priority
-    sanitize_enabled = True
-    if args.dont_sanitize:
-        sanitize_enabled = False
-        if args.sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
-        if args.custom_sanitize:
-            logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
-    elif args.sanitize:
+    # Determine sanitization setting (default is False)
+    sanitize_enabled = False  # Default to disabled
+    custom_sanitize_chars = None
+    
+    if args.sanitize is not None:
         sanitize_enabled = True
-    # If neither flag is specified, use default (True)
+        custom_sanitize_chars = args.sanitize if args.sanitize else None
+        if args.dont_sanitize:
+            logger.warning("Both --sanitize and --dont-sanitize specified. --dont-sanitize takes priority - sanitization disabled.")
+            sanitize_enabled = False
+    elif args.dont_sanitize:
+        sanitize_enabled = False
+    
+    # Determine metadata processing behavior
+    process_no_metadata = args.process_no_metadata == 'y'
+    skip_no_metadata = not process_no_metadata
     
     # Prepare options
     options = {
         'recursive': args.recursive,
         'dry_run': args.dry_run,
-        'copy_mode': args.copy,
+        'copy_mode': args.copy == 'y',
         'skip_existing': args.skip_existing,
-        'skip_no_metadata': args.skip_no_metadata,
+        'skip_no_metadata': skip_no_metadata,
+        'process_no_metadata': process_no_metadata,
         'folder_format': args.folder_format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
     }
     
     # Add custom sanitization character set if provided
-    if args.custom_sanitize:
-        options['custom_sanitize_chars'] = set(args.custom_sanitize)
-        logger.info(f"Using custom character set for sanitization: '{args.custom_sanitize}'")
+    if custom_sanitize_chars:
+        options['custom_sanitize_chars'] = set(custom_sanitize_chars)
+        logger.info(f"Using custom character set for sanitization: '{custom_sanitize_chars}'")
     
     # Create organizer
     try:
         organizer = FileRelocater(options)
         
         # Show organization settings
-        operation = "copy" if args.copy else "move"
+        operation = "copy" if args.copy == 'y' else "move"
         logger.info(f"Using folder format: '{args.folder_format}'")
         logger.info(f"Operation mode: {operation} files")
         if char_replacements:
             replacement_info = ", ".join([f"'{old}' -> '{new}'" for old, new in char_replacements.items()])
             logger.info(f"Character replacements: {replacement_info}")
+        else:
+            logger.info("Character replacements: none (keeping original characters)")
         if not sanitize_enabled:
             logger.info("Folder name sanitization disabled - keeping all characters except replacements")
+        else:
+            logger.info("Folder name sanitization enabled - filtering to allowed character set")
         
         # Organize the library
         logger.info(f"Organizing audio library from: {args.source}")
@@ -735,37 +761,46 @@ def main():
         moved_count, total_files = organizer.organize_directory(args.source, args.destination)
         
         # Final summary
-        operation_verb = "copied" if args.copy else "moved"
+        operation_verb = "copied" if args.copy == 'y' else "moved"
         if args.dry_run:
             logger.info(f"Dry run completed: {organizer.moved_count} files would be {operation_verb}")
         else:
             logger.info(f"Organization completed: {organizer.moved_count} files {operation_verb} successfully")
         
+        # Show summary of what was processed
+        total_processed = organizer.moved_count + organizer.skipped_count + organizer.error_count + organizer.conflict_count
+        if total_processed > 0:
+            logger.info(f"Summary: {organizer.moved_count} organized, {organizer.skipped_count} skipped, {organizer.error_count + organizer.conflict_count} errors")
+        
         # Report any issues that occurred
         issues_found = False
+        operation = "copy" if args.copy == 'y' else "move"
         if organizer.error_count > 0:
-            logger.error(f"❌ ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
+            logger.error(f"ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
             issues_found = True
         
         if organizer.metadata_error_count > 0:
-            logger.error(f"⚠️  METADATA ERRORS: {organizer.metadata_error_count} files had unreadable metadata")
+            logger.error(f"METADATA ERRORS: {organizer.metadata_error_count} files had unreadable metadata")
             issues_found = True
         
         if organizer.conflict_count > 0:
-            logger.error(f"🚫 FILE CONFLICTS: {organizer.conflict_count} files skipped due to existing target files")
+            logger.error(f"FILE CONFLICTS: {organizer.conflict_count} files skipped due to existing target files")
             issues_found = True
         
         if organizer.skipped_count > 0:
-            logger.error(f"⏭️  SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
+            logger.error(f"SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
+            logger.error("Files skipped (no metadata):")
+            for skipped_file in organizer.skipped_files:
+                logger.error(f"  - {skipped_file}")
             issues_found = True
         
         if issues_found:
             logger.error("=" * 60)
-            logger.error("⚠️  ATTENTION: Issues were encountered during processing!")
+            logger.error("ATTENTION: Issues were encountered during processing!")
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
-            logger.error("- For skipped files: Use --skip-no-metadata=false to force organization")
+            logger.error("- For skipped files: Use --process-no-metadata y to include files with no metadata")
             logger.error("=" * 60)
             sys.exit(1)
         

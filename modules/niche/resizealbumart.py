@@ -19,12 +19,10 @@ import subprocess
 from pathlib import Path
 from typing import List
 
-# Add the modules directory to Python path to import modules
-modules_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, modules_dir)
-
-from addons.imageconverter import convert_image
-from core.metadata import MetadataEditor
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.addons.imageconverter import convert_image
+from modules.core.metadata import MetadataEditor
 
 
 def setup_logging(level: str = "INFO") -> logging.Logger:

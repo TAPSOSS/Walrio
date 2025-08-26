@@ -7,8 +7,6 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
 A tool to apply gain adjustments directly to audio files using FFmpeg while preserving metadata and album art.
 Can apply gain based on ReplayGain values or direct dB adjustments.
-
-This implementation is inspired by the MuseAmp project by tapscodes.
 """
 
 import os
@@ -21,11 +19,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import tempfile
 
-# Import the centralized metadata module for OPUS album art handling
-try:
-    from ..core import metadata
-except ImportError:
-    metadata = None
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.addons.replaygain import ReplayGainAnalyzer
+from modules.core import metadata
 
 # Configure logging format
 logging.basicConfig(
@@ -97,7 +94,7 @@ class LoudnessApplicator:
     
     def get_replaygain_value(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
         """
-        Get ReplayGain value for a file using rsgain.
+        Get ReplayGain value for a file using the ReplayGain analyzer.
         
         Args:
             filepath (str): Path to the audio file
@@ -107,54 +104,31 @@ class LoudnessApplicator:
             float or None: ReplayGain value in dB, or None if analysis failed
         """
         try:
-            # Use rsgain to get ReplayGain value
-            lufs_str = f"-{abs(target_lufs)}"
-            cmd = [
-                "rsgain", "custom",
-                "-s", "i",  # Single file mode, integrated mode
-                "-l", lufs_str,  # Target LUFS
-                "-O",  # Output format: tab-separated values
-                str(filepath)
-            ]
+            # Create analyzer instance with the target LUFS
+            analyzer = ReplayGainAnalyzer(target_lufs=target_lufs)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
+            # Analyze the file
+            result = analyzer.analyze_file(filepath)
             
-            if result.returncode != 0:
-                logger.error(f"rsgain analysis failed for {os.path.basename(filepath)}: {result.stderr or result.stdout}")
+            if result is None:
+                logger.error(f"ReplayGain analysis failed for {os.path.basename(filepath)}")
                 return None
             
-            # Parse the output
-            lines = result.stdout.strip().splitlines()
-            if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {os.path.basename(filepath)}")
+            # Extract the gain value
+            gain_db = result.get('gain_db')
+            if gain_db is None:
+                logger.error(f"No gain value found in ReplayGain analysis for {os.path.basename(filepath)}")
                 return None
             
-            # Parse header and values
-            header = lines[0].split('\t')
-            values = lines[1].split('\t')
-            
-            if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {os.path.basename(filepath)}")
-                return None
-            
-            # Create column mapping and get gain value
-            colmap = {k: i for i, k in enumerate(header)}
-            gain_col = colmap.get("Gain (dB)", -1)
-            
-            if gain_col != -1 and gain_col < len(values):
+            if isinstance(gain_db, str):
                 try:
-                    return float(values[gain_col])
+                    gain_db = float(gain_db)
                 except ValueError:
-                    logger.error(f"Invalid gain value in rsgain output for {os.path.basename(filepath)}")
+                    logger.error(f"Invalid gain value in ReplayGain analysis for {os.path.basename(filepath)}: {gain_db}")
                     return None
             
-            logger.error(f"No gain value found in rsgain output for {os.path.basename(filepath)}")
-            return None
+            logger.debug(f"ReplayGain analysis for {os.path.basename(filepath)}: {result.get('loudness_lufs')} LUFS, {gain_db} dB gain")
+            return gain_db
             
         except Exception as e:
             logger.error(f"Error getting ReplayGain value for {os.path.basename(filepath)}: {str(e)}")
@@ -249,10 +223,6 @@ class LoudnessApplicator:
         """
         if not self._has_album_art(original_filepath):
             logger.debug(f"No album art detected in {os.path.basename(original_filepath)}")
-            return
-        
-        if metadata is None:
-            logger.warning("Metadata module not available for OPUS album art handling")
             return
         
         logger.info("Extracting and embedding album art for Opus file using metadata module")
@@ -574,7 +544,7 @@ def parse_arguments():
   python applyloudness.py /path/to/music --gain +1.5 --output /path/to/output
 
   # Apply gain without creating backup files
-  python applyloudness.py /path/to/music --gain -1 --no-backup
+  python applyloudness.py /path/to/music --gain -1 --backup false
 
   # Dry run to see what would be processed
   python applyloudness.py /path/to/music --gain +2 --dry-run
@@ -635,18 +605,14 @@ Requirements:
     parser.add_argument(
         "--recursive", "-r",
         action="store_true",
-        default=True,
-        help="Process directories recursively (default: True)"
+        default=False,
+        help="Process directories recursively (default: False)"
     )
     parser.add_argument(
-        "--non-recursive",
-        action="store_true",
-        help="Only process files in the top level of directories"
-    )
-    parser.add_argument(
-        "--no-backup",
-        action="store_true",
-        help="Don't create backup files when modifying in-place"
+        "--backup",
+        choices=['true', 'false'],
+        default='true',
+        help="Create backup files when modifying in-place (default: true)"
     )
     parser.add_argument(
         "--dry-run",
@@ -713,8 +679,8 @@ def main():
         logger.warning(f"Large gain adjustment ({args.gain} dB) may cause severe distortion or clipping")
     
     # Resolve settings
-    recursive = args.recursive and not args.non_recursive
-    create_backup = not args.no_backup and not args.output  # No backup needed if using output dir
+    recursive = args.recursive
+    create_backup = args.backup == 'true' and not args.output  # No backup needed if using output dir
     
     try:
         # Create applicator
@@ -725,16 +691,16 @@ def main():
         else:
             # Warning for destructive operations
             print("\n" + "="*60)
-            print("⚠️  WARNING: DESTRUCTIVE OPERATION")
+            print("WARNING: DESTRUCTIVE OPERATION")
             print("="*60)
             print("Applying gain directly to audio files can permanently damage them")
             print("and may cause irreversible audio quality loss or clipping.")
             print("")
             print("This operation will modify your audio files directly.")
             if not create_backup:
-                print("❌ Backup creation is DISABLED - original files will be lost!")
+                print("Backup creation is DISABLED - original files will be lost!")
             else:
-                print("✓ Backup files will be created (.backup extension)")
+                print("Backup files will be created (.backup extension)")
             print("")
             print("Are you absolutely sure you want to continue?")
             print("="*60)

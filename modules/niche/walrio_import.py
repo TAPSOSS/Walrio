@@ -69,11 +69,11 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         # Run with live output and user interaction enabled
         result = subprocess.run(cmd, check=True)
         print("-" * 50)
-        print(f"✓ {module_name} completed successfully")
+        print(f"SUCCESS: {module_name} completed successfully")
         return True
     except subprocess.CalledProcessError as e:
         print("-" * 50)
-        print(f"✗ {module_name} failed with exit code {e.returncode}")
+        print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
 def process_import_pipeline(input_path, recursive=False, dry_run=False):
@@ -103,7 +103,41 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
-            'args': ['--sanitize']  # Use default character filtering explicitly
+            'args': [
+                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ',
+                '--rc', '/', '~',           # Forward slash to tilde
+                '--rc', '\\', '~',          # Backslash to tilde  
+                '--rc', '&', '+',           # Ampersand to plus
+                '--rc', '?', '',            # Remove question marks
+                '--rc', '!', '',            # Remove exclamation marks
+                '--rc', '|', '~',           # Pipe to tilde
+                '--rc', '.', '',            # Remove periods
+                '--rc', ',', '~',           # Comma to tilde
+                '--rc', '%', '',            # Remove percent signs
+                '--rc', '*', '',            # Remove asterisks
+                '--rc', '"', '',            # Remove double quotes
+                '--rc', ':', '~',           # Colon to tilde
+                '--rc', ';', '~',           # Semicolon to tilde
+                '--rc', "'", '',            # Remove single quotes
+                '--rc', '>', '',            # Remove greater than
+                '--rc', '<', '',            # Remove less than
+                '--rc', '{', '(',           # Left curly brace to left parenthesis
+                '--rc', '}', ')',           # Right curly brace to right parenthesis
+                # Common accented characters to base forms
+                '--rc', 'á', 'a', '--rc', 'à', 'a', '--rc', 'ä', 'a', '--rc', 'â', 'a', '--rc', 'ã', 'a',
+                '--rc', 'é', 'e', '--rc', 'è', 'e', '--rc', 'ë', 'e', '--rc', 'ê', 'e',
+                '--rc', 'í', 'i', '--rc', 'ì', 'i', '--rc', 'ï', 'i', '--rc', 'î', 'i',
+                '--rc', 'ó', 'o', '--rc', 'ò', 'o', '--rc', 'ö', 'o', '--rc', 'ô', 'o', '--rc', 'õ', 'o',
+                '--rc', 'ú', 'u', '--rc', 'ù', 'u', '--rc', 'ü', 'u', '--rc', 'û', 'u',
+                '--rc', 'ñ', 'n', '--rc', 'ç', 'c',
+                # Uppercase versions
+                '--rc', 'Á', 'A', '--rc', 'À', 'A', '--rc', 'Ä', 'A', '--rc', 'Â', 'A', '--rc', 'Ã', 'A',
+                '--rc', 'É', 'E', '--rc', 'È', 'E', '--rc', 'Ë', 'E', '--rc', 'Ê', 'E',
+                '--rc', 'Í', 'I', '--rc', 'Ì', 'I', '--rc', 'Ï', 'I', '--rc', 'Î', 'I',
+                '--rc', 'Ó', 'O', '--rc', 'Ò', 'O', '--rc', 'Ö', 'O', '--rc', 'Ô', 'O', '--rc', 'Õ', 'O',
+                '--rc', 'Ú', 'U', '--rc', 'Ù', 'U', '--rc', 'Ü', 'U', '--rc', 'Û', 'U',
+                '--rc', 'Ñ', 'N', '--rc', 'Ç', 'C',
+            ]
         },
         {
             'name': 'replaygain',
@@ -113,12 +147,12 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'applyloudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--no-backup']
+            'args': ['--replaygain', '--backup', 'false']
         },
         {
             'name': 'resizealbumart',
             'description': 'Resize album art to 1000x1000 JPEG',
-            'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '95']
+            'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '100']
         }
     ]
     
@@ -155,12 +189,12 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         if success:
             success_count += 1
         else:
-            print(f"✗ Pipeline failed at stage {i}: {stage['name']}")
+            print(f"ERROR: Pipeline failed at stage {i}: {stage['name']}")
             print(f"Completed {success_count}/{total_stages} stages successfully")
             return False
     
     print("\n" + "=" * 60)
-    print(f"✓ Import pipeline completed successfully!")
+    print(f"SUCCESS: Import pipeline completed successfully!")
     print(f"All {total_stages} stages completed for: {input_path}")
     return True
 

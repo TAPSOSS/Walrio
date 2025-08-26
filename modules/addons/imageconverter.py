@@ -195,7 +195,7 @@ def convert_image(input_path: str,
                  output_path: str = None,
                  output_format: str = None,
                  geometry: str = None,
-                 quality: int = 95,
+                 quality: int = 100,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
                  background_color: str = "white") -> bool:
@@ -282,7 +282,7 @@ def convert_batch(input_paths: List[str],
                  output_dir: str = None,
                  output_format: str = 'jpeg',
                  geometry: str = None,
-                 quality: int = 95,
+                 quality: int = 100,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
                  background_color: str = "white",
@@ -410,11 +410,11 @@ Examples:
   # Convert to different format, keeping default 1000x1000 size
   python imageconverter.py image.png --format webp
 
-  # Convert with custom dimensions (force stretch)
+  # Convert with custom dimensions (maintains aspect ratio by default)
   python imageconverter.py image.png --size 800x600
 
-  # Convert maintaining aspect ratio with custom dimensions
-  python imageconverter.py image.png --size 800x600 --nostretch
+  # Convert with forced stretching to exact dimensions
+  python imageconverter.py image.png --size 800x600 --stretch true
 
   # Convert and resize by percentage
   python imageconverter.py image.png --size 50%
@@ -423,20 +423,20 @@ Examples:
   python imageconverter.py /path/to/images --recursive
 
   # Convert with custom quality and strip metadata
-  python imageconverter.py image.jpg --quality 80 --strip-metadata
+  python imageconverter.py image.jpg --quality 80 --strip-exif-metadata true
 
   # Get image information
   python imageconverter.py image.jpg --info
 
 Supported formats: {}
 
-Note: By default, exact dimensions (e.g., 800x600) will stretch the image to fit exactly.
-Use --nostretch or --nstr to maintain aspect ratio instead.
+Note: By default, images maintain their aspect ratio when resized (e.g., 800x600 fits within those dimensions).
+Use --stretch true to force exact dimensions and stretch the image instead.
 
 ImageMagick geometry examples:
-  800x600   - Resize to exactly 800x600 (stretches, default behavior)
-  800x600   - With --nostretch: fit within 800x600 (maintains aspect ratio)
-  800x600!  - Force exact size (stretches - same as default)
+  800x600   - Fit within 800x600 maintaining aspect ratio (default behavior)
+  800x600   - With --stretch true: resize to exactly 800x600 (stretches image)
+  800x600!  - Force exact size (stretches - same as --stretch true)
   800x600>  - Only shrink if larger than 800x600
   800x600<  - Only enlarge if smaller than 800x600
   50%       - Resize to 50% of original size
@@ -467,16 +467,17 @@ ImageMagick geometry examples:
     )
     
     parser.add_argument(
-        '--nostretch', '--nstr',
-        action='store_true',
-        help='Maintain aspect ratio instead of stretching to exact dimensions'
+        '--stretch', '--st',
+        choices=['true', 'false'],
+        default='false',
+        help='Stretch images to exact dimensions instead of maintaining aspect ratio (default: false)'
     )
     
     parser.add_argument(
         '-q', '--quality',
         type=int,
-        default=95,
-        help='Quality for lossy formats (1-100, default: 95)'
+        default=100,
+        help='Quality for lossy formats (1-100, default: 100)'
     )
     
     parser.add_argument(
@@ -486,9 +487,10 @@ ImageMagick geometry examples:
     )
     
     parser.add_argument(
-        '--strip-metadata',
-        action='store_true',
-        help='Remove EXIF metadata'
+        '--strip-exif-metadata', '--sem',
+        choices=['true', 'false'],
+        default='false',
+        help='Remove EXIF metadata from images (default: false)'
     )
     
     parser.add_argument(
@@ -500,13 +502,15 @@ ImageMagick geometry examples:
     parser.add_argument(
         '--overwrite',
         action='store_true',
-        help='Overwrite existing output files'
+        default=False,
+        help='Overwrite existing output files (default: False)'
     )
     
     parser.add_argument(
         '-r', '--recursive',
         action='store_true',
-        help='Process directories recursively'
+        default=False,
+        help='Process directories recursively (default: False)'
     )
     
     parser.add_argument(
@@ -565,8 +569,8 @@ def main():
     
     # Parse size/geometry (always has a default value now)
     try:
-        # Force stretch by default, unless --nostretch is specified
-        force_stretch = not args.nostretch
+        # Stretch only if explicitly enabled with --stretch true
+        force_stretch = args.stretch == 'true'
         geometry, _ = parse_size(args.size, force_stretch)
     except ValueError as e:
         logger.error(f"Invalid size format: {e}")
@@ -618,7 +622,7 @@ def main():
             geometry=geometry,
             quality=args.quality,
             auto_orient=not args.no_auto_orient,
-            strip_metadata=args.strip_metadata,
+            strip_metadata=args.strip_exif_metadata == 'true',
             background_color=args.background
         )
         sys.exit(0 if success else 1)
@@ -634,7 +638,7 @@ def main():
             geometry=geometry,
             quality=args.quality,
             auto_orient=not args.no_auto_orient,
-            strip_metadata=args.strip_metadata,
+            strip_metadata=args.strip_exif_metadata == 'true',
             background_color=args.background,
             overwrite=args.overwrite
         )

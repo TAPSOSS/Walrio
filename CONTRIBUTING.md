@@ -5,7 +5,7 @@ Walrio is an free and open-source project, it is possible and encouraged to part
 Code must follow the styling requirements below and all parts of the contribution requirements. If you're simply updating documentation on the other hand, all you need to do is fork the repo, change whatever file in the docs folder you want to change while making everything still work and look nice, and then submit a pull requrest with your documented change. The styling requirements and most of the contribution requirements are written with code contribution in mind and can be ignored for documentation.
 
 ## Styling REQUIREMENTS
-Every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting (w/ napoleon support). Any paramters or return values MUST be explained. Generally this means something like:
+No emojis are allowed in any form of code. They're allowed in documentation/GUIs/READMEs/author names, but not any of the modules. Also every function needs a minimum of a 1-line comment explaining what it does right above under its declaration with sphinx-supported autodoc formatting (w/ napoleon support). Any paramters or return values MUST be explained. Generally this means something like:
 ```
 """
 class Greeter:

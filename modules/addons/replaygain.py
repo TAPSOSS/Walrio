@@ -457,8 +457,8 @@ def parse_arguments():
   # Tag files but skip those already tagged
   python replaygain.py /path/to/music --tag --skip-tagged
 
-  # Force retag all files (overwrite existing tags)
-  python replaygain.py /path/to/music --tag --no-skip-tagged
+  # Force retag all files (default behavior - don't use --skip-tagged)
+  python replaygain.py /path/to/music --tag
 
 Supported file formats:
   - FLAC (.flac)
@@ -508,23 +508,13 @@ Requirements:
         default=False,
         help="Skip files that already have ReplayGain tags (default: False - process all files)"
     )
-    parser.add_argument(
-        "--no-skip-tagged",
-        action="store_true",
-        help="Process all files, overwriting existing ReplayGain tags"
-    )
     
     # Directory processing options
     parser.add_argument(
         "--recursive", "-r",
         action="store_true",
-        default=True,
-        help="Process directories recursively (default: True)"
-    )
-    parser.add_argument(
-        "--non-recursive",
-        action="store_true",
-        help="Only process files in the top level of directories"
+        default=False,
+        help="Process directories recursively (default: False)"
     )
     
     # Output options
@@ -574,11 +564,11 @@ def main():
             print(f"Error: {e}")
             sys.exit(1)
     
-    # Resolve skip-tagged setting
-    skip_tagged = args.skip_tagged and not args.no_skip_tagged
+    # Use skip-tagged setting directly
+    skip_tagged = args.skip_tagged
     
-    # Resolve recursive setting
-    recursive = args.recursive and not args.non_recursive
+    # Use recursive setting directly
+    recursive = args.recursive
     
     # Validate target LUFS range
     if not (-30 <= args.target_lufs <= -5):

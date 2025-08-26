@@ -15,7 +15,7 @@ import argparse
 import subprocess
 import re
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict
 
 # Add the current directory to Python path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -147,13 +147,16 @@ def run_module(module_name: str, args: list) -> int:
     if not module_path:
         print(f"Error: Unknown module '{module_name}'", file=sys.stderr)
         return 1
-        
-    if not os.path.exists(module_path):
-        print(f"Error: Module file not found: {module_path}", file=sys.stderr)
+    
+    # Convert relative path to absolute path
+    full_module_path = os.path.join(current_dir, module_path)
+    
+    if not os.path.exists(full_module_path):
+        print(f"Error: Module file not found: {full_module_path}", file=sys.stderr)
         return 1
     
     # Execute the module with the provided arguments
-    cmd = [sys.executable, module_path] + args
+    cmd = [sys.executable, full_module_path] + args
     
     try:
         result = subprocess.run(cmd, cwd=current_dir)

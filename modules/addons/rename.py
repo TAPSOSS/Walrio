@@ -38,9 +38,6 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 # Default naming format
 DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
 
-# Default character replacements (applied before other sanitization)
-DEFAULT_CHAR_REPLACEMENTS = {'/': '~', '\\': '~'}
-
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
@@ -158,8 +155,8 @@ class AudioRenamer:
         # Store original for comparison
         original_text = text
         
-        # Get character replacements from options (default to standard replacements)
-        char_replacements = self.options.get('char_replacements', DEFAULT_CHAR_REPLACEMENTS)
+        # Get character replacements from options (default to no replacements)
+        char_replacements = self.options.get('char_replacements', {})
         
         # Apply custom character replacements first
         sanitized = text
@@ -167,7 +164,7 @@ class AudioRenamer:
             sanitized = sanitized.replace(old_char, new_char)
         
         # Check if sanitization is disabled
-        if self.options.get('dont_sanitize', False):
+        if self.options.get('dont_sanitize', True):  # Default to disabled sanitization
             # Only apply character replacements, skip character filtering
             final_sanitized = sanitized
         else:
@@ -261,7 +258,7 @@ class AudioRenamer:
             return metadata
             
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            logger.error(f"⚠️  METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
+            logger.error(f"WARNING: METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
             return {}
     
@@ -302,12 +299,12 @@ class AudioRenamer:
                     format_values[field] = ""
                 else:
                     # For custom fields, log warning and use empty string
-                    logger.warning(f"⚠️  Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
+                    logger.warning(f"WARNING: Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
                     format_values[field] = ""
         
         # Log missing pre-defined fields
         if missing_fields:
-            logger.warning(f"⚠️  Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
+            logger.warning(f"WARNING: Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
         
         # If skip_no_metadata is enabled and we're missing critical fields, skip the file
         if self.options.get('skip_no_metadata', False):
@@ -469,7 +466,7 @@ class AudioRenamer:
         # Generate new filename
         new_filename = self.generate_new_filename(filepath)
         if not new_filename:
-            logger.error(f"⚠️  SKIPPED: File has insufficient metadata for renaming: {os.path.basename(filepath)}")
+            logger.error(f"SKIPPED: File has insufficient metadata for renaming: {os.path.basename(filepath)}")
             self.skipped_count += 1
             return True
         
@@ -485,7 +482,7 @@ class AudioRenamer:
         # Check if target file already exists
         if os.path.exists(new_filepath):
             if self.options.get('skip_existing', True):
-                logger.error(f"🚫 FILE CONFLICT: Target file already exists, skipping: {new_filename}")
+                logger.error(f"CONFLICT: Target file already exists, skipping: {new_filename}")
                 self.conflict_count += 1
                 return True
             else:
@@ -586,7 +583,7 @@ def parse_arguments():
   python rename.py /music
 
   # Disable conflict resolution, skip conflicting files instead
-  python rename.py /music --no-resolve-conflicts
+  python rename.py /music --resolve-conflicts false
 
   # Custom format with conflict resolution
   python rename.py /music --format "{artist} - {title}" --resolve-conflicts
@@ -620,27 +617,27 @@ Character replacement examples (default: / and \\ become ~):
 Sanitization examples (default: sanitize enabled, prompt for special chars):
   --sanitize                         # Explicitly enable character filtering (default behavior)
   --s                                # Same as above using shortcut
-  --dont-sanitize                    # Disable character filtering, keep all characters
+  --dont-sanitize                    # Disable character filtering, keep all characters (default)
   --ds                               # Same as above using shortcut
   --ds --rc "/" "~"                  # No filtering, but still replace / with ~
   --dont-sanitize --dontreplace      # No filtering or replacements at all
-  --s --rc "&" "and"                 # Explicit sanitize with custom replacements
-  --custom-sanitize "abcABC123-_ "   # Use custom allowed character set
-  --cs "0123456789"                  # Only allow numbers using shortcut
+  --sanitize "abcABC123-_ "          # Enable filtering with custom allowed character set
+  --s "0123456789"                   # Only allow numbers using shortcut
+  --sanitize ""                      # Enable filtering with default character set
   --auto-sanitize                    # Automatically remove special chars without prompting
   --force-allow-special              # Always keep special chars without prompting
 
 Conflict resolution examples (default: resolve conflicts enabled):
   python rename.py /music                       # Resolve conflicts by adding (2), (3) to title (default)
-  python rename.py /music --no-resolve-conflicts # Skip files with conflicting names instead
-  python rename.py /music --resolve-conflicts    # Explicitly enable conflict resolution
-  python rename.py /music --skip-existing        # Also skip existing files (when combined with --no-resolve-conflicts)
+  python rename.py /music --resolve-conflicts false # Skip files with conflicting names instead
+  python rename.py /music --resolve-conflicts true  # Explicitly enable conflict resolution
+  python rename.py /music --skip-existing        # Also skip existing files (when combined with --resolve-conflicts false)
 
 Custom sanitization examples:
-  --cs "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
-  --cs "abcABC123[]()-_~@=+ "        # Include brackets and symbols
-  --custom-sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
-  --cs "あいうえおかきくけこ"              # Japanese characters
+  --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic english set
+  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols
+  --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
+  --s "あいうえおかきくけこ"              # Japanese characters
 
 Format string tips:
   - Use Python string formatting: {track:02d} for zero-padded numbers
@@ -648,7 +645,7 @@ Format string tips:
   - Use --skip-no-metadata to skip files missing critical metadata
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - Use --custom-sanitize to define your own allowed character set
+  - Use --sanitize "your_chars" to define your own allowed character set
 """)
     
     # Input options
@@ -666,7 +663,8 @@ Format string tips:
     parser.add_argument(
         "-r", "--recursive",
         action="store_true",
-        help="Recursively process subdirectories"
+        default=False,
+        help="Recursively process subdirectories (default: False)"
     )
     
     # Format options
@@ -689,18 +687,13 @@ Format string tips:
     )
     parser.add_argument(
         "--sanitize", "--s",
-        action="store_true",
-        help="Enable filename sanitization using the allowed character set (default behavior)."
+        metavar="CHARS",
+        help="Enable filename sanitization with custom character set. Provide all allowed characters as a string (e.g., --sanitize 'abcABC123-_ '). If no characters provided, uses default set."
     )
     parser.add_argument(
         "--dont-sanitize", "--ds",
         action="store_true",
-        help="Disable filename sanitization using the allowed character set. Only apply character replacements."
-    )
-    parser.add_argument(
-        "--custom-sanitize", "--cs",
-        metavar="CHARS",
-        help="Use custom character set for sanitization instead of default. Provide all allowed characters as a string (e.g., --cs 'abcABC123-_ ')."
+        help="Disable filename sanitization (default: disabled). Use this to explicitly override --sanitize in longer commands where you might have accidentally included it."
     )
     parser.add_argument(
         "--auto-sanitize",
@@ -727,14 +720,9 @@ Format string tips:
     )
     parser.add_argument(
         "--resolve-conflicts",
-        action="store_true",
-        default=True,
-        help="Resolve filename conflicts by adding counter to title instead of skipping (default: True)"
-    )
-    parser.add_argument(
-        "--no-resolve-conflicts",
-        action="store_true",
-        help="Don't resolve conflicts, skip files with conflicting names instead"
+        choices=["true", "false"],
+        default="true",
+        help="Resolve filename conflicts by adding counter to title (default: true)"
     )
     parser.add_argument(
         "--skip-no-metadata",
@@ -764,18 +752,17 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     
     Args:
         replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include default replacements
+        no_defaults (bool): If True, don't include any default replacements (deprecated parameter)
         
     Returns:
         dict: Dictionary mapping old characters to new characters
     """
     replacements = {}
     
-    # Start with defaults unless explicitly disabled
-    if not no_defaults:
-        replacements.update(DEFAULT_CHAR_REPLACEMENTS)
+    # Note: By default, no character replacements are applied
+    # Users can add custom replacements using --replace-char
     
-    # Add custom replacements (these override defaults if there are conflicts)
+    # Add custom replacements
     if replace_char_list:
         for replacement_pair in replace_char_list:
             if len(replacement_pair) != 2:
@@ -850,24 +837,22 @@ def main():
     # Parse character replacements
     char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
     
-    # Determine sanitization setting (default is True)
-    # If both flags are set, the disable flag takes priority
-    sanitize_enabled = True
-    if args.dont_sanitize:
-        sanitize_enabled = False
-        if args.sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. Disable flag takes priority - sanitization disabled.")
-        if args.custom_sanitize:
-            logger.warning("Both --dont-sanitize and --custom-sanitize specified. Sanitization is disabled, ignoring custom character set.")
-    elif args.sanitize:
-        sanitize_enabled = True
-    # If neither flag is specified, use default (True)
+    # Determine sanitization setting (default is False - disabled)
+    sanitize_enabled = False  # Default is disabled
+    custom_sanitize_chars = None
     
-    # Handle conflict resolution (enabled by default, unless explicitly disabled)
-    resolve_conflicts = args.resolve_conflicts and not args.no_resolve_conflicts
-    if args.no_resolve_conflicts and args.resolve_conflicts:
-        logger.warning("Both --resolve-conflicts and --no-resolve-conflicts specified. Disable flag takes priority - conflict resolution disabled.")
-        resolve_conflicts = False
+    if args.sanitize is not None:
+        sanitize_enabled = True
+        custom_sanitize_chars = args.sanitize if args.sanitize else None
+        if args.dont_sanitize:
+            logger.warning("Both --sanitize and --dont-sanitize specified. --dont-sanitize takes priority - sanitization disabled.")
+            sanitize_enabled = False
+    elif args.dont_sanitize:
+        sanitize_enabled = False
+    # If neither flag is specified, use default (False - disabled)
+    
+    # Handle conflict resolution
+    resolve_conflicts = args.resolve_conflicts == "true"
     
     # Prepare options
     options = {
@@ -883,9 +868,9 @@ def main():
     }
     
     # Add custom sanitization character set if provided
-    if args.custom_sanitize:
-        options['custom_sanitize_chars'] = set(args.custom_sanitize)
-        logger.info(f"Using custom character set for sanitization: '{args.custom_sanitize}'")
+    if custom_sanitize_chars:
+        options['custom_sanitize_chars'] = set(custom_sanitize_chars)
+        logger.info(f"Using custom character set for sanitization: '{custom_sanitize_chars}'")
     
     # Create renamer
     try:
@@ -959,24 +944,24 @@ def main():
         # Report any issues that occurred
         issues_found = False
         if renamer.error_count > 0:
-            logger.error(f"❌ ERRORS: {renamer.error_count} files failed to rename due to system errors")
+            logger.error(f"ERRORS: {renamer.error_count} files failed to rename due to system errors")
             issues_found = True
         
         if renamer.metadata_error_count > 0:
-            logger.error(f"⚠️  METADATA ERRORS: {renamer.metadata_error_count} files had unreadable metadata")
+            logger.error(f"METADATA ERRORS: {renamer.metadata_error_count} files had unreadable metadata")
             issues_found = True
         
         if renamer.conflict_count > 0:
-            logger.error(f"🚫 FILE CONFLICTS: {renamer.conflict_count} files skipped due to existing target files")
+            logger.error(f"FILE CONFLICTS: {renamer.conflict_count} files skipped due to existing target files")
             issues_found = True
         
         if renamer.skipped_count > 0:
-            logger.error(f"⏭️  SKIPPED FILES: {renamer.skipped_count} files skipped due to insufficient metadata")
+            logger.error(f"SKIPPED FILES: {renamer.skipped_count} files skipped due to insufficient metadata")
             issues_found = True
         
         if issues_found:
             logger.error("=" * 60)
-            logger.error("⚠️  ATTENTION: Issues were encountered during processing!")
+            logger.error("ATTENTION: Issues were encountered during processing!")
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
