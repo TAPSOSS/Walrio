@@ -529,7 +529,8 @@ Folder format tips:
     parser.add_argument(
         "-r", "--recursive",
         action="store_true",
-        help="Recursively process subdirectories in source"
+        default=False,
+        help="Recursively process subdirectories in source (default: False)"
     )
     
     # Organization options
