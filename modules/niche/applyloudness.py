@@ -691,16 +691,16 @@ def main():
         else:
             # Warning for destructive operations
             print("\n" + "="*60)
-            print("⚠️  WARNING: DESTRUCTIVE OPERATION")
+            print("WARNING: DESTRUCTIVE OPERATION")
             print("="*60)
             print("Applying gain directly to audio files can permanently damage them")
             print("and may cause irreversible audio quality loss or clipping.")
             print("")
             print("This operation will modify your audio files directly.")
             if not create_backup:
-                print("❌ Backup creation is DISABLED - original files will be lost!")
+                print("Backup creation is DISABLED - original files will be lost!")
             else:
-                print("✓ Backup files will be created (.backup extension)")
+                print("Backup files will be created (.backup extension)")
             print("")
             print("Are you absolutely sure you want to continue?")
             print("="*60)

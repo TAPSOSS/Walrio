@@ -147,7 +147,7 @@ def display_queue(queue, current_index=0):
     
     print(f"\n=== Audio Queue ({len(queue)} songs) ===")
     for i, song in enumerate(queue):
-        marker = "▶ " if i == current_index else "  "
+        marker = "> " if i == current_index else "  "
         print(f"{marker}{i+1:3d}. {format_song_info(song)}")
     print()
 

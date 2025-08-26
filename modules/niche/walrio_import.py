@@ -69,11 +69,11 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         # Run with live output and user interaction enabled
         result = subprocess.run(cmd, check=True)
         print("-" * 50)
-        print(f"✓ {module_name} completed successfully")
+        print(f"SUCCESS: {module_name} completed successfully")
         return True
     except subprocess.CalledProcessError as e:
         print("-" * 50)
-        print(f"✗ {module_name} failed with exit code {e.returncode}")
+        print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
 def process_import_pipeline(input_path, recursive=False, dry_run=False):
@@ -189,12 +189,12 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         if success:
             success_count += 1
         else:
-            print(f"✗ Pipeline failed at stage {i}: {stage['name']}")
+            print(f"ERROR: Pipeline failed at stage {i}: {stage['name']}")
             print(f"Completed {success_count}/{total_stages} stages successfully")
             return False
     
     print("\n" + "=" * 60)
-    print(f"✓ Import pipeline completed successfully!")
+    print(f"SUCCESS: Import pipeline completed successfully!")
     print(f"All {total_stages} stages completed for: {input_path}")
     return True
 

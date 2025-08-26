@@ -198,7 +198,7 @@ class FileRelocater:
             return metadata
             
         except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
-            logger.error(f"⚠️  METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
+            logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
             return {}
     
@@ -236,12 +236,12 @@ class FileRelocater:
                     format_values[field] = ""
                 else:
                     # For custom fields, log warning and use empty string
-                    logger.warning(f"⚠️  Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
+                    logger.warning(f"Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
                     format_values[field] = ""
         
         # Log missing pre-defined fields
         if missing_fields:
-            logger.warning(f"⚠️  Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
+            logger.warning(f"Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
         
         # If skip_no_metadata is enabled and we're missing critical fields, skip the file
         if self.options.get('skip_no_metadata', False):
@@ -312,7 +312,7 @@ class FileRelocater:
         # Generate folder path
         folder_path = self.generate_folder_path(source_filepath)
         if not folder_path:
-            logger.debug(f"⚠️  SKIPPED (no metadata): {os.path.basename(source_filepath)}")
+            logger.debug(f"SKIPPED (no metadata): {os.path.basename(source_filepath)}")
             self.skipped_count += 1
             self.skipped_files.append(source_filepath)  # Track the full path
             return True
@@ -338,7 +338,7 @@ class FileRelocater:
         # Check if target file already exists
         if os.path.exists(destination_filepath):
             if self.options.get('skip_existing', True):
-                logger.error(f"🚫 FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
+                logger.error(f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
                 self.conflict_count += 1
                 return True
             else:
@@ -776,19 +776,19 @@ def main():
         issues_found = False
         operation = "copy" if args.copy == 'y' else "move"
         if organizer.error_count > 0:
-            logger.error(f"❌ ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
+            logger.error(f"ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
             issues_found = True
         
         if organizer.metadata_error_count > 0:
-            logger.error(f"⚠️  METADATA ERRORS: {organizer.metadata_error_count} files had unreadable metadata")
+            logger.error(f"METADATA ERRORS: {organizer.metadata_error_count} files had unreadable metadata")
             issues_found = True
         
         if organizer.conflict_count > 0:
-            logger.error(f"🚫 FILE CONFLICTS: {organizer.conflict_count} files skipped due to existing target files")
+            logger.error(f"FILE CONFLICTS: {organizer.conflict_count} files skipped due to existing target files")
             issues_found = True
         
         if organizer.skipped_count > 0:
-            logger.error(f"⏭️  SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
+            logger.error(f"SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
             logger.error("Files skipped (no metadata):")
             for skipped_file in organizer.skipped_files:
                 logger.error(f"  - {skipped_file}")
@@ -796,7 +796,7 @@ def main():
         
         if issues_found:
             logger.error("=" * 60)
-            logger.error("⚠️  ATTENTION: Issues were encountered during processing!")
+            logger.error("ATTENTION: Issues were encountered during processing!")
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
