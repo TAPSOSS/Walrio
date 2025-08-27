@@ -639,12 +639,6 @@ def main():
     """
     Main function for the audio organizer.
     """
-    # Capture the original working directory before any potential changes
-    # This ensures relative paths are resolved from where the user ran the command
-    original_cwd = os.environ.get('PWD', os.getcwd())
-    if not original_cwd or not os.path.isdir(original_cwd):
-        original_cwd = os.getcwd()
-    
     args = parse_arguments()
     
     # Set logging level
@@ -697,13 +691,7 @@ def main():
     
     # Validate source and destination
     # Convert to absolute paths to avoid issues with relative paths
-    # Use original working directory for relative path resolution
-    if not os.path.isabs(args.source):
-        args.source = os.path.join(original_cwd, args.source)
     args.source = os.path.abspath(args.source)
-    
-    if not os.path.isabs(args.destination):
-        args.destination = os.path.join(original_cwd, args.destination)
     args.destination = os.path.abspath(args.destination)
     
     if not os.path.exists(args.source):
