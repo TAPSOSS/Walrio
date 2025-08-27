@@ -7,7 +7,7 @@ Core Modules
 ------------
 
 Database
-~~~~~~~~
+^^^^^^^^
 
 .. automodule:: modules.core.database
    :members:
@@ -15,7 +15,7 @@ Database
    :show-inheritance:
 
 Metadata
-~~~~~~~~
+^^^^^^^^
 
 .. automodule:: modules.core.metadata
    :members:
@@ -23,7 +23,7 @@ Metadata
    :show-inheritance:
 
 Player
-~~~~~~
+^^^^^^
 
 .. automodule:: modules.core.player
    :members:
@@ -31,7 +31,7 @@ Player
    :show-inheritance:
 
 Playlist
-~~~~~~~~
+^^^^^^^^
 
 .. automodule:: modules.core.playlist
    :members:
@@ -39,18 +39,18 @@ Playlist
    :show-inheritance:
 
 Queue
-~~~~~
+^^^^^
 
 .. automodule:: modules.core.queue
    :members:
    :undoc-members:
    :show-inheritance:
 
-Addon Modules
--------------
+Addons Modules
+--------------
 
 Convert
-~~~~~~~
+^^^^^^^
 
 .. automodule:: modules.addons.convert
    :members:
@@ -58,7 +58,7 @@ Convert
    :show-inheritance:
 
 File Relocater
-~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^
 
 .. automodule:: modules.addons.file_relocater
    :members:
@@ -66,7 +66,7 @@ File Relocater
    :show-inheritance:
 
 Image Converter
-~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^
 
 .. automodule:: modules.addons.imageconverter
    :members:
@@ -74,7 +74,7 @@ Image Converter
    :show-inheritance:
 
 Rename
-~~~~~~
+^^^^^^
 
 .. automodule:: modules.addons.rename
    :members:
@@ -82,7 +82,7 @@ Rename
    :show-inheritance:
 
 ReplayGain
-~~~~~~~~~~
+^^^^^^^^^^
 
 .. automodule:: modules.addons.replaygain
    :members:
@@ -93,7 +93,7 @@ Niche Modules
 -------------
 
 Apply Loudness
-~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^
 
 .. automodule:: modules.niche.applyloudness
    :members:
@@ -101,9 +101,17 @@ Apply Loudness
    :show-inheritance:
 
 Resize Album Art
-~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^
 
 .. automodule:: modules.niche.resizealbumart
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Walrio Import
+^^^^^^^^^^^^^
+
+.. automodule:: modules.niche.walrio_import
    :members:
    :undoc-members:
    :show-inheritance:
