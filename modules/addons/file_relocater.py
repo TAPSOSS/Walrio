@@ -597,6 +597,12 @@ Folder format tips:
         metavar="FILE",
         help="Show all available metadata fields for a specific file and exit"
     )
+    parser.add_argument(
+        "--check-dir",
+        action="store_true",
+        default=False,
+        help="Check for common path formatting errors (like quoted paths) and prompt user for confirmation"
+    )
     
     return parser.parse_args()
 
@@ -720,11 +726,12 @@ def main():
         return
     
     # Validate source and destination
-    # Check for invalid path formats (like quoted strings)
-    if not validate_path_format(args.source, "source"):
-        sys.exit(1)
-    if not validate_path_format(args.destination, "destination"):
-        sys.exit(1)
+    # Check for invalid path formats (like quoted strings) if requested
+    if args.check_dir:
+        if not validate_path_format(args.source, "source"):
+            sys.exit(1)
+        if not validate_path_format(args.destination, "destination"):
+            sys.exit(1)
     
     # Convert to absolute paths to avoid issues with relative paths
     args.source = os.path.abspath(args.source)
