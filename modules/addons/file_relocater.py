@@ -656,7 +656,9 @@ def validate_path_format(path_arg, arg_name):
     if path_arg.startswith('"') or path_arg.startswith("'"):
         logger.warning(f"Detected quotes in {arg_name} path: '{path_arg}'")
         logger.warning(f"Using quotes in path arguments is a common error.")
-        logger.warning(f"  Did you mean: {path_arg.strip('\"\'')}")
+        quote_chars = "\"'"
+        suggested_path = path_arg.strip(quote_chars)
+        logger.warning(f"  Did you mean: {suggested_path}")
         logger.warning(f"  Instead of: {path_arg}")
         
         try:
