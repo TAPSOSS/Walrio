@@ -635,6 +635,36 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     return replacements
 
 
+def validate_path_format(path_arg, arg_name):
+    """
+    Validate that a path argument doesn't contain invalid formatting like quoted strings.
+    
+    Args:
+        path_arg (str): The path argument to validate
+        arg_name (str): The name of the argument (for error messages)
+        
+    Returns:
+        bool: True if valid, False if invalid
+    """
+    # Check for paths wrapped in quotes (common user error)
+    if path_arg.startswith('"') or path_arg.startswith("'"):
+        logger.warning(f"Detected quotes in {arg_name} path: '{path_arg}'")
+        logger.warning(f"Using quotes in path arguments is a common error.")
+        logger.warning(f"  Did you mean: {path_arg.strip('\"\'')}")
+        logger.warning(f"  Instead of: {path_arg}")
+        
+        try:
+            response = input("Are you sure you want to continue with the quoted path? (y/N): ").strip().lower()
+            if response not in ['y', 'yes']:
+                logger.info("Operation cancelled by user.")
+                return False
+        except (KeyboardInterrupt, EOFError):
+            logger.info("\nOperation cancelled by user.")
+            return False
+    
+    return True
+
+
 def main():
     """
     Main function for the audio organizer.
@@ -690,6 +720,12 @@ def main():
         return
     
     # Validate source and destination
+    # Check for invalid path formats (like quoted strings)
+    if not validate_path_format(args.source, "source"):
+        sys.exit(1)
+    if not validate_path_format(args.destination, "destination"):
+        sys.exit(1)
+    
     # Convert to absolute paths to avoid issues with relative paths
     args.source = os.path.abspath(args.source)
     args.destination = os.path.abspath(args.destination)
