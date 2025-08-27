@@ -48,13 +48,8 @@ The Walrio framework is built around several core concepts:
 **Plugin System**
    Addons provide a way to extend core functionality without modifying the base framework.
 
-**Library Modules**
-   Core functionality is provided through library modules including:
-   
-   * **Playlist Management** - Handles audio playlist creation and manipulation
-   * **Audio Player** - Provides audio playback capabilities
-   * **Database Operations** - Manages persistent data storage
-   * **Queue Management** - Handles playback queues and ordering
+**Dynamic Module Loading**
+   All functionality is provided through automatically discovered modules. Use the CLI or API documentation to explore available capabilities.
 
 Getting Started
 ---------------
@@ -62,10 +57,8 @@ Getting Started
 To explore the codebase:
 
 1. **Use the Unified Interface** - Run ``python modules/walrio.py --help`` to see all available tools
-2. **Browse the API Reference** - See :doc:`api/index` for detailed module documentation
-3. **Review Core Modules** - Check the modules/ directory for the main application logic
-4. **Examine Addons** - Look at modules/addons/ for extension examples
-5. **Try Command Line Tools** - See :doc:`cli_usage` for practical examples
+2. **Browse the API Reference** - See :doc:`api/index` for detailed module documentation  
+3. **Review Command Line Tools** - See :doc:`cli_usage` for all available CLI tools with examples
 
 **Quick Start with Command Line Tools:**
 
