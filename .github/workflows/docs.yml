@@ -47,6 +47,11 @@ jobs:
         cd docs
         python generate_cli_docs.py
 
+    - name: Generate API documentation
+      run: |
+        cd docs
+        python generate_api_docs.py
+
     - name: Build documentation
       run: |
         cd docs
