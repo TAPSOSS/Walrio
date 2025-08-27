@@ -203,6 +203,13 @@ def generate_api_documentation():
             rst_content.append(get_rst_underline(module_title, level=3))
             rst_content.append("")
             
+            # Add note for modules without API content
+            if not module_info['has_api']:
+                rst_content.append(".. note::")
+                rst_content.append("   This module contains no API calls to document. It may contain only")
+                rst_content.append("   constants, configuration, or utility code without public functions or classes.")
+                rst_content.append("")
+            
             # Autodoc directive
             rst_content.append(f".. automodule:: modules.{category}.{module_name}")
             rst_content.append("   :members:")
