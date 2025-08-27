@@ -597,6 +597,12 @@ Folder format tips:
         metavar="FILE",
         help="Show all available metadata fields for a specific file and exit"
     )
+    parser.add_argument(
+        "--check-dir",
+        action="store_true",
+        default=False,
+        help="Check for common path formatting errors (like quoted paths) and prompt user for confirmation"
+    )
     
     return parser.parse_args()
 
@@ -635,16 +641,42 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     return replacements
 
 
+def validate_path_format(path_arg, arg_name):
+    """
+    Validate that a path argument doesn't contain invalid formatting like quoted strings.
+    
+    Args:
+        path_arg (str): The path argument to validate
+        arg_name (str): The name of the argument (for error messages)
+        
+    Returns:
+        bool: True if valid, False if invalid
+    """
+    # Check for paths wrapped in quotes (common user error)
+    if path_arg.startswith('"') or path_arg.startswith("'"):
+        logger.warning(f"Detected quotes in {arg_name} path: '{path_arg}'")
+        logger.warning(f"Using quotes in path arguments is a common error.")
+        quote_chars = "\"'"
+        suggested_path = path_arg.strip(quote_chars)
+        logger.warning(f"  Did you mean: {suggested_path}")
+        logger.warning(f"  Instead of: {path_arg}")
+        
+        try:
+            response = input("Are you sure you want to continue with the quoted path? (y/N): ").strip().lower()
+            if response not in ['y', 'yes']:
+                logger.info("Operation cancelled by user.")
+                return False
+        except (KeyboardInterrupt, EOFError):
+            logger.info("\nOperation cancelled by user.")
+            return False
+    
+    return True
+
+
 def main():
     """
     Main function for the audio organizer.
     """
-    # Capture the original working directory before any potential changes
-    # This ensures relative paths are resolved from where the user ran the command
-    original_cwd = os.environ.get('PWD', os.getcwd())
-    if not original_cwd or not os.path.isdir(original_cwd):
-        original_cwd = os.getcwd()
-    
     args = parse_arguments()
     
     # Set logging level
@@ -696,14 +728,15 @@ def main():
         return
     
     # Validate source and destination
-    # Convert to absolute paths to avoid issues with relative paths
-    # Use original working directory for relative path resolution
-    if not os.path.isabs(args.source):
-        args.source = os.path.join(original_cwd, args.source)
-    args.source = os.path.abspath(args.source)
+    # Check for invalid path formats (like quoted strings) if requested
+    if args.check_dir:
+        if not validate_path_format(args.source, "source"):
+            sys.exit(1)
+        if not validate_path_format(args.destination, "destination"):
+            sys.exit(1)
     
-    if not os.path.isabs(args.destination):
-        args.destination = os.path.join(original_cwd, args.destination)
+    # Convert to absolute paths to avoid issues with relative paths
+    args.source = os.path.abspath(args.source)
     args.destination = os.path.abspath(args.destination)
     
     if not os.path.exists(args.source):
