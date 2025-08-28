@@ -1230,6 +1230,9 @@ class MetadataEditor:
             logger.error(f"Could not read metadata from {os.path.basename(filepath)}")
             return
         
+        # Get audio properties including duration
+        audio_info = self._get_audio_info(filepath)
+        
         print(f"\nMetadata for: {os.path.basename(filepath)}")
         print("=" * 50)
         print(f"Format: {metadata.get('format', 'Unknown')}")
@@ -1243,6 +1246,22 @@ class MetadataEditor:
         print(f"Disc: {metadata.get('disc', 'Unknown')}")
         print(f"Comment: {metadata.get('comment', 'None')}")
         print(f"Album Art: {'Yes' if metadata.get('has_album_art') else 'No'}")
+        
+        # Display audio properties
+        if audio_info.get('duration', 0) > 0:
+            duration = audio_info['duration']
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            print(f"Duration: {minutes:02d}:{seconds:02d} ({duration:.1f} seconds)")
+        else:
+            print("Duration: Unknown")
+        
+        if audio_info.get('bitrate', 0) > 0:
+            print(f"Bitrate: {audio_info['bitrate']} kbps")
+        if audio_info.get('sample_rate', 0) > 0:
+            print(f"Sample Rate: {audio_info['sample_rate']} Hz")
+        if audio_info.get('bit_depth', 0) > 0:
+            print(f"Bit Depth: {audio_info['bit_depth']} bits")
 
     def extract_metadata_for_database(self, filepath: str) -> Dict[str, Any]:
         """
@@ -1334,46 +1353,51 @@ class MetadataEditor:
                           bitrate, sample rate, etc., or empty dict if analysis fails
         """
         try:
-            cmd = [
-                'ffprobe', '-v', 'error',
-                '-show_entries', 'format=duration,bit_rate:stream=sample_rate,bits_per_sample,bits_per_raw_sample',
+            info = {}
+            
+            # Get duration
+            duration_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'format=duration',
                 '-of', 'csv=p=0',
                 str(filepath)
             ]
+            duration_result = subprocess.run(duration_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if duration_result.stdout.strip():
+                try:
+                    info['duration'] = float(duration_result.stdout.strip())
+                except ValueError:
+                    pass
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
+            # Get bit rate
+            bitrate_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'format=bit_rate',
+                '-of', 'csv=p=0',
+                str(filepath)
+            ]
+            bitrate_result = subprocess.run(bitrate_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if bitrate_result.stdout.strip():
+                try:
+                    info['bitrate'] = int(float(bitrate_result.stdout.strip())) // 1000  # Convert to kbps
+                except ValueError:
+                    pass
             
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                info = {}
-                
-                # Parse the output
-                for line in lines:
-                    parts = line.split(',')
-                    if len(parts) >= 2:
-                        try:
-                            if 'duration' not in info and parts[0]:
-                                info['duration'] = float(parts[0])
-                            if 'bitrate' not in info and parts[1]:
-                                info['bitrate'] = int(float(parts[1]))
-                            if len(parts) >= 3 and parts[2]:
-                                info['sample_rate'] = int(parts[2])
-                            if len(parts) >= 4 and parts[3]:
-                                info['bit_depth'] = int(parts[3])
-                            elif len(parts) >= 5 and parts[4]:
-                                info['bit_depth'] = int(parts[4])
-                        except ValueError:
-                            continue
-                
-                return info
+            # Get sample rate
+            samplerate_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'stream=sample_rate',
+                '-of', 'csv=p=0',
+                str(filepath)
+            ]
+            samplerate_result = subprocess.run(samplerate_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if samplerate_result.stdout.strip():
+                try:
+                    info['sample_rate'] = int(samplerate_result.stdout.strip())
+                except ValueError:
+                    pass
             
-            return {}
+            return info
             
         except Exception:
             return {}
@@ -1458,6 +1482,7 @@ Examples:
     
     parser.add_argument('files', nargs='*', help='Audio files to process')
     parser.add_argument('--show', action='store_true', help='Display current metadata')
+    parser.add_argument('--duration', action='store_true', help='Show only duration in seconds')
     parser.add_argument('--set-title', help='Set title tag')
     parser.add_argument('--set-artist', help='Set artist tag')
     parser.add_argument('--set-album', help='Set album tag')
@@ -1490,6 +1515,18 @@ Examples:
                 editor.display_metadata(filepath)
             else:
                 logger.error(f"File not found: {filepath}")
+        return 0
+    
+    # Check if we're just getting duration
+    if args.duration:
+        for filepath in args.files:
+            if os.path.exists(filepath):
+                audio_info = editor._get_audio_info(filepath)
+                duration = audio_info.get('duration', 0)
+                print(f"{duration}")
+            else:
+                logger.error(f"File not found: {filepath}")
+                print("0")
         return 0
     
     # Build metadata dictionary from arguments
@@ -1625,3 +1662,22 @@ def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
     """
     editor = MetadataEditor()
     return editor.embed_opus_album_art(opus_filepath, image_path)
+
+
+def get_duration(filepath: str) -> float:
+    """
+    Get the duration of an audio file in seconds.
+    
+    Args:
+        filepath (str): Path to the audio file
+        
+    Returns:
+        float: Duration in seconds, or 0.0 if unable to determine
+    """
+    try:
+        metadata = extract_metadata(filepath)
+        if metadata and 'length' in metadata:
+            return float(metadata['length'])
+    except Exception:
+        pass
+    return 0.0
