@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""
+Walrio Simple Music Player GUI
+Copyright (c) 2025 TAPS OSS
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
+A simple music player GUI built with PySide that focuses on core playback functionality
+using the Walrio CLI interface.
+"""
+
+import sys
+import os
+import subprocess
+import threading
+import time
+from pathlib import Path
+
+try:
+    from PySide6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox
+    )
+    from PySide6.QtCore import QTimer, QThread, Signal, Qt
+    from PySide6.QtGui import QFont
+except ImportError:
+    print("PySide6 not found. Installing...")
+    subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
+    from PySide6.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox
+    )
+    from PySide6.QtCore import QTimer, QThread, Signal, Qt
+    from PySide6.QtGui import QFont
+
+
+class PlayerWorker(QThread):
+    """Worker thread to handle audio playback through Walrio CLI."""
+    
+    finished = Signal()
+    error = Signal(str)
+    position_updated = Signal(float)  # Signal to report current position
+    
+    def __init__(self, filepath):
+        super().__init__()
+        self.filepath = filepath
+        self.process = None
+        self.should_stop = False
+        self.start_time = None
+        self.paused_duration = 0
+        self.pause_start = None
+    
+    def run(self):
+        """Run the audio player."""
+        try:
+            # Change to modules directory for walrio.py execution
+            modules_dir = Path(__file__).parent.parent / "modules"
+            
+            # Record start time for position tracking
+            self.start_time = time.time()
+            
+            # Run walrio player
+            self.process = subprocess.Popen(
+                ["python", "walrio.py", "player", self.filepath],
+                cwd=str(modules_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Monitor process and emit position updates
+            while self.process.poll() is None and not self.should_stop:
+                if self.start_time and not self.pause_start:
+                    # Calculate current position based on elapsed time
+                    elapsed = time.time() - self.start_time - self.paused_duration
+                    self.position_updated.emit(max(0, elapsed))
+                time.sleep(0.1)  # Update position 10 times per second
+            
+            # Wait for completion
+            self.process.wait()
+            
+            if not self.should_stop:
+                self.finished.emit()
+                
+        except Exception as e:
+            self.error.emit(f"Playback error: {str(e)}")
+    
+    def pause(self):
+        """Pause playback tracking."""
+        if not self.pause_start:
+            self.pause_start = time.time()
+    
+    def resume(self):
+        """Resume playback tracking."""
+        if self.pause_start:
+            self.paused_duration += time.time() - self.pause_start
+            self.pause_start = None
+    
+    def stop(self):
+        """Stop the playback."""
+        self.should_stop = True
+        if self.process and self.process.poll() is None:
+            self.process.terminate()
+            self.process.wait()
+
+
+class SimpleMusicPlayer(QMainWindow):
+    """Simple music player with basic controls."""
+    
+    def __init__(self):
+        super().__init__()
+        self.current_file = None
+        self.is_playing = False
+        self.player_worker = None
+        self.position = 0
+        self.duration = 0
+        self.is_seeking = False
+        
+        self.setup_ui()
+        self.setup_timer()
+    
+    def setup_ui(self):
+        """Setup the user interface."""
+        self.setWindowTitle("Walrio Simple Music Player")
+        self.setGeometry(300, 300, 600, 200)
+        
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        layout = QVBoxLayout(central_widget)
+        
+        # Track info
+        self.track_label = QLabel("No file selected")
+        self.track_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setPointSize(12)
+        font.setBold(True)
+        self.track_label.setFont(font)
+        layout.addWidget(self.track_label)
+        
+        # Time and progress
+        time_layout = QHBoxLayout()
+        self.time_current = QLabel("00:00")
+        self.progress_slider = QSlider(Qt.Horizontal)
+        self.progress_slider.setMinimum(0)
+        self.progress_slider.setMaximum(100)
+        self.progress_slider.setValue(0)
+        self.progress_slider.sliderPressed.connect(self.on_seek_start)
+        self.progress_slider.sliderReleased.connect(self.on_seek_end)
+        self.time_total = QLabel("00:00")
+        
+        time_layout.addWidget(self.time_current)
+        time_layout.addWidget(self.progress_slider)
+        time_layout.addWidget(self.time_total)
+        layout.addLayout(time_layout)
+        
+        # Control buttons
+        controls_layout = QHBoxLayout()
+        
+        self.btn_open = QPushButton("Open File")
+        self.btn_play_pause = QPushButton("▶ Play")
+        self.btn_stop = QPushButton("⏹ Stop")
+        
+        # Style buttons
+        button_style = """
+            QPushButton {
+                font-size: 14px;
+                padding: 10px;
+                min-width: 100px;
+            }
+        """
+        self.btn_open.setStyleSheet(button_style)
+        self.btn_play_pause.setStyleSheet(button_style)
+        self.btn_stop.setStyleSheet(button_style)
+        
+        # Connect buttons
+        self.btn_open.clicked.connect(self.open_file)
+        self.btn_play_pause.clicked.connect(self.toggle_play_pause)
+        self.btn_stop.clicked.connect(self.stop_playback)
+        
+        controls_layout.addStretch()
+        controls_layout.addWidget(self.btn_open)
+        controls_layout.addWidget(self.btn_play_pause)
+        controls_layout.addWidget(self.btn_stop)
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
+        
+        # Volume control
+        volume_layout = QHBoxLayout()
+        volume_layout.addWidget(QLabel("Volume:"))
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(70)
+        self.volume_slider.setMaximumWidth(200)
+        self.volume_slider.valueChanged.connect(self.on_volume_change)
+        self.volume_label = QLabel("70%")
+        self.volume_label.setMinimumWidth(40)
+        
+        volume_layout.addWidget(self.volume_slider)
+        volume_layout.addWidget(self.volume_label)
+        volume_layout.addStretch()
+        layout.addLayout(volume_layout)
+        
+        # Initially disable play/stop buttons
+        self.btn_play_pause.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+    
+    def setup_timer(self):
+        """Setup timer for updating UI (reduced frequency since position comes from worker)."""
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_ui)
+        self.timer.start(100)  # Update UI every 100ms for smooth updates
+    
+    def open_file(self):
+        """Open an audio file."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open Audio File", "",
+            "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.aac *.opus)"
+        )
+        
+        if filepath:
+            self.current_file = filepath
+            filename = Path(filepath).name
+            self.track_label.setText(filename)
+            
+            # Reset position
+            self.position = 0
+            self.progress_slider.setValue(0)
+            self.time_current.setText("00:00")
+            
+            # Get actual file duration using Walrio metadata CLI
+            try:
+                modules_dir = Path(__file__).parent.parent / "modules"
+                result = subprocess.run(
+                    ["python", "walrio.py", "metadata", "--duration", filepath],
+                    cwd=str(modules_dir),
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    self.duration = float(result.stdout.strip())
+                else:
+                    self.duration = 0
+            except Exception as e:
+                print(f"Error getting duration: {e}")
+                self.duration = 0
+            
+            if self.duration > 0:
+                self.time_total.setText(self.format_time(self.duration))
+                # Update progress slider maximum to match duration in seconds
+                self.progress_slider.setMaximum(int(self.duration))
+            else:
+                self.time_total.setText("--:--")
+                # Fallback to percentage-based progress
+                self.progress_slider.setMaximum(100)
+                self.show_message("Duration Warning", "Could not determine file duration. Progress bar may not be accurate.")
+            
+            # Enable controls
+            self.btn_play_pause.setEnabled(True)
+            self.btn_stop.setEnabled(True)
+            
+            duration_text = f"{self.format_time(self.duration)}" if self.duration > 0 else "unknown duration"
+            self.show_message("File Loaded", f"Ready to play: {filename}\nDuration: {duration_text}")
+    
+    def toggle_play_pause(self):
+        """Toggle between play and pause."""
+        if not self.current_file:
+            return
+        
+        if self.is_playing:
+            self.pause_playback()
+        else:
+            if self.position > 0:
+                self.resume_playback()
+            else:
+                self.start_playback()
+    
+    def start_playback(self):
+        """Start audio playback."""
+        if not self.current_file:
+            return
+        
+        self.is_playing = True
+        self.btn_play_pause.setText("⏸ Pause")
+        
+        # Start player worker
+        self.player_worker = PlayerWorker(self.current_file)
+        self.player_worker.finished.connect(self.on_playback_finished)
+        self.player_worker.error.connect(self.on_playback_error)
+        self.player_worker.position_updated.connect(self.on_position_updated)
+        self.player_worker.start()
+    
+    def pause_playback(self):
+        """Pause audio playback."""
+        self.is_playing = False
+        self.btn_play_pause.setText("▶ Play")
+        
+        if self.player_worker:
+            self.player_worker.pause()
+            self.player_worker.stop()
+            self.player_worker.wait()
+            self.player_worker = None
+    
+    def resume_playback(self):
+        """Resume audio playback."""
+        if not self.current_file or self.is_playing:
+            return
+        
+        # For now, restart from current position (seeking not implemented yet)
+        self.start_playback()
+    
+    def stop_playback(self):
+        """Stop audio playback."""
+        self.is_playing = False
+        self.btn_play_pause.setText("▶ Play")
+        
+        if self.player_worker:
+            self.player_worker.stop()
+            self.player_worker.wait()
+            self.player_worker = None
+        
+        # Reset position
+        self.position = 0
+        self.progress_slider.setValue(0)
+        self.time_current.setText("00:00")
+    
+    def on_volume_change(self, value):
+        """Handle volume slider changes."""
+        self.volume_label.setText(f"{value}%")
+        # Note: Volume control would need to be implemented in the player module
+        # For now, this just updates the display
+    
+    def on_seek_start(self):
+        """Handle when user starts seeking."""
+        self.is_seeking = True
+    
+    def on_seek_end(self):
+        """Handle when user finishes seeking."""
+        self.is_seeking = False
+        # Update position based on slider value (now in seconds)
+        if self.duration > 0:
+            self.position = self.progress_slider.value()
+            self.time_current.setText(self.format_time(self.position))
+        # Note: Actual seeking would need to be implemented in the player module
+    
+    def on_position_updated(self, position):
+        """Handle position updates from the player worker."""
+        if not self.is_seeking:
+            self.position = position
+            self.progress_slider.setValue(int(position))
+            self.time_current.setText(self.format_time(position))
+            
+            # Auto-stop when reaching end
+            if self.duration > 0 and position >= self.duration:
+                self.stop_playback()
+    
+    def update_ui(self):
+        """Update UI elements (called by timer)."""
+        # Most updates now come from position_updated signal
+        # This is just for any additional UI updates needed
+        pass
+    
+    def format_time(self, seconds):
+        """Format time in MM:SS format."""
+        minutes = int(seconds // 60)
+        seconds = int(seconds % 60)
+        return f"{minutes:02d}:{seconds:02d}"
+    
+    def on_playback_finished(self):
+        """Handle when playback finishes naturally."""
+        self.stop_playback()
+    
+    def on_playback_error(self, error):
+        """Handle playback errors."""
+        self.show_message("Playback Error", error)
+        self.stop_playback()
+    
+    def show_message(self, title, message):
+        """Show a message dialog."""
+        QMessageBox.information(self, title, message)
+    
+    def closeEvent(self, event):
+        """Handle application close."""
+        if self.player_worker:
+            self.player_worker.stop()
+            self.player_worker.wait()
+        event.accept()
+
+
+def main():
+    """Main entry point for the simple music player."""
+    app = QApplication(sys.argv)
+    app.setApplicationName("Walrio Simple Music Player")
+    
+    player = SimpleMusicPlayer()
+    player.show()
+    
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

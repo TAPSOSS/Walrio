@@ -1,2 +1,3 @@
 # Python package dependencies for Walrio
 mutagen>=1.45.0
+PySide6>=6.0.0
