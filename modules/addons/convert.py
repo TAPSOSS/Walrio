@@ -330,6 +330,19 @@ class AudioConverter:
                 if bit_depth in BIT_DEPTH_OPTIONS:
                     pcm_codec = BIT_DEPTH_OPTIONS[bit_depth]['pcm_codec']
                     cmd[cmd.index('-c:a') + 1] = pcm_codec
+            elif output_format == 'flac':
+                # For FLAC, handle bit depth conversion properly
+                bit_depth = self.options['bit_depth']
+                if bit_depth == '16':
+                    cmd.extend(['-sample_fmt', 's16'])
+                elif bit_depth == '24':
+                    # FLAC 24-bit uses s32 sample format container
+                    cmd.extend(['-sample_fmt', 's32'])
+                elif bit_depth == '32':
+                    cmd.extend(['-sample_fmt', 's32'])
+                else:
+                    # Default to 16-bit for unknown values
+                    cmd.extend(['-sample_fmt', 's16'])
             else:
                 # For other lossless formats, set the bit depth parameter
                 cmd.extend(['-sample_fmt', f's{self.options["bit_depth"]}'])
