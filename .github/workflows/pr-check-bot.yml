@@ -68,6 +68,9 @@ jobs:
         script: |
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
+          const runId = '${{ github.run_id }}';
+          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
           const message = `## 🤖 PR Check Bot Started
 
@@ -79,7 +82,9 @@ jobs:
           - ⚠️ **Style Check**: Analyzing Python code style and headers
           - ⚠️ **Documentation**: Building docs if relevant files changed
           
-          *Running all checks... This message will be updated with results.*`;
+          *Running all checks... This message will be updated with results.*
+          
+          🔗 **[Watch all checks run live](${actionUrl})** - View real-time progress, full error details, and complete logs`;
           
           const { data: comment } = await github.rest.issues.createComment({
             owner: context.repo.owner,
@@ -180,10 +185,21 @@ jobs:
             warnings.push('⚠️ **Checklist**: Checklist section not found.');
           }
 
-          // Set outputs
-          core.setOutput('errors', JSON.stringify(errors));
-          core.setOutput('warnings', JSON.stringify(warnings));
+          // Set outputs with better error handling
+          console.log('Errors found:', errors.length);
+          console.log('Warnings found:', warnings.length);
+          
+          // Store counts instead of complex JSON to avoid parsing issues
+          core.setOutput('error_count', errors.length);
+          core.setOutput('warning_count', warnings.length);
           core.setOutput('passed', errors.length === 0);
+          
+          // Store first error message if any (for simple display)
+          if (errors.length > 0) {
+            core.setOutput('first_error', errors[0].substring(0, 200));
+          } else {
+            core.setOutput('first_error', '');
+          }
           
           console.log(`PR Requirements: ${errors.length} errors, ${warnings.length} warnings`);
 
@@ -319,7 +335,6 @@ jobs:
           docs/**
           modules/**
           GUI/**
-          .github/workflows/docs.yml
 
     - name: 4️⃣ Documentation Build Check
       id: docs-check
@@ -420,35 +435,32 @@ jobs:
           const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
+          const runId = '${{ github.run_id }}';
+          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
-          // Collect results from all checks
+          // Collect results from all checks (using simple boolean/string outputs)
           const checks = [
             {
               name: 'PR Requirements',
               passed: '${{ steps.pr-requirements.outputs.passed }}' === 'true',
-              errors: JSON.parse('${{ steps.pr-requirements.outputs.errors }}' || '[]'),
-              warnings: JSON.parse('${{ steps.pr-requirements.outputs.warnings }}' || '[]'),
-              errorMessage: ''
+              errorCount: '${{ steps.pr-requirements.outputs.error_count }}',
+              warningCount: '${{ steps.pr-requirements.outputs.warning_count }}',
+              firstError: '${{ steps.pr-requirements.outputs.first_error }}'
             },
             {
               name: 'CONTRIBUTING.md Check',
               passed: '${{ steps.contributing-check.outputs.passed }}' === 'true',
-              errors: [],
-              warnings: [],
               errorMessage: `${{ steps.contributing-check.outputs.error_message }}`
             },
             {
               name: 'Style Check',
               passed: ('${{ steps.style-check.outputs.passed }}' === 'true' || '${{ steps.style-check-skipped.outputs.passed }}' === 'true'),
-              errors: [],
-              warnings: [],
               errorMessage: `${{ steps.style-check.outputs.error_message }}`
             },
             {
               name: 'Documentation Build',
               passed: ('${{ steps.docs-check.outputs.passed }}' === 'true' || '${{ steps.docs-check-skipped.outputs.passed }}' === 'true'),
-              errors: [],
-              warnings: [],
               errorMessage: `${{ steps.docs-check.outputs.error_message }}`
             }
           ];
@@ -484,22 +496,26 @@ jobs:
               if (!check.passed) {
                 message += `#### ${check.name}\n`;
                 
-                if (check.errors && check.errors.length > 0) {
-                  for (const error of check.errors) {
-                    message += `${error}\n\n`;
+                // Handle PR Requirements check (has error/warning counts)
+                if (check.name === 'PR Requirements') {
+                  if (check.errorCount && parseInt(check.errorCount) > 0) {
+                    message += `Found ${check.errorCount} error(s)`;
+                    if (check.firstError) {
+                      message += `\n\nFirst error: ${check.firstError}`;
+                      if (check.firstError.length >= 200) {
+                        message += '... (truncated)';
+                      }
+                    }
+                    message += '\n\n';
+                  }
+                  if (check.warningCount && parseInt(check.warningCount) > 0) {
+                    message += `Found ${check.warningCount} warning(s)\n\n`;
                   }
                 }
                 
+                // Handle other checks (have error messages)
                 if (check.errorMessage && check.errorMessage.trim()) {
                   message += `${check.errorMessage}\n\n`;
-                }
-                
-                if (check.warnings && check.warnings.length > 0) {
-                  message += '**Warnings:**\n';
-                  for (const warning of check.warnings) {
-                    message += `${warning}\n`;
-                  }
-                  message += '\n';
                 }
               }
             }
@@ -515,6 +531,7 @@ jobs:
             message += `**Failed:** ${failedChecks.join(', ')}\n`;
             message += `**Passed:** ${passedChecks.join(', ')}\n\n`;
             message += 'Please address the issues above and run `bot, check` again.\n\n';
+            message += `🔍 **Need more details?** [View the full action run](${actionUrl}) for complete error messages, logs, and debugging information.\n\n`;
           }
           
           message += '*To re-run all checks, comment: `bot, check`*';
