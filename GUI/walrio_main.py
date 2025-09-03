@@ -51,15 +51,17 @@ class PlayerWorker(QThread):
     playback_finished = Signal()
     error = Signal(str)  # Added missing error signal
     
-    def __init__(self, filepath):
+    def __init__(self, filepath, duration=0):
         """
         Initialize the PlayerWorker thread.
         
         Args:
             filepath (str): Path to the audio file to play.
+            duration (float): Duration of the audio file in seconds.
         """
         super().__init__()
         self.filepath = filepath
+        self.duration = duration
         self.should_stop = False
         self.start_time = None
         self.process = None
@@ -90,16 +92,32 @@ class PlayerWorker(QThread):
             )
             
             # Monitor process and emit position updates
-            while self.process.poll() is None and not self.should_stop:
-                if self.start_time and not self.pause_start:
+            while not self.should_stop and self.process.poll() is None:
+                # Check should_stop more frequently within the loop
+                if self.should_stop:
+                    break
+                    
+                if self.start_time and not self.pause_start and not self.should_stop:
                     # Calculate current position based on elapsed time
                     elapsed = time.time() - self.start_time - self.paused_duration
                     # Ensure position is never negative 
                     safe_position = max(0, elapsed)
                     
+                    # Don't emit positions beyond the song duration
+                    if self.duration > 0 and safe_position >= self.duration:
+                        # Song has finished, emit final position and stop
+                        self.position_updated.emit(self.duration)
+                        break
+                    
                     self.last_known_position = safe_position
-                    self.position_updated.emit(safe_position)
-                time.sleep(0.1)  # Update position 10 times per second
+                    if not self.should_stop:  # Double-check before emitting
+                        self.position_updated.emit(safe_position)
+                
+                # Use shorter sleep intervals to check should_stop more frequently
+                for _ in range(10):  # Check should_stop 10 times during 0.1 second
+                    if self.should_stop:
+                        break
+                    time.sleep(0.01)  # 0.01 * 10 = 0.1 second total
             
             # Wait for completion
             self.process.wait()
@@ -145,7 +163,9 @@ class PlayerWorker(QThread):
     
     def stop(self):
         """Stop the playback using daemon command."""
+        # Set should_stop immediately to break the position update loop
         self.should_stop = True
+        
         if self.process and self.process.poll() is None:
             try:
                 modules_dir = Path(__file__).parent.parent / "modules"
@@ -169,6 +189,9 @@ class PlayerWorker(QThread):
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
+        
+        # Give the run loop a moment to notice should_stop and exit
+        time.sleep(0.05)
                     
     def set_volume(self, volume):
         """Set the playback volume using daemon socket command.
@@ -446,6 +469,17 @@ class WalrioMusicPlayer(QMainWindow):
         if not self.current_file:
             return
         
+        # Stop any existing player worker first
+        if self.player_worker:
+            # Disconnect all signals to prevent interference
+            self.player_worker.position_updated.disconnect()
+            self.player_worker.playback_finished.disconnect()
+            self.player_worker.error.disconnect()
+            
+            self.player_worker.stop()
+            self.player_worker.wait(1000)  # Wait up to 1 second
+            self.player_worker = None
+        
         # Create queue manager for current file
         song = {
             'url': self.current_file,
@@ -462,8 +496,8 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_stop.setEnabled(True)
         
         # Start player worker (no longer needs loop_mode since queue handles it)
-        self.player_worker = PlayerWorker(self.current_file)
-        self.player_worker.finished.connect(self.on_playback_finished)
+        self.player_worker = PlayerWorker(self.current_file, self.duration)
+        self.player_worker.playback_finished.connect(self.on_playback_finished)
         self.player_worker.error.connect(self.on_playback_error)
         self.player_worker.position_updated.connect(self.on_position_updated)
         self.player_worker.start()
@@ -501,10 +535,23 @@ class WalrioMusicPlayer(QMainWindow):
         # Immediately disable the stop button to prevent multiple clicks
         self.btn_stop.setEnabled(False)
         
+        # Reset position and UI immediately to prevent further updates
+        self.position = 0
+        self.progress_slider.setValue(0)
+        self.time_current.setText("00:00")
+        
         # Force GUI to update immediately
         QApplication.processEvents()
         
         if self.player_worker:
+            # Disconnect all signals first to prevent further updates
+            try:
+                self.player_worker.position_updated.disconnect()
+                self.player_worker.playback_finished.disconnect()
+                self.player_worker.error.disconnect()
+            except:
+                pass  # Signals might already be disconnected
+            
             # Stop the worker thread
             self.player_worker.stop()
             
@@ -515,11 +562,6 @@ class WalrioMusicPlayer(QMainWindow):
                 self.player_worker.wait()
             
             self.player_worker = None
-        
-        # Reset position and UI
-        self.position = 0
-        self.progress_slider.setValue(0)
-        self.time_current.setText("00:00")
         
         # Re-enable play button (stop button already disabled above)
         self.btn_play_pause.setEnabled(True)
@@ -560,17 +602,21 @@ class WalrioMusicPlayer(QMainWindow):
         Args:
             position (float): Current playback position in seconds.
         """
+        # Ignore position updates if we're not supposed to be playing
+        if not self.is_playing or not self.player_worker:
+            return
+            
         if not self.is_seeking:
+            # Cap position at duration to prevent going beyond song length
+            if self.duration > 0 and position >= self.duration:
+                # Don't update UI beyond song duration - let playback finish naturally
+                return
+                
             self.position = position
             
             # Normal position update (no special loop handling needed)
             self.progress_slider.setValue(int(position))
             self.time_current.setText(self.format_time(position))
-            
-            # Check if we've reached the end (queue will handle looping decisions)
-            if self.duration > 0 and position >= self.duration:
-                # Let the PlayerWorker handle the finished signal
-                pass
     
     def update_ui(self):
         """Update UI elements (called by timer)."""
@@ -595,6 +641,9 @@ class WalrioMusicPlayer(QMainWindow):
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for loop decisions."""
         if self.queue_manager:
+            print(f"Playback finished. Current repeat mode: {self.queue_manager.repeat_mode.value}")
+            print(f"Current index: {self.queue_manager.current_index}, Queue length: {len(self.queue_manager.songs)}")
+            
             # Use queue's next_track logic for repeat handling
             if self.queue_manager.next_track():
                 # Queue wants to continue (either repeat track or move to next)
