@@ -5,8 +5,8 @@ Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A simple music player GUI built with PySide that focuses on core playback functionality
-using the Walrio CLI interface.
+A music player GUI built with PySide that focuses on core playback functionality
+using the Walrio CLI interface and related libararies.
 """
 
 import sys
