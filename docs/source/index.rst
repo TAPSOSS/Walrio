@@ -15,6 +15,12 @@ Walrio is a modular Python application framework designed for extensibility and 
 
    cli_usage
 
+.. toctree::
+   :maxdepth: 2
+   :caption: GUI Applications
+
+   gui_usage
+
 Overview
 --------
 
@@ -59,6 +65,7 @@ To explore the codebase:
 1. **Use the Unified Interface** - Run ``python modules/walrio.py --help`` to see all available tools
 2. **Browse the API Reference** - See :doc:`api/index` for detailed module documentation  
 3. **Review Command Line Tools** - See :doc:`cli_usage` for all available CLI tools with examples
+4. **Try GUI Applications** - See :doc:`gui_usage` for graphical user interfaces
 
 **Quick Start with Command Line Tools:**
 
@@ -72,6 +79,16 @@ To explore the codebase:
     
     # Example: Convert audio files
     python modules/walrio.py convert input.wav --format mp3
+
+**Quick Start with GUI Applications:**
+
+.. code-block:: bash
+
+    # Launch the main Walrio GUI
+    python GUI/walrio_main.py
+    
+    # Launch the simple music player
+    python GUI/walrio_lite.py
 
 Indices and tables
 ==================

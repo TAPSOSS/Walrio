@@ -457,8 +457,14 @@ def main():
         total_files_checked += 1
         print(f"\n📁 Analyzing {filename}...")
         
+        # Convert to absolute path to handle relative paths correctly
+        file_path = Path(filename)
+        if not file_path.is_absolute():
+            # If relative path, resolve it relative to current working directory
+            file_path = Path.cwd() / file_path
+        
         try:
-            with open(filename, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
             print(f"❌ {filename}: Could not read file - {e}")
