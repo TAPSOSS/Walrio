@@ -129,7 +129,13 @@ class AudioPlayer:
         bus.connect("message", self._on_bus_message)
     
     def _on_pad_added(self, decodebin, pad):
-        """Handle dynamic pad addition from decodebin."""
+        """
+        Handle dynamic pad addition from decodebin.
+        
+        Args:
+            decodebin: The GStreamer decodebin element that added the pad.
+            pad: The newly added pad from decodebin.
+        """
         caps = pad.query_caps(None)
         structure = caps.get_structure(0)
         
@@ -139,7 +145,13 @@ class AudioPlayer:
                 pad.link(sink_pad)
     
     def _on_bus_message(self, bus, message):
-        """Handle GStreamer bus messages."""
+        """
+        Handle GStreamer bus messages.
+        
+        Args:
+            bus: The GStreamer bus that sent the message.
+            message: The GStreamer message to process.
+        """
         if message.type == Gst.MessageType.EOS:
             # End of stream - handle looping
             self._handle_eos()
@@ -686,7 +698,15 @@ class AudioPlayer:
                 break
     
     def _process_daemon_command(self, command):
-        """Process a daemon command and return response."""
+        """
+        Process a daemon command and return response.
+        
+        Args:
+            command (str): The command string to process.
+            
+        Returns:
+            str: Response message indicating success or failure.
+        """
         try:
             parts = command.strip().lower().split()
             if not parts:

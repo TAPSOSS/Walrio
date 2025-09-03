@@ -1732,27 +1732,67 @@ def _get_specific_tag(filepath: str, tag_key: str, alt_keys: list = None) -> str
 
 
 def get_title(filepath: str) -> str:
-    """Get the title tag from an audio file."""
+    """
+    Get the title tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The title tag value or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TIT2', ['TITLE', 'Title'])
 
 
 def get_artist(filepath: str) -> str:
-    """Get the artist tag from an audio file."""
+    """
+    Get the artist tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The artist tag value or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TPE1', ['ARTIST', 'Artist'])
 
 
 def get_album(filepath: str) -> str:
-    """Get the album tag from an audio file."""
+    """
+    Get the album tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The album tag value or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TALB', ['ALBUM', 'Album'])
 
 
 def get_albumartist(filepath: str) -> str:
-    """Get the albumartist tag from an audio file."""
+    """
+    Get the albumartist tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The album artist tag value or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TPE2', ['ALBUMARTIST', 'AlbumArtist', 'ALBUM ARTIST', 'Album Artist'])
 
 
 def get_year(filepath: str) -> str:
-    """Get the year/date tag from an audio file."""
+    """
+    Get the year/date tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The year value or empty string if not found.
+    """
     # Try year first, then date
     year = _get_specific_tag(filepath, 'TDRC', ['DATE', 'YEAR', 'Year'])
     if year:
@@ -1772,12 +1812,28 @@ def get_year(filepath: str) -> str:
 
 
 def get_genre(filepath: str) -> str:
-    """Get the genre tag from an audio file."""
+    """
+    Get the genre tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The genre tag value or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TCON', ['GENRE', 'Genre'])
 
 
 def get_track(filepath: str) -> str:
-    """Get the track number from an audio file."""
+    """
+    Get the track number from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The track number or empty string if not found.
+    """
     track = _get_specific_tag(filepath, 'TRCK', ['TRACKNUMBER', 'Track'])
     # Extract just the track number (remove "/total" if present)
     if track and '/' in track:
@@ -1786,7 +1842,15 @@ def get_track(filepath: str) -> str:
 
 
 def get_disc(filepath: str) -> str:
-    """Get the disc number from an audio file."""
+    """
+    Get the disc number from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The disc number or empty string if not found.
+    """
     disc = _get_specific_tag(filepath, 'TPOS', ['DISCNUMBER', 'Disc'])
     # Extract just the disc number (remove "/total" if present)
     if disc and '/' in disc:
@@ -1795,20 +1859,52 @@ def get_disc(filepath: str) -> str:
 
 
 def get_comment(filepath: str) -> str:
-    """Get the comment tag from an audio file."""
+    """
+    Get the comment from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The comment or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'COMM::eng', ['COMMENT', 'Comment'])
 
 
 def get_composer(filepath: str) -> str:
-    """Get the composer tag from an audio file."""
+    """
+    Get the composer from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The composer or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TCOM', ['COMPOSER', 'Composer'])
 
 
 def get_performer(filepath: str) -> str:
-    """Get the performer tag from an audio file."""
+    """
+    Get the performer from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The performer or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TPE3', ['PERFORMER', 'Performer'])
 
 
 def get_grouping(filepath: str) -> str:
-    """Get the grouping tag from an audio file."""
+    """
+    Get the grouping from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The grouping or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'TIT1', ['GROUPING', 'Grouping'])

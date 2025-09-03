@@ -42,6 +42,12 @@ class PlayerWorker(QThread):
     error = Signal(str)  # Added missing error signal
     
     def __init__(self, filepath):
+        """
+        Initialize the PlayerWorker thread.
+        
+        Args:
+            filepath (str): Path to the audio file to play.
+        """
         super().__init__()
         self.filepath = filepath
         self.should_stop = False
@@ -189,6 +195,11 @@ class WalrioMusicPlayer(QMainWindow):
     """Walrio music player with full playback controls."""
     
     def __init__(self):
+        """
+        Initialize the WalrioMusicPlayer main window.
+        
+        Sets up the UI, initializes state variables, and configures timers.
+        """
         super().__init__()
         self.current_file = None
         self.is_playing = False
@@ -433,7 +444,12 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_play_pause.setEnabled(True)
     
     def on_volume_change(self, value):
-        """Handle volume slider changes."""
+        """
+        Handle volume slider changes.
+        
+        Args:
+            value (int): The new volume slider value (0-100).
+        """
         self.volume_label.setText(f"{value}%")
         
         # Convert slider value (0-100) to volume range (0.0-1.0)
@@ -457,7 +473,12 @@ class WalrioMusicPlayer(QMainWindow):
         # Note: Actual seeking would need to be implemented in the player module
     
     def on_position_updated(self, position):
-        """Handle position updates from the player worker."""
+        """
+        Handle position updates from the player worker.
+        
+        Args:
+            position (float): Current playback position in seconds.
+        """
         if not self.is_seeking:
             self.position = position
             self.progress_slider.setValue(int(position))
@@ -474,7 +495,15 @@ class WalrioMusicPlayer(QMainWindow):
         pass
     
     def format_time(self, seconds):
-        """Format time in MM:SS format."""
+        """
+        Format time in MM:SS format.
+        
+        Args:
+            seconds (float): Time in seconds to format.
+            
+        Returns:
+            str: Formatted time string in MM:SS format.
+        """
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes:02d}:{seconds:02d}"
@@ -484,16 +513,32 @@ class WalrioMusicPlayer(QMainWindow):
         self.stop_playback()
     
     def on_playback_error(self, error):
-        """Handle playback errors."""
+        """
+        Handle playback errors.
+        
+        Args:
+            error (str): Error message to display.
+        """
         self.show_message("Playback Error", error)
         self.stop_playback()
     
     def show_message(self, title, message):
-        """Show a message dialog."""
+        """
+        Show a message dialog.
+        
+        Args:
+            title (str): Dialog window title.
+            message (str): Message content to display.
+        """
         QMessageBox.information(self, title, message)
     
     def closeEvent(self, event):
-        """Handle application close."""
+        """
+        Handle application close.
+        
+        Args:
+            event: The close event from Qt.
+        """
         if self.player_worker:
             self.player_worker.stop()
             self.player_worker.wait()
