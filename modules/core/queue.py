@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 from .player import play_audio
 from .playlist import load_m3u_playlist
+from enum import Enum
 
 # Try to import database functions for auto-adding missing songs
 try:
@@ -30,7 +31,273 @@ except ImportError:
 # Default database path
 DEFAULT_DB_PATH = "walrio_library.db"
 
+class RepeatMode(Enum):
+    """Repeat modes for audio playback"""
+    OFF = "off"
+    TRACK = "track"
+    QUEUE = "queue"
+
+class QueueManager:
+    """
+    Queue manager that handles dynamic repeat modes for audio playback.
+    Provides playlist-level loop control with dynamic mode switching.
+    """
+    
+    def __init__(self, songs=None):
+        """
+        Initialize the QueueManager.
+        
+        Args:
+            songs (list, optional): List of song dictionaries or database records. 
+                                  Defaults to None (empty list).
+        """
+        self.songs = songs or []
+        self.current_index = 0
+        self.repeat_mode = RepeatMode.OFF
+        self.shuffle_mode = False
+        self.play_order = []
+        self._update_play_order()
+    
+    def _update_play_order(self):
+        """Update the play order based on shuffle mode"""
+        if not self.songs:
+            self.play_order = []
+            return
+            
+        self.play_order = list(range(len(self.songs)))
+        if self.shuffle_mode:
+            random.shuffle(self.play_order)
+    
+    def set_repeat_mode(self, mode):
+        """
+        Set the repeat mode (can be changed dynamically).
+        
+        Args:
+            mode (str or RepeatMode): The repeat mode to set. Can be a string 
+                                    ("off", "track", "queue") or RepeatMode enum value.
+        """
+        if isinstance(mode, str):
+            mode = RepeatMode(mode.lower())
+        self.repeat_mode = mode
+        print(f"Repeat mode set to: {mode.value}")
+    
+    def set_shuffle_mode(self, enabled):
+        """
+        Set shuffle mode.
+        
+        Args:
+            enabled (bool): True to enable shuffle mode, False to disable it.
+        """
+        self.shuffle_mode = enabled
+        self._update_play_order()
+        print(f"Shuffle mode: {'ON' if enabled else 'OFF'}")
+    
+    def current_song(self):
+        """
+        Get the current song.
+        
+        Returns:
+            dict or None: The current song dictionary, or None if no song is available.
+        """
+        if not self.songs or self.current_index >= len(self.songs):
+            return None
+        
+        if self.shuffle_mode and self.play_order:
+            song_index = self.play_order[self.current_index % len(self.play_order)]
+        else:
+            song_index = self.current_index % len(self.songs)
+        
+        return self.songs[song_index]
+    
+    def next_track(self):
+        """
+        Move to next track based on repeat mode.
+        
+        Returns:
+            bool: True if there's a next track, False if queue ended.
+        """
+        if not self.songs:
+            return False
+        
+        if self.repeat_mode == RepeatMode.TRACK:
+            # Track repeat: stay on same track
+            return True
+        elif self.repeat_mode == RepeatMode.QUEUE:
+            # Queue repeat: advance and loop at end
+            self.current_index = (self.current_index + 1) % len(self.songs)
+            return True
+        else:  # RepeatMode.OFF
+            # Normal progression: advance and stop at end
+            self.current_index += 1
+            return self.current_index < len(self.songs)
+    
+    def previous_track(self):
+        """
+        Move to previous track.
+        
+        Returns:
+            bool: True if successfully moved to previous track, False otherwise.
+        """
+        if not self.songs:
+            return False
+        
+        if self.repeat_mode == RepeatMode.TRACK:
+            # Track repeat: stay on same track
+            return True
+        else:
+            # Normal/queue repeat: go to previous
+            self.current_index = (self.current_index - 1) % len(self.songs)
+            return True
+    
+    def set_current_index(self, index):
+        """
+        Set the current track index.
+        
+        Args:
+            index (int): The index to set as the current track.
+            
+        Returns:
+            bool: True if the index was valid and set successfully, False otherwise.
+        """
+        if 0 <= index < len(self.songs):
+            self.current_index = index
+            return True
+        return False
+
+def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0, conn=None):
+    """
+    Play songs using QueueManager with dynamic repeat mode support.
+    This approach handles looping at the queue level rather than player level.
+    
+    Args:
+        songs (list): List of song dictionaries or database records.
+        repeat_mode (str): Repeat mode - "off", "track", or "queue"
+        shuffle (bool): Enable shuffle mode
+        start_index (int): Index to start playback from
+        conn (sqlite3.Connection): Database connection for auto-adding missing songs
+    """
+    if not songs:
+        print("Queue is empty. Nothing to play.")
+        return
+    
+    # Create queue manager
+    queue_manager = QueueManager(songs)
+    queue_manager.set_repeat_mode(repeat_mode)
+    queue_manager.set_shuffle_mode(shuffle)
+    queue_manager.set_current_index(start_index)
+    
+    print(f"\n=== Playing {len(songs)} songs ===")
+    print(f"Repeat mode: {repeat_mode}")
+    print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
+    print("Press Ctrl+C to control playback\n")
+    
+    while True:
+        try:
+            current_song = queue_manager.current_song()
+            if not current_song:
+                print("No current song available.")
+                break
+            
+            # Display current queue status
+            display_queue(songs, queue_manager.current_index)
+            print(f"Now playing: {format_song_info(current_song)}")
+            
+            # Get file path
+            file_path = current_song['url']
+            if file_path.startswith('file://'):
+                file_path = file_path[7:]
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                print(f"Warning: File not found: {file_path}")
+                print("Skipping to next song...")
+                if not queue_manager.next_track():
+                    break
+                continue
+            
+            # Auto-add missing song to database if connection is available
+            if conn and DATABASE_AVAILABLE:
+                try:
+                    add_missing_song_to_database(file_path, conn)
+                except Exception as e:
+                    print(f"Note: Could not auto-add song to database: {e}")
+            
+            # Play the song
+            success = play_audio(file_path)
+            
+            if not success:
+                print("Error playing song. Skipping to next...")
+            
+            # Move to next track based on repeat mode
+            if not queue_manager.next_track():
+                print("\nReached end of queue.")
+                break
+                
+        except KeyboardInterrupt:
+            print("\nPlayback interrupted by user.")
+            user_input = input("Enter 'q' to quit, 'n' for next song, 's' to toggle shuffle, 'r' to change repeat mode, or any other key to continue: ").lower()
+            if user_input == 'q':
+                break
+            elif user_input == 'n':
+                if not queue_manager.next_track():
+                    print("End of queue reached.")
+                    break
+            elif user_input == 's':
+                queue_manager.set_shuffle_mode(not queue_manager.shuffle_mode)
+            elif user_input == 'r':
+                print("Repeat modes: off, track, queue")
+                new_mode = input("Enter repeat mode: ").strip().lower()
+                if new_mode in ['off', 'track', 'queue']:
+                    queue_manager.set_repeat_mode(new_mode)
+                else:
+                    print("Invalid repeat mode.")
+        except Exception as e:
+            print(f"Error during playback: {e}")
+            if not queue_manager.next_track():
+                break
+
+    print("Playback finished.")
+
+def play_single_song_with_loop(song_path, repeat_mode="off"):
+    """
+    Play a single song with optional looping using the queue system.
+    This function is designed for GUI integration.
+    
+    Args:
+        song_path (str): Path to the audio file
+        repeat_mode (str): "off", "track", or "queue"
+        
+    Returns:
+        QueueManager: The queue manager instance for external control
+    """
+    # Create a minimal song dict for the queue
+    song = {
+        'url': song_path,
+        'title': Path(song_path).stem,
+        'artist': 'Unknown Artist',
+        'album': 'Unknown Album'
+    }
+    
+    # Create queue manager with single song
+    queue_manager = QueueManager([song])
+    queue_manager.set_repeat_mode(repeat_mode)
+    
+    print(f"Playing: {song['title']}")
+    print(f"Repeat mode: {repeat_mode}")
+    
+    return queue_manager
+
 def connect_to_database(db_path):
+    """
+    Connect to the SQLite database and return connection.
+    
+    Args:
+        db_path (str): Path to the SQLite database file.
+        
+    Returns:
+        sqlite3.Connection or None: Database connection object, or None if connection fails.
+    """
+
     """
     Connect to the SQLite database and return connection.
     
@@ -151,14 +418,15 @@ def display_queue(queue, current_index=0):
         print(f"{marker}{i+1:3d}. {format_song_info(song)}")
     print()
 
-def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
+def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_index=0, conn=None):
     """
     Play songs in the queue with various playback options.
     
     Args:
         queue (list): List of song dictionaries or database records.
         shuffle (bool, optional): Enable shuffle mode. Defaults to False.
-        repeat (bool, optional): Enable repeat mode. Defaults to False.
+        repeat (bool, optional): Enable repeat mode (queue repeat). Defaults to False.
+        repeat_track (bool, optional): Enable track repeat mode. Defaults to False.
         start_index (int, optional): Index to start playback from. Defaults to 0.
         conn (sqlite3.Connection, optional): Database connection for auto-adding missing songs.
     """
@@ -174,6 +442,8 @@ def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
         print("Shuffle mode enabled.")
     if repeat:
         print("Repeat mode enabled.")
+    if repeat_track:
+        print("Track repeat mode enabled.")
     current_index = start_index
     
     while True:
@@ -216,7 +486,13 @@ def play_queue(queue, shuffle=False, repeat=False, start_index=0, conn=None):
             if not success:
                 print("Error playing song. Skipping to next...")
             
-            current_index += 1
+            # Handle repeat modes based on current setting
+            if repeat_track:
+                # Track repeat: stay on the same song
+                continue
+            else:
+                # Normal progression
+                current_index += 1
             
             # Check if we've reached the end of the queue
             if current_index >= len(queue):

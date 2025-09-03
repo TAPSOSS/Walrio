@@ -51,7 +51,7 @@ METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
     'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
     'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
-    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist'],
+    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist', 'ALBUM ARTIST'],
     'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
     'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
     'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
@@ -173,8 +173,23 @@ class FileRelocater:
             standardized_metadata['artist'] = metadata.get_artist(filepath) or "Unknown"
             standardized_metadata['album'] = metadata.get_album(filepath) or "Unknown"
             standardized_metadata['albumartist'] = metadata.get_albumartist(filepath) or "Unknown"
-            standardized_metadata['date'] = metadata.get_year(filepath) or "Unknown"
-            standardized_metadata['year'] = metadata.get_year(filepath) or "Unknown"
+            
+            # Handle date/year extraction with full_date option
+            date_value = metadata.get_year(filepath) or "Unknown"
+            standardized_metadata['date'] = date_value
+            
+            # For year field, extract just the year unless full_date is enabled
+            if date_value != "Unknown" and not self.options.get('full_date', False):
+                # Extract just the year using regex
+                import re
+                year_match = re.search(r'(19|20)\d{2}', str(date_value))
+                if year_match:
+                    standardized_metadata['year'] = year_match.group()
+                else:
+                    standardized_metadata['year'] = date_value
+            else:
+                standardized_metadata['year'] = date_value
+                
             standardized_metadata['genre'] = metadata.get_genre(filepath) or "Unknown"
             standardized_metadata['track'] = metadata.get_track(filepath) or "Unknown"
             standardized_metadata['disc'] = metadata.get_disc(filepath) or "Unknown"
@@ -616,6 +631,11 @@ Folder format tips:
         default="n",
         help="Process files with no metadata: y=yes (use filename as folder), n=no (skip files, default)"
     )
+    parser.add_argument(
+        "--full-date",
+        action="store_true",
+        help="Use full date from metadata instead of just the year for {year} field"
+    )
     
     # Utility options
     parser.add_argument(
@@ -810,6 +830,7 @@ def main():
         'folder_format': args.folder_format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
+        'full_date': args.full_date,
     }
     
     # Add custom sanitization character set if provided
