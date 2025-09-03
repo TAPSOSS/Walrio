@@ -16,6 +16,8 @@ import json
 import argparse
 import threading
 import time
+import socket
+import tempfile
 from pathlib import Path
 
 import subprocess
@@ -596,6 +598,136 @@ class AudioPlayer:
             except Exception as e:
                 print(f"Error handling input: {e}")
     
+    def run_daemon(self):
+        """
+        Run the player in daemon mode with socket-based command interface.
+        
+        Creates a Unix socket server that listens for external commands.
+        """
+        # Create socket file in temp directory
+        self.socket_path = os.path.join(tempfile.gettempdir(), f"walrio_player_{os.getpid()}.sock")
+        
+        # Remove existing socket file if it exists
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
+        
+        # Create Unix socket
+        self.daemon_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.daemon_socket.bind(self.socket_path)
+        self.daemon_socket.listen(1)
+        
+        print(f"Daemon mode started. Socket: {self.socket_path}")
+        
+        # Start command server in a separate thread
+        command_thread = threading.Thread(target=self._command_server, daemon=True)
+        command_thread.start()
+        
+        # Main daemon loop
+        try:
+            while not self.should_quit:
+                time.sleep(0.1)
+        except KeyboardInterrupt:
+            print("\nStopping daemon...")
+        finally:
+            self._cleanup_daemon()
+    
+    def _command_server(self):
+        """Handle incoming commands in daemon mode."""
+        while not self.should_quit:
+            try:
+                # Accept connection with timeout
+                self.daemon_socket.settimeout(0.5)
+                try:
+                    conn, addr = self.daemon_socket.accept()
+                except socket.timeout:
+                    continue
+                
+                with conn:
+                    # Receive command
+                    data = conn.recv(1024).decode('utf-8').strip()
+                    if not data:
+                        continue
+                    
+                    # Process command
+                    response = self._process_daemon_command(data)
+                    
+                    # Send response
+                    conn.send(response.encode('utf-8'))
+                    
+            except Exception as e:
+                if not self.should_quit:
+                    print(f"Error in command server: {e}")
+                break
+    
+    def _process_daemon_command(self, command):
+        """Process a daemon command and return response."""
+        try:
+            parts = command.strip().lower().split()
+            if not parts:
+                return "ERROR: Empty command"
+            
+            cmd = parts[0]
+            
+            if cmd in ['play', 'p']:
+                if self.is_paused:
+                    result = self.resume()
+                else:
+                    result = self.play()
+                return "OK: Playing" if result else "ERROR: Failed to play"
+                
+            elif cmd in ['pause', 'ps']:
+                result = self.pause()
+                return "OK: Paused" if result else "ERROR: Failed to pause"
+                
+            elif cmd in ['stop', 's']:
+                result = self.stop()
+                return "OK: Stopped" if result else "ERROR: Failed to stop"
+                
+            elif cmd in ['resume', 'r']:
+                result = self.resume()
+                return "OK: Resumed" if result else "ERROR: Failed to resume"
+                
+            elif cmd == 'status':
+                status = "Playing" if self.is_playing else ("Paused" if self.is_paused else "Stopped")
+                return f"OK: {status}"
+                
+            elif cmd == 'quit':
+                self.should_quit = True
+                self.stop()
+                return "OK: Quitting"
+                
+            elif cmd == 'volume' and len(parts) > 1:
+                try:
+                    volume = float(parts[1])
+                    result = self.set_volume(volume)
+                    return f"OK: Volume set to {volume}" if result else "ERROR: Failed to set volume"
+                except ValueError:
+                    return "ERROR: Invalid volume value"
+                    
+            elif cmd == 'seek' and len(parts) > 1:
+                try:
+                    position = float(parts[1])
+                    result = self.seek(position)
+                    return f"OK: Seeked to {position}s" if result else "ERROR: Failed to seek"
+                except ValueError:
+                    return "ERROR: Invalid seek position"
+                    
+            else:
+                return f"ERROR: Unknown command '{cmd}'"
+                
+        except Exception as e:
+            return f"ERROR: {str(e)}"
+    
+    def _cleanup_daemon(self):
+        """Clean up daemon resources."""
+        try:
+            if hasattr(self, 'daemon_socket'):
+                self.daemon_socket.close()
+            if hasattr(self, 'socket_path') and os.path.exists(self.socket_path):
+                os.unlink(self.socket_path)
+        except Exception as e:
+            print(f"Error cleaning up daemon: {e}")
+    
     def _update_position(self):
         """Update position tracking while playing."""
         while self.is_playing and not self.should_quit:
@@ -706,6 +838,55 @@ def play_audio(filepath):
         print(f"Error: {e}")
         return False
 
+
+def send_daemon_command(command):
+    """
+    Send a command to a running daemon instance.
+    
+    Args:
+        command (str): Command to send to daemon
+        
+    Returns:
+        bool: True if command was sent successfully, False otherwise
+    """
+    # Find the most recent socket file
+    temp_dir = tempfile.gettempdir()
+    socket_files = []
+    
+    for filename in os.listdir(temp_dir):
+        if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+            socket_path = os.path.join(temp_dir, filename)
+            if os.path.exists(socket_path):
+                socket_files.append((socket_path, os.path.getmtime(socket_path)))
+    
+    if not socket_files:
+        print("Error: No running daemon instance found")
+        return False
+    
+    # Use the most recently created socket
+    socket_path = max(socket_files, key=lambda x: x[1])[0]
+    
+    try:
+        # Connect to daemon socket
+        client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        client_socket.connect(socket_path)
+        
+        # Send command
+        client_socket.send(command.encode('utf-8'))
+        
+        # Receive response
+        response = client_socket.recv(1024).decode('utf-8')
+        print(response)
+        
+        client_socket.close()
+        
+        return response.startswith("OK:")
+        
+    except Exception as e:
+        print(f"Error sending command to daemon: {e}")
+        return False
+
+
 def main():
     """
     Main function to handle command line arguments and play audio.
@@ -775,8 +956,13 @@ def main():
     try:
         player = AudioPlayer()
         
-        # Handle different modes
-        if args.interactive:
+                # Handle different modes
+        if args.command:
+            # Send command to running daemon
+            success = send_daemon_command(args.command)
+            sys.exit(0 if success else 1)
+            
+        elif args.interactive:
             if args.filepath:
                 if not player.load_file(args.filepath):
                     sys.exit(1)
@@ -784,24 +970,21 @@ def main():
             if args.loop:
                 player.set_loop_mode(args.loop)
             player.run_interactive()
+            
         elif args.daemon:
-            # Daemon mode - load file and wait for external commands
+            # Daemon mode - load file and start daemon server
             if args.filepath:
                 if not player.load_file(args.filepath):
                     sys.exit(1)
                 # Set loop mode if specified
                 if args.loop:
                     player.set_loop_mode(args.loop)
+                # Auto-start playback in daemon mode
                 player.play()
             
-            # Wait for playback or user interruption
-            try:
-                while not player.should_quit:
-                    time.sleep(0.1)
-            except KeyboardInterrupt:
-                pass
-            finally:
-                player.stop()
+            # Run daemon server
+            player.run_daemon()
+            
         else:
             # Simple playback mode (backward compatibility)
             if not args.filepath:
