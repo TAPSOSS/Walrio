@@ -14,7 +14,17 @@ import os
 import subprocess
 import threading
 import time
+import sys
+import os
+import subprocess
+import threading
+import time
 from pathlib import Path
+
+# Add the parent directory to the Python path so we can import modules
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
+from modules.core.queue import QueueManager, RepeatMode  # Import queue system
 
 try:
     from PySide6.QtWidgets import (
@@ -41,17 +51,15 @@ class PlayerWorker(QThread):
     playback_finished = Signal()
     error = Signal(str)  # Added missing error signal
     
-    def __init__(self, filepath, loop_mode="none"):
+    def __init__(self, filepath):
         """
         Initialize the PlayerWorker thread.
         
         Args:
             filepath (str): Path to the audio file to play.
-            loop_mode (str): Loop mode - "none" for no looping or "infinite" for infinite looping.
         """
         super().__init__()
         self.filepath = filepath
-        self.loop_mode = loop_mode
         self.should_stop = False
         self.start_time = None
         self.process = None
@@ -68,10 +76,8 @@ class PlayerWorker(QThread):
             # Record start time for position tracking
             self.start_time = time.time()
             
-            # Build command with loop option if enabled
+            # Build command - no loop option needed (handled by queue)
             cmd = ["python", "walrio.py", "player", "--daemon"]
-            if self.loop_mode == "infinite":
-                cmd.extend(["--loop", "infinite"])
             cmd.append(self.filepath)
             
             # Run walrio player in daemon mode for external control
@@ -88,15 +94,8 @@ class PlayerWorker(QThread):
                 if self.start_time and not self.pause_start:
                     # Calculate current position based on elapsed time
                     elapsed = time.time() - self.start_time - self.paused_duration
-                    # Ensure position is never negative and handle potential overflow
-                    safe_position = max(0, min(elapsed, 86400))  # Cap at 24 hours to prevent overflow
-                    
-                    # For looping tracks, detect when position goes backwards (loop restart)
-                    if self.loop_mode == "infinite" and safe_position < self.last_known_position - 1:
-                        # Loop detected - reset our timing to sync with the player
-                        self.start_time = time.time()
-                        self.paused_duration = 0
-                        safe_position = 0
+                    # Ensure position is never negative 
+                    safe_position = max(0, elapsed)
                     
                     self.last_known_position = safe_position
                     self.position_updated.emit(safe_position)
@@ -228,7 +227,8 @@ class WalrioMusicPlayer(QMainWindow):
         self.position = 0
         self.duration = 0
         self.is_seeking = False
-        self.loop_mode = "none"  # Can be "none" or "infinite"
+        self.loop_mode = "off"  # Can be "off" or "track"
+        self.queue_manager = None  # Queue manager for loop handling
         
         self.setup_ui()
         self.setup_timer()
@@ -398,10 +398,10 @@ class WalrioMusicPlayer(QMainWindow):
                 self.start_playback()
     
     def toggle_loop(self):
-        """Toggle loop mode between 'none' and 'infinite'."""
-        if self.loop_mode == "none":
-            self.loop_mode = "infinite"
-            self.btn_loop.setText("🔁 Loop: Infinite")
+        """Toggle loop mode between 'off' and 'track' (queue-based approach)."""
+        if self.loop_mode == "off":
+            self.loop_mode = "track"  # Use queue-based track repeat
+            self.btn_loop.setText("🔁 Loop: Track")
             self.btn_loop.setStyleSheet("""
                 QPushButton {
                     font-size: 14px;
@@ -412,8 +412,8 @@ class WalrioMusicPlayer(QMainWindow):
                 }
             """)
         else:
-            self.loop_mode = "none"
-            self.btn_loop.setText("🔁 Loop: None")
+            self.loop_mode = "off"
+            self.btn_loop.setText("🔁 Loop: Off")
             self.btn_loop.setStyleSheet("""
                 QPushButton {
                     font-size: 14px;
@@ -422,12 +422,14 @@ class WalrioMusicPlayer(QMainWindow):
                 }
             """)
         
-        # If currently playing, restart with new loop setting
-        if self.is_playing and self.player_worker:
-            current_position = self.position
-            self.stop_playback()
-            # Small delay to ensure clean restart
-            QTimer.singleShot(100, lambda: self.restart_with_loop(current_position))
+        print(f"Loop mode changed to: {self.loop_mode}")
+        
+        # Update queue manager if one exists
+        if hasattr(self, 'queue_manager') and self.queue_manager:
+            self.queue_manager.set_repeat_mode(self.loop_mode)
+        
+        # If currently playing, the loop mode will take effect on the next track end
+        # No need to restart playback immediately
     
     def restart_with_loop(self, position):
         """
@@ -440,16 +442,27 @@ class WalrioMusicPlayer(QMainWindow):
             self.start_playback()
     
     def start_playback(self):
-        """Start audio playback."""
+        """Start audio playback with queue-based loop support."""
         if not self.current_file:
             return
+        
+        # Create queue manager for current file
+        song = {
+            'url': self.current_file,
+            'title': Path(self.current_file).stem,
+            'artist': 'Unknown Artist',
+            'album': 'Unknown Album'
+        }
+        
+        self.queue_manager = QueueManager([song])
+        self.queue_manager.set_repeat_mode(self.loop_mode)
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
         self.btn_stop.setEnabled(True)
         
-        # Start player worker with loop setting
-        self.player_worker = PlayerWorker(self.current_file, loop_mode=self.loop_mode)
+        # Start player worker (no longer needs loop_mode since queue handles it)
+        self.player_worker = PlayerWorker(self.current_file)
         self.player_worker.finished.connect(self.on_playback_finished)
         self.player_worker.error.connect(self.on_playback_error)
         self.player_worker.position_updated.connect(self.on_position_updated)
@@ -550,21 +563,14 @@ class WalrioMusicPlayer(QMainWindow):
         if not self.is_seeking:
             self.position = position
             
-            # Handle position display for looping - don't reset position artificially
-            if self.loop_mode == "infinite" and self.duration > 0 and position >= self.duration:
-                # For infinite loop, let the player handle the looping internally
-                # Just update the display normally, the player will restart automatically
-                display_position = position % self.duration if self.duration > 0 else position
-                self.progress_slider.setValue(int(display_position))
-                self.time_current.setText(self.format_time(display_position))
-            else:
-                # Normal position update
-                self.progress_slider.setValue(int(position))
-                self.time_current.setText(self.format_time(position))
+            # Normal position update (no special loop handling needed)
+            self.progress_slider.setValue(int(position))
+            self.time_current.setText(self.format_time(position))
             
-            # Only auto-stop when reaching end if loop mode is 'none'
-            if self.loop_mode == "none" and self.duration > 0 and position >= self.duration:
-                self.stop_playback()
+            # Check if we've reached the end (queue will handle looping decisions)
+            if self.duration > 0 and position >= self.duration:
+                # Let the PlayerWorker handle the finished signal
+                pass
     
     def update_ui(self):
         """Update UI elements (called by timer)."""
@@ -587,9 +593,22 @@ class WalrioMusicPlayer(QMainWindow):
         return f"{minutes:02d}:{seconds:02d}"
     
     def on_playback_finished(self):
-        """Handle when playback finishes naturally (only when loop mode is 'none')."""
-        if self.loop_mode == "none":
-            self.stop_playback()
+        """Handle when playback finishes - use queue system for loop decisions."""
+        if self.queue_manager:
+            # Use queue's next_track logic for repeat handling
+            if self.queue_manager.next_track():
+                # Queue wants to continue (either repeat track or move to next)
+                current_song = self.queue_manager.current_song()
+                if current_song:
+                    print(f"Queue decision: Continue playback - {self.queue_manager.repeat_mode.value}")
+                    # Restart playback with the current song
+                    self.start_playback()
+                    return
+            else:
+                print("Queue decision: End playback")
+        
+        # No queue or queue says stop - end playback
+        self.stop_playback()
     
     def on_playback_error(self, error):
         """
