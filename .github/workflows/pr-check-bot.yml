@@ -335,7 +335,6 @@ jobs:
           docs/**
           modules/**
           GUI/**
-          .github/workflows/docs.yml
 
     - name: 4️⃣ Documentation Build Check
       id: docs-check
