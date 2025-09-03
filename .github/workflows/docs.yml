@@ -6,17 +6,20 @@ on:
     paths:
       - 'docs/**'
       - 'modules/**'
+      - 'GUI/**'
       - '.github/workflows/docs.yml'
   pull_request:
     branches: [ main, master ]
     paths:
       - 'docs/**'
       - 'modules/**'
+      - 'GUI/**'
   pull_request_target:
     branches: [ main, master ]
     paths:
       - 'docs/**'
       - 'modules/**'
+      - 'GUI/**'
   workflow_dispatch:
 
 permissions:
@@ -58,6 +61,11 @@ jobs:
       run: |
         cd docs
         python generate_api_docs.py
+
+    - name: Generate GUI documentation
+      run: |
+        cd docs
+        python generate_gui_docs.py
 
     - name: Build documentation
       run: |
