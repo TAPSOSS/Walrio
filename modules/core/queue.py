@@ -44,6 +44,13 @@ class QueueManager:
     """
     
     def __init__(self, songs=None):
+        """
+        Initialize the QueueManager.
+        
+        Args:
+            songs (list, optional): List of song dictionaries or database records. 
+                                  Defaults to None (empty list).
+        """
         self.songs = songs or []
         self.current_index = 0
         self.repeat_mode = RepeatMode.OFF
@@ -62,20 +69,36 @@ class QueueManager:
             random.shuffle(self.play_order)
     
     def set_repeat_mode(self, mode):
-        """Set the repeat mode (can be changed dynamically)"""
+        """
+        Set the repeat mode (can be changed dynamically).
+        
+        Args:
+            mode (str or RepeatMode): The repeat mode to set. Can be a string 
+                                    ("off", "track", "queue") or RepeatMode enum value.
+        """
         if isinstance(mode, str):
             mode = RepeatMode(mode.lower())
         self.repeat_mode = mode
         print(f"Repeat mode set to: {mode.value}")
     
     def set_shuffle_mode(self, enabled):
-        """Set shuffle mode"""
+        """
+        Set shuffle mode.
+        
+        Args:
+            enabled (bool): True to enable shuffle mode, False to disable it.
+        """
         self.shuffle_mode = enabled
         self._update_play_order()
         print(f"Shuffle mode: {'ON' if enabled else 'OFF'}")
     
     def current_song(self):
-        """Get the current song"""
+        """
+        Get the current song.
+        
+        Returns:
+            dict or None: The current song dictionary, or None if no song is available.
+        """
         if not self.songs or self.current_index >= len(self.songs):
             return None
         
@@ -89,7 +112,9 @@ class QueueManager:
     def next_track(self):
         """
         Move to next track based on repeat mode.
-        Returns True if there's a next track, False if queue ended.
+        
+        Returns:
+            bool: True if there's a next track, False if queue ended.
         """
         if not self.songs:
             return False
@@ -107,7 +132,12 @@ class QueueManager:
             return self.current_index < len(self.songs)
     
     def previous_track(self):
-        """Move to previous track"""
+        """
+        Move to previous track.
+        
+        Returns:
+            bool: True if successfully moved to previous track, False otherwise.
+        """
         if not self.songs:
             return False
         
@@ -120,7 +150,15 @@ class QueueManager:
             return True
     
     def set_current_index(self, index):
-        """Set the current track index"""
+        """
+        Set the current track index.
+        
+        Args:
+            index (int): The index to set as the current track.
+            
+        Returns:
+            bool: True if the index was valid and set successfully, False otherwise.
+        """
         if 0 <= index < len(self.songs):
             self.current_index = index
             return True
