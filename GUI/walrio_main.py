@@ -35,23 +35,23 @@ except ImportError:
 
 
 class PlayerWorker(QThread):
-    """Worker thread to handle audio playback through Walrio CLI."""
+    """Worker thread for running audio playback."""
     
-    finished = Signal()
-    error = Signal(str)
-    position_updated = Signal(float)  # Signal to report current position
+    position_updated = Signal(float)
+    playback_finished = Signal()
+    error = Signal(str)  # Added missing error signal
     
     def __init__(self, filepath):
         super().__init__()
         self.filepath = filepath
-        self.process = None
         self.should_stop = False
         self.start_time = None
+        self.process = None
         self.paused_duration = 0
         self.pause_start = None
     
     def run(self):
-        """Run the audio player."""
+        """Run the audio player in daemon mode."""
         try:
             # Change to modules directory for walrio.py execution
             modules_dir = Path(__file__).parent.parent / "modules"
@@ -59,9 +59,9 @@ class PlayerWorker(QThread):
             # Record start time for position tracking
             self.start_time = time.time()
             
-            # Run walrio player
+            # Run walrio player in daemon mode for external control
             self.process = subprocess.Popen(
-                ["python", "walrio.py", "player", self.filepath],
+                ["python", "walrio.py", "player", "--daemon", self.filepath],
                 cwd=str(modules_dir),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -80,44 +80,72 @@ class PlayerWorker(QThread):
             self.process.wait()
             
             if not self.should_stop:
-                self.finished.emit()
+                self.playback_finished.emit()
                 
         except Exception as e:
-            self.error.emit(f"Playback error: {str(e)}")
+            error_msg = f"Error in player worker: {e}"
+            print(error_msg)
+            self.error.emit(error_msg)
     
     def pause(self):
-        """Pause playback tracking."""
-        if not self.pause_start:
-            self.pause_start = time.time()
+        """Pause the playback using daemon command."""
+        if self.process and self.process.poll() is None:
+            try:
+                modules_dir = Path(__file__).parent.parent / "modules"
+                subprocess.run(
+                    ["python", "walrio.py", "player", "--command", "pause"],
+                    cwd=str(modules_dir),
+                    timeout=2
+                )
+                self.pause_start = time.time()
+            except Exception as e:
+                print(f"Error pausing: {e}")
     
     def resume(self):
-        """Resume playback tracking."""
-        if self.pause_start:
-            self.paused_duration += time.time() - self.pause_start
-            self.pause_start = None
+        """Resume the playback using daemon command."""
+        if self.process and self.process.poll() is None:
+            try:
+                modules_dir = Path(__file__).parent.parent / "modules"
+                subprocess.run(
+                    ["python", "walrio.py", "player", "--command", "resume"],
+                    cwd=str(modules_dir),
+                    timeout=2
+                )
+                if self.pause_start:
+                    self.paused_duration += time.time() - self.pause_start
+                    self.pause_start = None
+            except Exception as e:
+                print(f"Error resuming: {e}")
     
     def stop(self):
-        """Stop the playback."""
+        """Stop the playback using daemon command."""
         self.should_stop = True
         if self.process and self.process.poll() is None:
             try:
-                # First try to terminate gracefully
-                self.process.terminate()
-                # Wait up to 2 seconds for graceful termination
-                self.process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                # If it doesn't terminate gracefully, force kill it
-                self.process.kill()
-                self.process.wait()
-            except Exception as e:
-                # If anything else goes wrong, force kill
+                modules_dir = Path(__file__).parent.parent / "modules"
+                # Send stop command to daemon
+                subprocess.run(
+                    ["python", "walrio.py", "player", "--command", "stop"],
+                    cwd=str(modules_dir),
+                    timeout=2
+                )
+                # Wait a moment for graceful shutdown
                 try:
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    self.process.terminate()
+                    self.process.wait()
+            except Exception as e:
+                print(f"Error stopping via command: {e}")
+                # Fallback to process termination if command fails
+                try:
+                    self.process.terminate()
+                    self.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait()
-                except:
-                    pass  # Process might already be dead
-
-
+                except Exception:
+                    pass
 class SimpleMusicPlayer(QMainWindow):
     """Simple music player with basic controls."""
     
@@ -173,6 +201,7 @@ class SimpleMusicPlayer(QMainWindow):
         
         self.btn_open = QPushButton("Open File")
         self.btn_play_pause = QPushButton("▶ Play")
+        self.btn_pause = QPushButton("⏸ Pause")
         self.btn_stop = QPushButton("⏹ Stop")
         
         # Style buttons
@@ -185,16 +214,19 @@ class SimpleMusicPlayer(QMainWindow):
         """
         self.btn_open.setStyleSheet(button_style)
         self.btn_play_pause.setStyleSheet(button_style)
+        self.btn_pause.setStyleSheet(button_style)
         self.btn_stop.setStyleSheet(button_style)
         
         # Connect buttons
         self.btn_open.clicked.connect(self.open_file)
         self.btn_play_pause.clicked.connect(self.toggle_play_pause)
+        self.btn_pause.clicked.connect(self.pause_playback)
         self.btn_stop.clicked.connect(self.stop_playback)
         
         controls_layout.addStretch()
         controls_layout.addWidget(self.btn_open)
         controls_layout.addWidget(self.btn_play_pause)
+        controls_layout.addWidget(self.btn_pause)
         controls_layout.addWidget(self.btn_stop)
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
@@ -216,8 +248,9 @@ class SimpleMusicPlayer(QMainWindow):
         volume_layout.addStretch()
         layout.addLayout(volume_layout)
         
-        # Initially disable play/stop buttons
+        # Initially disable play/pause/stop buttons
         self.btn_play_pause.setEnabled(False)
+        self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
     
     def setup_timer(self):
@@ -273,22 +306,25 @@ class SimpleMusicPlayer(QMainWindow):
             
             # Enable controls
             self.btn_play_pause.setEnabled(True)
+            self.btn_pause.setEnabled(False)  # Only enable when playing
             self.btn_stop.setEnabled(True)
             
             duration_text = f"{self.format_time(self.duration)}" if self.duration > 0 else "unknown duration"
             self.show_message("File Loaded", f"Ready to play: {filename}\nDuration: {duration_text}")
     
     def toggle_play_pause(self):
-        """Toggle between play and pause."""
+        """Toggle between play, pause, and resume."""
         if not self.current_file:
             return
         
         if self.is_playing:
             self.pause_playback()
         else:
-            if self.position > 0:
+            # Check if we have a paused player worker to resume
+            if self.player_worker and not self.is_playing:
                 self.resume_playback()
             else:
+                # Start fresh playback
                 self.start_playback()
     
     def start_playback(self):
@@ -298,6 +334,8 @@ class SimpleMusicPlayer(QMainWindow):
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
+        self.btn_pause.setEnabled(True)
+        self.btn_stop.setEnabled(True)
         
         # Start player worker
         self.player_worker = PlayerWorker(self.current_file)
@@ -307,23 +345,30 @@ class SimpleMusicPlayer(QMainWindow):
         self.player_worker.start()
     
     def pause_playback(self):
-        """Pause audio playback."""
+        """Pause audio playback using CLI command."""
+        if not self.is_playing or not self.player_worker:
+            return
+            
         self.is_playing = False
-        self.btn_play_pause.setText("▶ Play")
+        self.btn_play_pause.setText("▶ Resume")
+        self.btn_pause.setEnabled(False)
         
+        # Send pause command to the player
         if self.player_worker:
             self.player_worker.pause()
-            self.player_worker.stop()
-            self.player_worker.wait()
-            self.player_worker = None
     
     def resume_playback(self):
-        """Resume audio playback."""
-        if not self.current_file or self.is_playing:
+        """Resume audio playback using CLI command."""
+        if self.is_playing or not self.player_worker:
             return
         
-        # For now, restart from current position (seeking not implemented yet)
-        self.start_playback()
+        self.is_playing = True
+        self.btn_play_pause.setText("⏸ Pause")
+        self.btn_pause.setEnabled(True)
+        
+        # Send resume command to the player
+        if self.player_worker:
+            self.player_worker.resume()
     
     def stop_playback(self):
         """Stop audio playback."""
@@ -347,8 +392,9 @@ class SimpleMusicPlayer(QMainWindow):
         self.progress_slider.setValue(0)
         self.time_current.setText("00:00")
         
-        # Re-enable play button and disable stop button
+        # Re-enable play button and disable pause/stop buttons
         self.btn_play_pause.setEnabled(True)
+        self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
     
     def on_volume_change(self, value):
