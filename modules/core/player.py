@@ -223,28 +223,6 @@ class AudioPlayer:
                 ]
                 
                 self.process = subprocess.Popen(
-                    gst_cmd,
-                    stdin=ffmpeg_proc.stdout,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Close ffmpeg stdout in parent to allow proper cleanup
-                ffmpeg_proc.stdout.close()
-                
-            else:
-                # Normal playback from beginning
-                cmd = [
-                    'gst-launch-1.0',
-                    'filesrc', f'location={shlex.quote(self.current_file)}',
-                    '!', 'decodebin',
-                    '!', 'audioconvert',
-                    '!', 'audioresample',
-                    '!', f'volume', f'volume={self.volume}',
-                    '!', 'autoaudiosink'
-                ]
-                
-                self.process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
