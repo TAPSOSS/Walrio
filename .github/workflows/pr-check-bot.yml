@@ -68,6 +68,9 @@ jobs:
         script: |
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
+          const runId = '${{ github.run_id }}';
+          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
           const message = `## 🤖 PR Check Bot Started
 
@@ -79,7 +82,9 @@ jobs:
           - ⚠️ **Style Check**: Analyzing Python code style and headers
           - ⚠️ **Documentation**: Building docs if relevant files changed
           
-          *Running all checks... This message will be updated with results.*`;
+          *Running all checks... This message will be updated with results.*
+          
+          🔗 **[Watch all checks run live](${actionUrl})** - Click to see real-time progress and expand individual check steps`;
           
           const { data: comment } = await github.rest.issues.createComment({
             owner: context.repo.owner,
