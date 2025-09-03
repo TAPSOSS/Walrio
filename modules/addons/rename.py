@@ -250,6 +250,15 @@ class AudioRenamer:
                             metadata[field_name] = tags[tag_key]
                             break
                 
+                # Special handling for year field: extract just the year unless full-date is requested
+                if 'year' in metadata and not self.options.get('full_date', False):
+                    date_value = metadata['year']
+                    # Extract just the year from date strings like "1987", "1987-06-15", "June 15, 1987", etc.
+                    import re
+                    year_match = re.search(r'\b(19|20)\d{2}\b', str(date_value))
+                    if year_match:
+                        metadata['year'] = year_match.group(0)
+                
                 # Also store all raw tags for custom metadata access
                 for key, value in tags.items():
                     # Store with original key name for custom format strings
@@ -594,7 +603,7 @@ Available pre-defined metadata fields:
   {artist}      - Track artist (searches: artist, Artist, TPE1, etc.)
   {albumartist} - Album artist (searches: albumartist, AlbumArtist, TPE2, etc.)
   {track}       - Track number (searches: track, Track, tracknumber, etc.)
-  {year}        - Release year (searches: year, Year, date, Date, etc.)
+  {year}        - Release year (extracts year from date fields, use --full-date for complete date)
   {genre}       - Music genre (searches: genre, Genre, GENRE, etc.)
   {disc}        - Disc number (searches: disc, Disc, discnumber, etc.)
   {composer}    - Composer (searches: composer, Composer, TCOM, etc.)
@@ -728,6 +737,11 @@ Format string tips:
         "--skip-no-metadata",
         action="store_true",
         help="Skip files that have no metadata for the specified format fields"
+    )
+    parser.add_argument(
+        "--full-date",
+        action="store_true",
+        help="Use full date from metadata instead of just the year for {year} field"
     )
     
     # Utility options
@@ -865,6 +879,7 @@ def main():
         'dont_sanitize': not sanitize_enabled,
         'auto_sanitize': args.auto_sanitize,
         'force_allow_special': args.force_allow_special,
+        'full_date': args.full_date,
     }
     
     # Add custom sanitization character set if provided
