@@ -150,9 +150,12 @@ class AudioPlayer:
             print(f"Duration: {self.duration:.1f} seconds")
         return True
     
-    def play(self):
+    def play(self, seek_position=None):
         """
         Start or resume playback.
+        
+        Args:
+            seek_position (float, optional): Position in seconds to start playback from
         
         Returns:
             bool: True if playback started successfully, False otherwise.
@@ -161,40 +164,103 @@ class AudioPlayer:
             print("Error: No file loaded")
             return False
         
-        # If we're paused, just resume
-        if self.is_paused:
-            return self.resume()
-        
         # Stop any existing playback
         if self.process:
             self.stop()
         
-        # Reset repeat count for new playback session
-        self.repeat_count = 0
+        # Reset repeat count for new playback session (unless resuming)
+        if seek_position is None:
+            self.repeat_count = 0
         
         try:
             # Build GStreamer pipeline command
-            cmd = [
-                'gst-launch-1.0',
-                'filesrc', f'location={shlex.quote(self.current_file)}',
-                '!', 'decodebin',
-                '!', 'audioconvert',
-                '!', 'audioresample',
-                '!', 'volume', f'volume={self.volume}',
-                '!', 'autoaudiosink'
-            ]
+            if seek_position and seek_position > 0:
+                # Use ffmpeg to seek and pipe to GStreamer for more accurate seeking
+                cmd = [
+                    'ffmpeg', '-ss', str(seek_position), 
+                    '-i', self.current_file,
+                    '-f', 'wav', '-'
+                ]
+                
+                # Start ffmpeg process
+                ffmpeg_proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Pipe to GStreamer
+                gst_cmd = [
+                    'gst-launch-1.0',
+                    'fdsrc', 'fd=0',
+                    '!', 'wavparse',
+                    '!', 'audioconvert',
+                    '!', 'audioresample',
+                    '!', f'volume', f'volume={self.volume}',
+                    '!', 'autoaudiosink'
+                ]
+                
+                self.process = subprocess.Popen(
+                    gst_cmd,
+                    stdin=ffmpeg_proc.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Close ffmpeg stdout in parent to allow proper cleanup
+                ffmpeg_proc.stdout.close()
+                
+            else:
+                # Normal playback from beginning
+                cmd = [
+                    'gst-launch-1.0',
+                    'filesrc', f'location={shlex.quote(self.current_file)}',
+                    '!', 'decodebin',
+                    '!', 'audioconvert',
+                    '!', 'audioresample',
+                    '!', f'volume', f'volume={self.volume}',
+                    '!', 'autoaudiosink'
+                ]
+                
+                self.process = subprocess.Popen(
+                    gst_cmd,
+                    stdin=ffmpeg_proc.stdout,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                
+                # Close ffmpeg stdout in parent to allow proper cleanup
+                ffmpeg_proc.stdout.close()
+                
+            else:
+                # Normal playback from beginning
+                cmd = [
+                    'gst-launch-1.0',
+                    'filesrc', f'location={shlex.quote(self.current_file)}',
+                    '!', 'decodebin',
+                    '!', 'audioconvert',
+                    '!', 'audioresample',
+                    '!', f'volume', f'volume={self.volume}',
+                    '!', 'autoaudiosink'
+                ]
+                
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
             
-            # Start process
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE
-            )
-            
+            # Set player state
             self.is_playing = True
             self.is_paused = False
-            print("Playback started")
+            
+            # Set start time (adjust for seek position if resuming)
+            if seek_position and seek_position > 0:
+                self.start_time = time.time() - seek_position
+                print(f"Playback resumed from {seek_position:.1f}s")
+            else:
+                self.start_time = time.time()
+                print("Playback started")
             
             # Start position tracking
             self._start_position_tracking()
@@ -211,7 +277,7 @@ class AudioPlayer:
     
     def pause(self):
         """
-        Pause playback.
+        Pause playback using GStreamer's pipeline state control.
         
         Returns:
             bool: True if paused successfully, False otherwise.
@@ -221,41 +287,62 @@ class AudioPlayer:
             return False
         
         try:
-            # Send SIGSTOP to pause the process
-            self.process.send_signal(signal.SIGSTOP)
-            # Store pause time to maintain position accuracy
+            # Store current position before pausing
             self.pause_time = time.time()
+            
+            # For GStreamer, we need to restart with seek to current position
+            # This is more reliable than SIGSTOP/SIGCONT for audio
+            if self.start_time:
+                # Calculate current position
+                self.pause_position = time.time() - self.start_time
+            else:
+                self.pause_position = 0
+            
+            # Stop current process
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+            
+            self.process = None
             self.is_paused = True
             self.is_playing = False
             print("Playback paused")
             return True
+            
         except Exception as e:
             print(f"Error pausing playback: {e}")
             return False
     
     def resume(self):
         """
-        Resume paused playback.
+        Resume paused playback by restarting from pause position.
         
         Returns:
             bool: True if resumed successfully, False otherwise.
         """
-        if not self.is_paused or not self.process:
+        if not self.is_paused:
             print("Player is not currently paused")
             return False
         
         try:
-            # Send SIGCONT to resume the process
-            self.process.send_signal(signal.SIGCONT)
-            # Adjust start time to account for pause duration
-            if self.pause_time and self.start_time:
-                pause_duration = time.time() - self.pause_time
-                self.start_time += pause_duration
-            self.pause_time = None
-            self.is_paused = False
-            self.is_playing = True
-            print("Playback resumed")
-            return True
+            # Restart playback from the paused position
+            if hasattr(self, 'pause_position') and self.pause_position > 0:
+                success = self.play(seek_position=self.pause_position)
+            else:
+                success = self.play()
+            
+            if success:
+                self.is_paused = False
+                self.is_playing = True
+                print(f"Playback resumed from {getattr(self, 'pause_position', 0):.1f}s")
+                return True
+            else:
+                print("Failed to resume playback")
+                return False
+                
         except Exception as e:
             print(f"Error resuming playback: {e}")
             return False
