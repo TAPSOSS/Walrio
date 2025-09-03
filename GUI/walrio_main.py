@@ -402,8 +402,15 @@ class SimpleMusicPlayer(QMainWindow):
     
     def stop_playback(self):
         """Stop audio playback."""
+        # Set state first
         self.is_playing = False
         self.btn_play_pause.setText("▶ Play")
+        
+        # Immediately disable the stop button to prevent multiple clicks
+        self.btn_stop.setEnabled(False)
+        
+        # Force GUI to update immediately
+        QApplication.processEvents()
         
         if self.player_worker:
             # Stop the worker thread
@@ -422,9 +429,8 @@ class SimpleMusicPlayer(QMainWindow):
         self.progress_slider.setValue(0)
         self.time_current.setText("00:00")
         
-        # Re-enable play button and disable stop button
+        # Re-enable play button (stop button already disabled above)
         self.btn_play_pause.setEnabled(True)
-        self.btn_stop.setEnabled(False)
     
     def on_volume_change(self, value):
         """Handle volume slider changes."""
