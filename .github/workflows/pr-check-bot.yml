@@ -84,7 +84,7 @@ jobs:
           
           *Running all checks... This message will be updated with results.*
           
-          🔗 **[Watch all checks run live](${actionUrl})** - Click to see real-time progress and expand individual check steps`;
+          🔗 **[Watch all checks run live](${actionUrl})** - View real-time progress, full error details, and complete logs`;
           
           const { data: comment } = await github.rest.issues.createComment({
             owner: context.repo.owner,
@@ -436,6 +436,9 @@ jobs:
           const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
+          const runId = '${{ github.run_id }}';
+          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
           // Collect results from all checks (using simple boolean/string outputs)
           const checks = [
@@ -529,6 +532,7 @@ jobs:
             message += `**Failed:** ${failedChecks.join(', ')}\n`;
             message += `**Passed:** ${passedChecks.join(', ')}\n\n`;
             message += 'Please address the issues above and run `bot, check` again.\n\n';
+            message += `🔍 **Need more details?** [View the full action run](${actionUrl}) for complete error messages, logs, and debugging information.\n\n`;
           }
           
           message += '*To re-run all checks, comment: `bot, check`*';
