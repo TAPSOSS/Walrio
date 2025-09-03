@@ -287,6 +287,7 @@ class MetadataEditor:
             'ARTIST': 'artist',
             'ALBUM': 'album',
             'ALBUMARTIST': 'albumartist',
+            'ALBUM ARTIST': 'albumartist',  # Alternative format with space
             'DATE': 'date',
             'YEAR': 'year',
             'GENRE': 'genre',
