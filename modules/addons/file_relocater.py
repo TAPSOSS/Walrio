@@ -22,6 +22,10 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core import metadata
+
 # Configure logging format
 logging.basicConfig(
     level=logging.INFO,
@@ -152,7 +156,7 @@ class FileRelocater:
     
     def get_file_metadata(self, filepath: str) -> Dict[str, str]:
         """
-        Extract metadata from an audio file using FFprobe.
+        Extract metadata from an audio file using the metadata module.
         
         Args:
             filepath (str): Path to the audio file
@@ -161,43 +165,47 @@ class FileRelocater:
             dict: Dictionary containing all available metadata
         """
         try:
-            cmd = [
-                'ffprobe', 
-                '-v', 'quiet', 
-                '-print_format', 'json', 
-                '-show_format', 
-                filepath
-            ]
+            # Use the metadata module to extract metadata
+            editor = metadata.MetadataEditor()
+            file_metadata = editor.get_metadata(filepath)
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            if not file_metadata:
+                logger.warning(f"No metadata found for {os.path.basename(filepath)}")
+                return {}
             
-            file_info = json.loads(result.stdout)
+            # Convert to the format expected by the file relocater
+            # The metadata module returns more structured data, so we need to map it
+            standardized_metadata = {}
             
-            # Extract metadata tags
-            metadata = {}
-            if 'format' in file_info and 'tags' in file_info['format']:
-                tags = file_info['format']['tags']
-                
-                # For each pre-defined metadata field, try to find it in the tags
-                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
-                    for tag_key in tag_variants:
-                        if tag_key in tags:
-                            metadata[field_name] = tags[tag_key]
-                            break
-                
-                # Also store all raw tags for custom metadata access
-                for key, value in tags.items():
-                    # Store with original key name for custom format strings
-                    metadata[key] = value
+            # Map the metadata fields to our expected format
+            field_mappings = {
+                'title': 'title',
+                'artist': 'artist', 
+                'album': 'album',
+                'albumartist': 'albumartist',
+                'date': 'date',
+                'year': 'year',
+                'genre': 'genre',
+                'track': 'track',
+                'disc': 'disc',
+                'comment': 'comment',
+                'composer': 'composer',
+                'performer': 'performer',
+                'grouping': 'grouping'
+            }
             
-            return metadata
+            for our_field, metadata_field in field_mappings.items():
+                if metadata_field in file_metadata and file_metadata[metadata_field]:
+                    standardized_metadata[our_field] = str(file_metadata[metadata_field])
             
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            # Also add any additional metadata fields that might be useful for custom formats
+            for key, value in file_metadata.items():
+                if key not in field_mappings.values() and value:
+                    standardized_metadata[key] = str(value)
+            
+            return standardized_metadata
+            
+        except Exception as e:
             logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
             return {}
