@@ -336,8 +336,13 @@ class WalrioMusicPlayer(QMainWindow):
         self.progress_slider.setMinimum(0)
         self.progress_slider.setMaximum(100)
         self.progress_slider.setValue(0)
+        
+        # Enable click-to-position behavior
+        self.progress_slider.mousePressEvent = self.slider_mouse_press_event
+        
         self.progress_slider.sliderPressed.connect(self.on_seek_start)
         self.progress_slider.sliderReleased.connect(self.on_seek_end)
+        self.progress_slider.valueChanged.connect(self.on_slider_value_changed)
         self.time_total = QLabel("00:00")
         
         time_layout.addWidget(self.time_current)
@@ -636,9 +641,43 @@ class WalrioMusicPlayer(QMainWindow):
         if self.player_worker:
             self.player_worker.set_volume(volume)
     
+    def slider_mouse_press_event(self, event):
+        """Handle mouse press events on the slider to enable click-to-position."""
+        if event.button() == Qt.LeftButton:
+            # Calculate the position where the user clicked
+            slider_min = self.progress_slider.minimum()
+            slider_max = self.progress_slider.maximum()
+            slider_range = slider_max - slider_min
+            
+            # Get the click position relative to the slider
+            click_pos = event.position().x()
+            slider_width = self.progress_slider.width()
+            
+            # Calculate the value based on click position
+            if slider_width > 0:
+                ratio = click_pos / slider_width
+                new_value = slider_min + (ratio * slider_range)
+                new_value = max(slider_min, min(slider_max, int(new_value)))
+                
+                print(f"Click position: {click_pos}, slider width: {slider_width}, new value: {new_value}")
+                
+                # Set the slider to this position
+                self.progress_slider.setValue(new_value)
+        
+        # Call the original mouse press event to maintain normal slider behavior
+        QSlider.mousePressEvent(self.progress_slider, event)
+    
+    def on_slider_value_changed(self, value):
+        """Debug method to track slider value changes."""
+        if self.is_seeking:
+            print(f"Slider value changed to: {value} (during seeking)")
+        else:
+            print(f"Slider value changed to: {value} (not seeking)")
+    
     def on_seek_start(self):
         """Handle when user starts seeking."""
         self.is_seeking = True
+        print(f"Seek start - slider value: {self.progress_slider.value()}")
     
     def on_seek_end(self):
         """Handle when user finishes seeking."""
@@ -646,6 +685,7 @@ class WalrioMusicPlayer(QMainWindow):
         
         # Always use the slider position where user released it
         seek_position = self.progress_slider.value()
+        print(f"Seek end - slider value: {seek_position}")
         self.position = seek_position
         self.time_current.setText(self.format_time(seek_position))
         
