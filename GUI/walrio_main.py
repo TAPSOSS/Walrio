@@ -178,7 +178,12 @@ class PlayerWorker(QThread):
             return False, f"Socket error: {e}"
     
     def pause(self):
-        """Pause the playback using daemon socket command."""
+        """
+        Pause the playback using daemon socket command.
+        
+        Returns:
+            bool: True if pause command was successful, False otherwise.
+        """
         success, response = self._send_socket_command("pause")
         if success:
             self.pause_start = time.time()
@@ -188,7 +193,12 @@ class PlayerWorker(QThread):
         return success
     
     def resume(self):
-        """Resume the playback using daemon socket command."""
+        """
+        Resume the playback using daemon socket command.
+        
+        Returns:
+            bool: True if resume command was successful, False otherwise.
+        """
         success, response = self._send_socket_command("resume")
         if success:
             if self.pause_start:
@@ -274,10 +284,14 @@ class PlayerWorker(QThread):
             return False, f"Socket error: {e}"
     
     def seek(self, position):
-        """Seek to a specific position using daemon socket command.
+        """
+        Seek to a specific position using daemon socket command.
         
         Args:
             position (float): Position in seconds to seek to
+            
+        Returns:
+            bool: True if seek command was successful, False otherwise.
         """
         command = f"seek {position:.2f}"
         success, response = self._send_socket_command(command)
@@ -296,10 +310,14 @@ class PlayerWorker(QThread):
         return success
     
     def set_volume(self, volume):
-        """Set the playback volume using daemon socket command.
+        """
+        Set the playback volume using daemon socket command.
         
         Args:
             volume (float): Volume level between 0.0 and 1.0
+            
+        Returns:
+            bool: True if volume command was successful, False otherwise.
         """
         command = f"volume {volume:.2f}"
         success, response = self._send_socket_command(command)
@@ -667,7 +685,12 @@ class WalrioMusicPlayer(QMainWindow):
             self.player_worker.set_volume(volume)
     
     def slider_mouse_press_event(self, event):
-        """Handle mouse press events on the slider to enable click-to-position."""
+        """
+        Handle mouse press events on the slider to enable click-to-position.
+        
+        Args:
+            event: The mouse press event from Qt containing position and button information.
+        """
         if event.button() == Qt.LeftButton:
             # Calculate the position where the user clicked
             slider_min = self.progress_slider.minimum()
@@ -691,7 +714,12 @@ class WalrioMusicPlayer(QMainWindow):
         QSlider.mousePressEvent(self.progress_slider, event)
     
     def on_slider_value_changed(self, value):
-        """Debug method to track slider value changes."""
+        """
+        Debug method to track slider value changes.
+        
+        Args:
+            value (int): The new slider value from the progress slider.
+        """
         pass  # Remove debug output for production use
     
     def on_seek_start(self):
