@@ -22,6 +22,10 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core import metadata
+
 # Configure logging format
 logging.basicConfig(
     level=logging.INFO,
@@ -47,7 +51,7 @@ METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
     'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
     'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
-    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist'],
+    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist', 'ALBUM ARTIST'],
     'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
     'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
     'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
@@ -152,55 +156,98 @@ class FileRelocater:
     
     def get_file_metadata(self, filepath: str) -> Dict[str, str]:
         """
-        Extract metadata from an audio file using FFprobe.
+        Extract metadata from an audio file using the metadata module's specific functions.
         
         Args:
             filepath (str): Path to the audio file
             
         Returns:
-            dict: Dictionary containing all available metadata
+            dict: Dictionary containing all available metadata with "Unknown" for missing values
         """
         try:
-            cmd = [
-                'ffprobe', 
-                '-v', 'quiet', 
-                '-print_format', 'json', 
-                '-show_format', 
-                filepath
-            ]
+            # Use specific metadata functions for more efficient extraction
+            standardized_metadata = {}
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=True
-            )
+            # Extract each metadata field individually
+            standardized_metadata['title'] = metadata.get_title(filepath) or "Unknown"
+            standardized_metadata['artist'] = metadata.get_artist(filepath) or "Unknown"
+            standardized_metadata['album'] = metadata.get_album(filepath) or "Unknown"
+            standardized_metadata['albumartist'] = metadata.get_albumartist(filepath) or "Unknown"
             
-            file_info = json.loads(result.stdout)
+            # Handle date/year extraction with full_date option
+            date_value = metadata.get_year(filepath) or "Unknown"
+            standardized_metadata['date'] = date_value
             
-            # Extract metadata tags
-            metadata = {}
-            if 'format' in file_info and 'tags' in file_info['format']:
-                tags = file_info['format']['tags']
+            # For year field, extract just the year unless full_date is enabled
+            if date_value != "Unknown" and not self.options.get('full_date', False):
+                # Extract just the year using regex
+                import re
+                year_match = re.search(r'(19|20)\d{2}', str(date_value))
+                if year_match:
+                    standardized_metadata['year'] = year_match.group()
+                else:
+                    standardized_metadata['year'] = date_value
+            else:
+                standardized_metadata['year'] = date_value
                 
-                # For each pre-defined metadata field, try to find it in the tags
-                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
-                    for tag_key in tag_variants:
-                        if tag_key in tags:
-                            metadata[field_name] = tags[tag_key]
-                            break
+            standardized_metadata['genre'] = metadata.get_genre(filepath) or "Unknown"
+            standardized_metadata['track'] = metadata.get_track(filepath) or "Unknown"
+            standardized_metadata['disc'] = metadata.get_disc(filepath) or "Unknown"
+            standardized_metadata['comment'] = metadata.get_comment(filepath) or "Unknown"
+            standardized_metadata['composer'] = metadata.get_composer(filepath) or "Unknown"
+            standardized_metadata['performer'] = metadata.get_performer(filepath) or "Unknown"
+            standardized_metadata['grouping'] = metadata.get_grouping(filepath) or "Unknown"
+            
+            # Special handling for albumartist - use artist as backup if albumartist is missing
+            if (standardized_metadata.get('albumartist') == "Unknown" and 
+                standardized_metadata.get('artist') != "Unknown"):
                 
-                # Also store all raw tags for custom metadata access
-                for key, value in tags.items():
-                    # Store with original key name for custom format strings
-                    metadata[key] = value
+                # Check if we haven't asked about this artist before
+                artist_name = standardized_metadata['artist']
+                if not hasattr(self, '_artist_confirmations'):
+                    self._artist_confirmations = {}
+                
+                if artist_name not in self._artist_confirmations:
+                    # Ask user for confirmation
+                    response = input(f"\nAlbumArtist missing for '{os.path.basename(filepath)}'. "
+                                   f"Use Artist '{artist_name}' as AlbumArtist? (y/n/a=all): ").lower().strip()
+                    
+                    if response in ['y', 'yes']:
+                        self._artist_confirmations[artist_name] = True
+                    elif response in ['a', 'all']:
+                        self._artist_confirmations[artist_name] = True
+                        # Also set a flag to auto-approve all future missing albumartists
+                        self._auto_approve_all_artists = True
+                    else:
+                        self._artist_confirmations[artist_name] = False
+                
+                # Apply the decision
+                if (self._artist_confirmations.get(artist_name, False) or 
+                    getattr(self, '_auto_approve_all_artists', False)):
+                    standardized_metadata['albumartist'] = artist_name
+                    logger.info(f"Using Artist '{artist_name}' as AlbumArtist for {os.path.basename(filepath)}")
             
-            return metadata
+            return standardized_metadata
             
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+        except Exception as e:
             logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
-            return {}
+            # Return a dictionary with "Unknown" values for all standard fields
+            return {
+                'title': 'Unknown',
+                'artist': 'Unknown', 
+                'album': 'Unknown',
+                'albumartist': 'Unknown',
+                'date': 'Unknown',
+                'year': 'Unknown',
+                'genre': 'Unknown',
+                'track': 'Unknown',
+                'disc': 'Unknown',
+                'comment': 'Unknown',
+                'composer': 'Unknown',
+                'performer': 'Unknown',
+                'grouping': 'Unknown'
+            }
     
     def generate_folder_path(self, filepath: str) -> Optional[str]:
         """
@@ -584,6 +631,11 @@ Folder format tips:
         default="n",
         help="Process files with no metadata: y=yes (use filename as folder), n=no (skip files, default)"
     )
+    parser.add_argument(
+        "--full-date",
+        action="store_true",
+        help="Use full date from metadata instead of just the year for {year} field"
+    )
     
     # Utility options
     parser.add_argument(
@@ -778,6 +830,7 @@ def main():
         'folder_format': args.folder_format,
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
+        'full_date': args.full_date,
     }
     
     # Add custom sanitization character set if provided
