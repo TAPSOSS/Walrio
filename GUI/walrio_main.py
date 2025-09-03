@@ -718,8 +718,7 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_position_updated(self, position):
         """
-        Handle position updates from the player worker.
-        Uses Strawberry Music Player approach: ignore updates when user is interacting with slider.
+        Handle position updates from the player worker (ignore position while seeking).
         
         Args:
             position (float): Current playback position in seconds.
@@ -728,7 +727,6 @@ class WalrioMusicPlayer(QMainWindow):
         if not self.is_playing or not self.player_worker:
             return
             
-        # Strawberry approach: Don't update slider when user is holding it down
         if self.progress_slider.isSliderDown():
             # Store the real position for reference but don't update UI
             self.pending_position = position
