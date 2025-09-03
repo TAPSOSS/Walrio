@@ -189,15 +189,15 @@ class AudioPlayer:
                     stderr=subprocess.PIPE
                 )
                 
-                # Pipe to GStreamer
+                # Pipe to GStreamer with volume control support
                 gst_cmd = [
                     'gst-launch-1.0',
                     'fdsrc', 'fd=0',
                     '!', 'wavparse',
                     '!', 'audioconvert',
                     '!', 'audioresample',
-                    '!', f'volume', f'volume={self.volume}',
-                    '!', 'autoaudiosink'
+                    '!', 'volume', f'name=volume_element', f'volume={self.volume}',
+                    '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
                 ]
                 
                 self.process = subprocess.Popen(
@@ -211,19 +211,20 @@ class AudioPlayer:
                 ffmpeg_proc.stdout.close()
                 
             else:
-                # Normal playback from beginning
+                # Normal playback from beginning with volume control support
                 cmd = [
                     'gst-launch-1.0',
                     'filesrc', f'location={shlex.quote(self.current_file)}',
                     '!', 'decodebin',
                     '!', 'audioconvert',
                     '!', 'audioresample',
-                    '!', f'volume', f'volume={self.volume}',
-                    '!', 'autoaudiosink'
+                    '!', 'volume', f'name=volume_element', f'volume={self.volume}',
+                    '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
                 ]
                 
                 self.process = subprocess.Popen(
                     cmd,
+                    stdin=subprocess.PIPE,  # Enable stdin for commands
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
@@ -369,9 +370,27 @@ class AudioPlayer:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
         
+        old_volume = self.volume
         self.volume = volume
         print(f"Volume set to {volume:.2f}")
-        # Note: Volume will be applied when next playback starts
+        
+        # Apply volume to currently running process using GStreamer interactive mode
+        if self.process and self.process.poll() is None and self.is_playing:
+            try:
+                # Send volume command to gst-play if it supports stdin
+                if hasattr(self.process, 'stdin') and self.process.stdin:
+                    # Try sending volume command (works with gst-play-1.0 in interactive mode)
+                    volume_cmd = f"volume {volume}\n"
+                    self.process.stdin.write(volume_cmd.encode())
+                    self.process.stdin.flush()
+                    print(f"Sent volume command to GStreamer: {volume:.2f}")
+                else:
+                    print("No stdin available for volume control")
+                    
+            except Exception as e:
+                print(f"Could not apply volume to running process: {e}")
+                # Volume will be applied when next playback starts
+        
         return True
     
     def get_volume(self):
