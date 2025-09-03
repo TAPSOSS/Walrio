@@ -87,8 +87,8 @@ class AudioPlayer:
             # Wait for process to complete
             self.process.wait()
             
-            # Check if we should loop
-            if self.should_quit or not self.is_playing:
+            # Check if we should loop - must check paused state to avoid race condition
+            if self.should_quit or not self.is_playing or self.is_paused:
                 return
                 
             should_loop = False
@@ -265,6 +265,10 @@ class AudioPlayer:
             return False
         
         try:
+            # Set pause state immediately to prevent race condition with looping
+            self.is_paused = True
+            self.is_playing = False
+            
             # Store current position before pausing
             self.pause_time = time.time()
             
@@ -285,8 +289,6 @@ class AudioPlayer:
                 self.process.wait()
             
             self.process = None
-            self.is_paused = True
-            self.is_playing = False
             print("Playback paused")
             return True
             
@@ -315,7 +317,7 @@ class AudioPlayer:
             if success:
                 self.is_paused = False
                 self.is_playing = True
-                print(f"Playback resumed from {getattr(self, 'pause_position', 0):.1f}s")
+                # Note: play() method already prints the resume message, so no need to print again
                 return True
             else:
                 print("Failed to resume playback")
