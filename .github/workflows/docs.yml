@@ -14,12 +14,6 @@ on:
       - 'docs/**'
       - 'modules/**'
       - 'GUI/**'
-  pull_request_target:
-    branches: [ main, master ]
-    paths:
-      - 'docs/**'
-      - 'modules/**'
-      - 'GUI/**'
   workflow_dispatch:
 
 permissions:
