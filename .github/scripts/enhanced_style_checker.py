@@ -463,13 +463,27 @@ def main():
             # If relative path, resolve it relative to current working directory
             file_path = Path.cwd() / file_path
         
+        # Debug information
+        print(f"   Original filename: {filename}")
+        print(f"   Resolved path: {file_path}")
+        print(f"   Current working directory: {Path.cwd()}")
+        print(f"   File exists: {file_path.exists()}")
+        
+        # List directory contents to help debug
+        try:
+            parent_dir = file_path.parent
+            if parent_dir.exists():
+                print(f"   Parent directory contents: {list(parent_dir.iterdir())}")
+            else:
+                print(f"   Parent directory does not exist: {parent_dir}")
+        except Exception as debug_e:
+            print(f"   Debug error: {debug_e}")
+        
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
             print(f"❌ {filename}: Could not read file - {e}")
-            print(f"   Tried path: {file_path}")
-            print(f"   Current working directory: {Path.cwd()}")
             all_issues.append(StyleIssue("ERROR", "FILE", f"Could not read {filename}: {e}"))
             files_with_issues += 1
             continue
