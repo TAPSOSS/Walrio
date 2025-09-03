@@ -1,4 +1,4 @@
-name: Bot Check Command
+name: Actions Bot
 
 on:
   issue_comment:
@@ -28,13 +28,6 @@ jobs:
             content: 'rocket'
           });
 
-    - name: Checkout PR code
-      uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        ref: refs/pull/${{ github.event.issue.number }}/head
-        fetch-depth: 0
-
     - name: Get PR info
       id: pr-info
       uses: actions/github-script@v7
@@ -54,11 +47,7 @@ jobs:
           core.setOutput('pr_title', pr.title);
           core.setOutput('pr_author', pr.user.login);
           core.setOutput('head_sha', pr.head.sha);
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+          core.setOutput('head_ref', pr.head.ref);
 
     - name: Post start message
       uses: actions/github-script@v7
@@ -75,8 +64,9 @@ jobs:
           - ✅ **PR Requirements** - Title, description, checklist
           - ✅ **Style Check** - Python code style, docstrings, BSD headers  
           - ✅ **CONTRIBUTING.md** - Guidelines compliance
+          - ✅ **Documentation** - Build CLI, API, GUI docs and Sphinx
           
-          *Results will be posted when complete...*`;
+          *All workflows are running in parallel. Results will be posted when complete...*`;
           
           await github.rest.issues.createComment({
             owner: context.repo.owner,
@@ -85,207 +75,167 @@ jobs:
             body: message
           });
 
-    # PR Requirements Check (from pr-requirements-check.yml)
-    - name: PR Requirements Check
-      id: pr-requirements
+    # Trigger all workflows using repository_dispatch
+    - name: Trigger all check workflows
       uses: actions/github-script@v7
       with:
         script: |
-          const { data: pr } = await github.rest.pulls.get({
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const headSha = '${{ steps.pr-info.outputs.head_sha }}';
+          const headRef = '${{ steps.pr-info.outputs.head_ref }}';
+          
+          console.log(`Triggering bot-check workflows for PR #${prNumber}`);
+          console.log(`Head SHA: ${headSha}`);
+          console.log(`Head Ref: ${headRef}`);
+          
+          // Dispatch bot-check event to trigger all workflows
+          await github.rest.repos.createDispatchEvent({
             owner: context.repo.owner,
             repo: context.repo.repo,
-            pull_number: context.issue.number
-          });
-
-          const title = pr.title;
-          const body = pr.body || '';
-          
-          let errors = [];
-          let warnings = [];
-
-          // Check 1: PR Title Guidelines
-          const titlePatterns = [
-            /^Added .+: .+$/,
-            /^Bug Fix .+: .+$/,
-            /^Updated .+: .+$/,
-            /^Documentation: .+$/
-          ];
-          
-          const titleValid = titlePatterns.some(pattern => pattern.test(title));
-          if (!titleValid) {
-            console.log('❌ PR Title check failed');
-            errors.push('❌ **PR Title**: Title does not follow the required format');
-          } else {
-            console.log('✅ PR Title format is correct');
-          }
-
-          // Check 2: Description has content
-          const descriptionSection = body.match(/## Description\s*\n.*?\n(.*?)(?=\n##|$)/s);
-          let description = descriptionSection ? descriptionSection[1].trim() : '';
-          description = description.replace(/<!--[\s\S]*?-->/g, '').trim();
-          
-          if (!description || description.length < 1 || description.match(/^\s*$/)) {
-            console.log('❌ Description check failed');
-            errors.push('❌ **Description**: Please provide a description of your changes');
-          } else {
-            console.log('✅ Description provided');
-          }
-
-          // Check 3: Type of Change box checked
-          const typeOfChangeSection = body.match(/## Type of Change.*?\n(.*?)(?=\n##|$)/s);
-          const typeOfChangeChecked = typeOfChangeSection && (typeOfChangeSection[1].includes('- [x]') || typeOfChangeSection[1].includes('- [X]'));
-          
-          if (!typeOfChangeChecked) {
-            console.log('❌ Type of Change check failed');
-            errors.push('❌ **Type of Change**: Please check at least one box');
-          } else {
-            console.log('✅ Type of Change selected');
-          }
-
-          // Check 4: Checklist items checked
-          const checklistSection = body.match(/## Checklist.*?\n(.*?)(?=\n##|$)/s);
-          if (checklistSection) {
-            const checklistItems = checklistSection[1].match(/- \[[ xX]\]/g) || [];
-            const checkedItems = checklistSection[1].match(/- \[[xX]\]/g) || [];
-            
-            if (checklistItems.length === 0) {
-              warnings.push('⚠️ **Checklist**: No checklist items found');
-            } else if (checkedItems.length < checklistItems.length) {
-              const uncheckedCount = checklistItems.length - checkedItems.length;
-              errors.push(`❌ **Checklist**: ${uncheckedCount} checklist item(s) not checked off`);
-            } else {
-              console.log('✅ All checklist items completed');
+            event_type: 'bot-check',
+            client_payload: {
+              pr_number: prNumber,
+              head_sha: headSha,
+              head_ref: headRef,
+              triggered_by: 'bot-comment'
             }
-          } else {
-            warnings.push('⚠️ **Checklist**: Checklist section not found');
-          }
+          });
+          
+          console.log('✅ Repository dispatch event sent');
 
-          core.setOutput('pr_errors', errors.length);
-          core.setOutput('pr_error_details', errors.join('\n'));
-          core.setOutput('pr_warnings', warnings.length);
-          core.setOutput('pr_warning_details', warnings.join('\n'));
+    - name: Wait for workflows to start
+      run: sleep 15
 
-    # Style Check (from style-requirement.yml)
-    - name: Get changed Python files
-      id: changed-files
-      uses: tj-actions/changed-files@v41
-      with:
-        files: |
-          **/*.py
-        files_ignore: |
-          .github/workflows/**
-          __pycache__/**
-          *.pyc
-          build/**
-          dist/**
-
-    - name: Style Check
-      id: style-check
-      if: steps.changed-files.outputs.any_changed == 'true'
-      run: |
-        echo "🎨 Running style check on changed Python files..."
-        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-        
-        # Make the style checker executable and run it
-        if [ -f ".github/scripts/enhanced_style_checker.py" ]; then
-          chmod +x .github/scripts/enhanced_style_checker.py
-          python3 .github/scripts/enhanced_style_checker.py ${{ steps.changed-files.outputs.all_changed_files }}
-          STYLE_EXIT_CODE=$?
-          echo "style_exit_code=$STYLE_EXIT_CODE" >> $GITHUB_OUTPUT
-        else
-          echo "⚠️ Style checker script not found"
-          echo "style_exit_code=0" >> $GITHUB_OUTPUT
-        fi
-
-    - name: No Python files changed
-      if: steps.changed-files.outputs.any_changed != 'true'
-      run: |
-        echo "✅ No Python files changed - style check skipped"
-        echo "style_exit_code=0" >> $GITHUB_OUTPUT
-      id: no-python-files
-
-    # CONTRIBUTING.md Check (from contributing-checker.yml)  
-    - name: Get CONTRIBUTING.md changes
-      id: contributing-changes
-      uses: tj-actions/changed-files@v41
-      with:
-        files_yaml: |
-          contributing:
-            - CONTRIBUTING.md
-          style_workflow:
-            - .github/workflows/style-requirement.yml
-
-    - name: CONTRIBUTING.md Check
-      id: contributing-check
-      run: |
-        if [ "${{ steps.contributing-changes.outputs.contributing_changed }}" == "true" ]; then
-          echo "❌ CONTRIBUTING.md was modified - requires admin approval"
-          echo "contributing_blocked=true" >> $GITHUB_OUTPUT
-          echo "contributing_exit_code=1" >> $GITHUB_OUTPUT
-        else
-          echo "✅ CONTRIBUTING.md was not modified"
-          echo "contributing_blocked=false" >> $GITHUB_OUTPUT
-          echo "contributing_exit_code=0" >> $GITHUB_OUTPUT
-        fi
-
-    # Post Results
-    - name: Post results
+    - name: Monitor workflows and post results
       uses: actions/github-script@v7
       with:
         script: |
-          const prErrors = '${{ steps.pr-requirements.outputs.pr_errors }}' || '0';
-          const prErrorDetails = '${{ steps.pr-requirements.outputs.pr_error_details }}' || '';
-          const prWarnings = '${{ steps.pr-requirements.outputs.pr_warnings }}' || '0';
-          const prWarningDetails = '${{ steps.pr-requirements.outputs.pr_warning_details }}' || '';
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const headSha = '${{ steps.pr-info.outputs.head_sha }}';
           
-          const styleExitCode = '${{ steps.style-check.outputs.style_exit_code }}' || '${{ steps.no-python-files.outputs.style_exit_code }}' || '0';
-          const contributingBlocked = '${{ steps.contributing-check.outputs.contributing_blocked }}' === 'true';
-          
-          let message = `## 🤖 Bot Check Results
+          // Define the workflows we're monitoring
+          const workflows = [
+            { file: 'pr-requirements-check.yml', name: 'PR Requirements Check' },
+            { file: 'style-requirement.yml', name: 'Style Checker' },
+            { file: 'contributing-checker.yml', name: 'CONTRIBUTING.md Checker' },
+            { file: 'docs.yml', name: 'Documentation Build' }
+          ];
 
-          ### 📋 PR Requirements Check:
-          `;
-          
-          if (prErrors === '0') {
-            message += '✅ **PASSED** - All PR requirements met\n';
-          } else {
-            message += `❌ **FAILED** - ${prErrors} issue(s) found:\n\`\`\`\n${prErrorDetails}\n\`\`\`\n`;
+          // Function to get recent workflow runs
+          const getWorkflowRuns = async (workflowFile) => {
+            try {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowFile,
+                per_page: 20
+              });
+              
+              // Find runs triggered by repository_dispatch in the last 10 minutes
+              const recentRuns = runs.workflow_runs.filter(run => 
+                run.event === 'repository_dispatch' && 
+                new Date(run.created_at) > new Date(Date.now() - 10 * 60 * 1000)
+              );
+              
+              return recentRuns.length > 0 ? recentRuns[0] : null;
+            } catch (error) {
+              console.log(`Error getting runs for ${workflowFile}: ${error.message}`);
+              return null;
+            }
+          };
+
+          // Wait for all workflows to complete (max 10 minutes)
+          let allCompleted = false;
+          let attempts = 0;
+          const maxAttempts = 60; // 10 minutes with 10s intervals
+          const results = {};
+
+          console.log('🔍 Monitoring workflow runs...');
+
+          while (!allCompleted && attempts < maxAttempts) {
+            allCompleted = true;
+            let completedCount = 0;
+            
+            for (const workflow of workflows) {
+              if (!results[workflow.file]) {
+                const run = await getWorkflowRuns(workflow.file);
+                if (run) {
+                  console.log(`${workflow.name}: ${run.status} (${run.conclusion || 'running'})`);
+                  if (run.status === 'completed') {
+                    results[workflow.file] = {
+                      name: workflow.name,
+                      conclusion: run.conclusion,
+                      url: run.html_url,
+                      status: 'completed'
+                    };
+                    completedCount++;
+                  } else {
+                    allCompleted = false;
+                  }
+                } else {
+                  console.log(`${workflow.name}: No recent runs found`);
+                  allCompleted = false;
+                }
+              } else {
+                completedCount++;
+              }
+            }
+            
+            console.log(`Progress: ${completedCount}/${workflows.length} workflows completed`);
+            
+            if (!allCompleted) {
+              await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+              attempts++;
+            }
           }
-          
-          if (prWarnings !== '0') {
-            message += `⚠️ **Warnings** (${prWarnings}):\n\`\`\`\n${prWarningDetails}\n\`\`\`\n`;
+
+          // Generate results comment
+          let message = `## 🤖 Bot Check Results\n\n`;
+          let allPassed = true;
+          let timeoutOccurred = false;
+
+          for (const workflow of workflows) {
+            const result = results[workflow.file];
+            if (result) {
+              let statusIcon, statusText;
+              if (result.conclusion === 'success') {
+                statusIcon = '✅';
+                statusText = '**PASSED**';
+              } else if (result.conclusion === 'failure') {
+                statusIcon = '❌';
+                statusText = '**FAILED**';
+                allPassed = false;
+              } else if (result.conclusion === 'cancelled') {
+                statusIcon = '🚫';
+                statusText = '**CANCELLED**';
+                allPassed = false;
+              } else {
+                statusIcon = '⚠️';
+                statusText = `**${result.conclusion?.toUpperCase() || 'UNKNOWN'}**`;
+                allPassed = false;
+              }
+              
+              message += `### ${result.name}:\n${statusIcon} ${statusText} - [View Details](${result.url})\n\n`;
+            } else {
+              message += `### ${workflow.name}:\n⏳ **TIMEOUT** - Workflow did not complete within 10 minutes\n\n`;
+              allPassed = false;
+              timeoutOccurred = true;
+            }
           }
-          
-          message += `\n### 🎨 Style Check:
-          `;
-          
-          if (styleExitCode === '0') {
-            message += '✅ **PASSED** - Code style meets requirements\n';
-          } else {
-            message += '❌ **FAILED** - Style issues found (see logs above)\n';
-          }
-          
-          message += `\n### 📖 CONTRIBUTING.md Check:
-          `;
-          
-          if (contributingBlocked) {
-            message += '❌ **BLOCKED** - CONTRIBUTING.md was modified (requires admin approval)\n';
-          } else {
-            message += '✅ **PASSED** - No CONTRIBUTING.md changes\n';
-          }
-          
-          message += '\n---\n';
-          
-          const allPassed = prErrors === '0' && styleExitCode === '0' && !contributingBlocked;
+
+          message += '---\n\n';
           
           if (allPassed) {
             message += '🎉 **All checks passed!** This PR is ready for review.\n\n';
+          } else if (timeoutOccurred) {
+            message += '⏳ **Some workflows timed out.** Check the individual workflow runs for more details.\n\n';
           } else {
-            message += '⚠️ **Some checks failed.** Please address the issues above and run `bot, check` again.\n\n';
+            message += '⚠️ **Some checks failed.** Please address the issues and run `bot, check` again.\n\n';
           }
           
           message += '*To re-run all checks, comment: `bot, check`*';
           
+          // Post results comment
           await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
@@ -293,26 +243,9 @@ jobs:
             body: message
           });
 
-    # Set final job status
-    - name: Set job status
-      run: |
-        PR_ERRORS="${{ steps.pr-requirements.outputs.pr_errors }}"
-        STYLE_CODE="${{ steps.style-check.outputs.style_exit_code }}"
-        NO_PYTHON_STYLE_CODE="${{ steps.no-python-files.outputs.style_exit_code }}"
-        CONTRIBUTING_CODE="${{ steps.contributing-check.outputs.contributing_exit_code }}"
-        
-        # Use the appropriate style code
-        FINAL_STYLE_CODE="${STYLE_CODE:-${NO_PYTHON_STYLE_CODE:-0}}"
-        
-        echo "PR Errors: $PR_ERRORS"
-        echo "Style Exit Code: $FINAL_STYLE_CODE"
-        echo "Contributing Exit Code: $CONTRIBUTING_CODE"
-        
-        # Check if any checks failed
-        if [[ "$PR_ERRORS" != "0" || "$FINAL_STYLE_CODE" != "0" || "$CONTRIBUTING_CODE" != "0" ]]; then
-          echo "❌ Some checks failed"
-          exit 1
-        else
-          echo "✅ All checks passed"
-          exit 0
-        fi
+          // Set final job status
+          if (!allPassed) {
+            core.setFailed('Some workflow checks failed or timed out');
+          } else {
+            console.log('✅ All checks passed successfully');
+          }
