@@ -43,7 +43,7 @@ METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
     'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
     'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
-    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist'],
+    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist', 'ALBUM ARTIST'],
     'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
     'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
     'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
