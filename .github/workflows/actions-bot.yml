@@ -49,7 +49,8 @@ jobs:
           core.setOutput('head_sha', pr.head.sha);
           core.setOutput('head_ref', pr.head.ref);
 
-    - name: Post start message
+    - name: Post start message and create status comment
+      id: initial-comment
       uses: actions/github-script@v7
       with:
         script: |
@@ -61,19 +62,22 @@ jobs:
           Running all checks for PR #${prNumber} by @${author}
 
           ### 🔍 Checks Running:
-          - ✅ **PR Requirements** - Title, description, checklist
-          - ✅ **Style Check** - Python code style, docstrings, BSD headers  
-          - ✅ **CONTRIBUTING.md** - Guidelines compliance
-          - ✅ **Documentation** - Build CLI, API, GUI docs and Sphinx
+          - ⚠️ **PR Requirements** - Title, description, checklist
+          - ⚠️ **Style Check** - Python code style, docstrings, BSD headers  
+          - ⚠️ **CONTRIBUTING.md** - Guidelines compliance
+          - ⚠️ **Documentation** - Build CLI, API, GUI docs and Sphinx
           
-          *All workflows are running in parallel. Results will be posted when complete...*`;
+          *All workflows are running in parallel. This message will be updated with results...*`;
           
-          await github.rest.issues.createComment({
+          const { data: comment } = await github.rest.issues.createComment({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number,
             body: message
           });
+          
+          core.setOutput('comment_id', comment.id);
+          console.log(`Created status comment with ID: ${comment.id}`);
 
     # Trigger all workflows using repository_dispatch
     - name: Trigger all check workflows
@@ -106,12 +110,13 @@ jobs:
     - name: Wait for workflows to start
       run: sleep 15
 
-    - name: Monitor workflows and post results
+    - name: Monitor workflows and post live updates
       uses: actions/github-script@v7
       with:
         script: |
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const headSha = '${{ steps.pr-info.outputs.head_sha }}';
+          const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
           
           // Define the workflows we're monitoring
           const workflows = [
@@ -144,44 +149,145 @@ jobs:
             }
           };
 
+          // Function to update the status comment
+          const updateStatusComment = async (workflows, results, isComplete = false) => {
+            const author = '${{ steps.pr-info.outputs.pr_author }}';
+            
+            let message = `## 🤖 Bot Check ${isComplete ? 'Results' : 'Status'}
+
+            ${isComplete ? 'Completed' : 'Running'} all checks for PR #${prNumber} by @${author}
+
+            ### 📊 Check Status:
+            `;
+            
+            let allPassed = true;
+            let anyRunning = false;
+            
+            for (const workflow of workflows) {
+              const result = results[workflow.file];
+              let statusIcon, statusText, linkText = '';
+              
+              if (result) {
+                if (result.status === 'completed') {
+                  if (result.conclusion === 'success') {
+                    statusIcon = '✅';
+                    statusText = '**PASSED**';
+                  } else if (result.conclusion === 'failure') {
+                    statusIcon = '❌';
+                    statusText = '**FAILED**';
+                    allPassed = false;
+                  } else if (result.conclusion === 'cancelled') {
+                    statusIcon = '🚫';
+                    statusText = '**CANCELLED**';
+                    allPassed = false;
+                  } else {
+                    statusIcon = '⚠️';
+                    statusText = `**${result.conclusion?.toUpperCase() || 'UNKNOWN'}**`;
+                    allPassed = false;
+                  }
+                } else {
+                  statusIcon = '🔄';
+                  statusText = '**RUNNING**';
+                  anyRunning = true;
+                  allPassed = false;
+                }
+                linkText = ` - [View Run](${result.url})`;
+              } else {
+                if (isComplete) {
+                  statusIcon = '⏳';
+                  statusText = '**TIMEOUT**';
+                  allPassed = false;
+                } else {
+                  statusIcon = '⚠️';
+                  statusText = '**STARTING**';
+                  anyRunning = true;
+                  allPassed = false;
+                }
+              }
+              
+              message += `- ${statusIcon} **${workflow.name}**: ${statusText}${linkText}\n`;
+            }
+            
+            if (isComplete) {
+              message += '\n---\n\n';
+              
+              if (allPassed) {
+                message += '🎉 **All checks passed!** This PR is ready for review.\n\n';
+              } else {
+                message += '⚠️ **Some checks failed.** Please address the issues and run `bot, check` again.\n\n';
+              }
+              
+              message += '*To re-run all checks, comment: `bot, check`*';
+            } else if (anyRunning) {
+              message += '\n*⏳ Workflows are still running. This message will update automatically...*';
+            }
+            
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: commentId,
+              body: message
+            });
+            
+            return { allPassed, anyRunning };
+          };
+
           // Wait for all workflows to complete (max 10 minutes)
           let allCompleted = false;
           let attempts = 0;
           const maxAttempts = 60; // 10 minutes with 10s intervals
           const results = {};
+          let lastUpdateTime = 0;
 
           console.log('🔍 Monitoring workflow runs...');
 
           while (!allCompleted && attempts < maxAttempts) {
             allCompleted = true;
             let completedCount = 0;
+            let hasNewUpdates = false;
             
             for (const workflow of workflows) {
-              if (!results[workflow.file]) {
-                const run = await getWorkflowRuns(workflow.file);
-                if (run) {
-                  console.log(`${workflow.name}: ${run.status} (${run.conclusion || 'running'})`);
-                  if (run.status === 'completed') {
-                    results[workflow.file] = {
-                      name: workflow.name,
-                      conclusion: run.conclusion,
-                      url: run.html_url,
-                      status: 'completed'
-                    };
-                    completedCount++;
-                  } else {
-                    allCompleted = false;
-                  }
+              const previousResult = results[workflow.file];
+              const run = await getWorkflowRuns(workflow.file);
+              
+              if (run) {
+                const currentResult = {
+                  name: workflow.name,
+                  conclusion: run.conclusion,
+                  url: run.html_url,
+                  status: run.status
+                };
+                
+                // Check if this is a new update
+                if (!previousResult || 
+                    previousResult.status !== currentResult.status ||
+                    previousResult.conclusion !== currentResult.conclusion) {
+                  hasNewUpdates = true;
+                }
+                
+                results[workflow.file] = currentResult;
+                
+                console.log(`${workflow.name}: ${run.status} (${run.conclusion || 'running'})`);
+                
+                if (run.status === 'completed') {
+                  completedCount++;
                 } else {
-                  console.log(`${workflow.name}: No recent runs found`);
                   allCompleted = false;
                 }
               } else {
-                completedCount++;
+                console.log(`${workflow.name}: No recent runs found`);
+                allCompleted = false;
               }
             }
             
             console.log(`Progress: ${completedCount}/${workflows.length} workflows completed`);
+            
+            // Update comment every 30 seconds or when there are new updates
+            const now = Date.now();
+            if (hasNewUpdates || (now - lastUpdateTime) > 30000) {
+              await updateStatusComment(workflows, results, false);
+              lastUpdateTime = now;
+            }
             
             if (!allCompleted) {
               await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
@@ -189,62 +295,11 @@ jobs:
             }
           }
 
-          // Generate results comment
-          let message = `## 🤖 Bot Check Results\n\n`;
-          let allPassed = true;
-          let timeoutOccurred = false;
-
-          for (const workflow of workflows) {
-            const result = results[workflow.file];
-            if (result) {
-              let statusIcon, statusText;
-              if (result.conclusion === 'success') {
-                statusIcon = '✅';
-                statusText = '**PASSED**';
-              } else if (result.conclusion === 'failure') {
-                statusIcon = '❌';
-                statusText = '**FAILED**';
-                allPassed = false;
-              } else if (result.conclusion === 'cancelled') {
-                statusIcon = '🚫';
-                statusText = '**CANCELLED**';
-                allPassed = false;
-              } else {
-                statusIcon = '⚠️';
-                statusText = `**${result.conclusion?.toUpperCase() || 'UNKNOWN'}**`;
-                allPassed = false;
-              }
-              
-              message += `### ${result.name}:\n${statusIcon} ${statusText} - [View Details](${result.url})\n\n`;
-            } else {
-              message += `### ${workflow.name}:\n⏳ **TIMEOUT** - Workflow did not complete within 10 minutes\n\n`;
-              allPassed = false;
-              timeoutOccurred = true;
-            }
-          }
-
-          message += '---\n\n';
-          
-          if (allPassed) {
-            message += '🎉 **All checks passed!** This PR is ready for review.\n\n';
-          } else if (timeoutOccurred) {
-            message += '⏳ **Some workflows timed out.** Check the individual workflow runs for more details.\n\n';
-          } else {
-            message += '⚠️ **Some checks failed.** Please address the issues and run `bot, check` again.\n\n';
-          }
-          
-          message += '*To re-run all checks, comment: `bot, check`*';
-          
-          // Post results comment
-          await github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
-            body: message
-          });
+          // Final update with results
+          const finalStatus = await updateStatusComment(workflows, results, true);
 
           // Set final job status
-          if (!allPassed) {
+          if (!finalStatus.allPassed) {
             core.setFailed('Some workflow checks failed or timed out');
           } else {
             console.log('✅ All checks passed successfully');
