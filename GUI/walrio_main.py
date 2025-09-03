@@ -131,60 +131,93 @@ class PlayerWorker(QThread):
             print(error_msg)
             self.error.emit(error_msg)
     
-    def pause(self):
-        """Pause the playback using daemon command."""
-        if self.process and self.process.poll() is None:
+    def _send_socket_command(self, command):
+        """Send a command to the player daemon via socket.
+        
+        Args:
+            command (str): Command to send to the daemon
+            
+        Returns:
+            tuple: (success: bool, response: str)
+        """
+        if not (self.process and self.process.poll() is None):
+            return False, "No active player process"
+            
+        try:
+            import socket
+            import tempfile
+            import os
+            
+            # Find the socket file for this daemon
+            temp_dir = tempfile.gettempdir()
+            socket_files = []
+            
+            for filename in os.listdir(temp_dir):
+                if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+                    socket_path = os.path.join(temp_dir, filename)
+                    if os.path.exists(socket_path):
+                        socket_files.append((socket_path, os.path.getmtime(socket_path)))
+            
+            if not socket_files:
+                return False, "No socket file found"
+                
+            # Use the most recent socket file
+            socket_path = max(socket_files, key=lambda x: x[1])[0]
+            
+            # Connect to socket and send command
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
-                modules_dir = Path(__file__).parent.parent / "modules"
-                subprocess.run(
-                    ["python", "walrio.py", "player", "--command", "pause"],
-                    cwd=str(modules_dir),
-                    timeout=2
-                )
-                self.pause_start = time.time()
-            except Exception as e:
-                print(f"Error pausing: {e}")
+                sock.connect(socket_path)
+                sock.send(command.encode('utf-8'))
+                response = sock.recv(1024).decode('utf-8')
+                return response.startswith("OK:"), response
+            finally:
+                sock.close()
+                
+        except Exception as e:
+            return False, f"Socket error: {e}"
+    
+    def pause(self):
+        """Pause the playback using daemon socket command."""
+        success, response = self._send_socket_command("pause")
+        if success:
+            self.pause_start = time.time()
+            print(f"Pause command response: {response}")
+        else:
+            print(f"Error pausing: {response}")
+        return success
     
     def resume(self):
-        """Resume the playback using daemon command."""
-        if self.process and self.process.poll() is None:
-            try:
-                modules_dir = Path(__file__).parent.parent / "modules"
-                subprocess.run(
-                    ["python", "walrio.py", "player", "--command", "resume"],
-                    cwd=str(modules_dir),
-                    timeout=2
-                )
-                if self.pause_start:
-                    # Add the paused duration to our total paused time
-                    self.paused_duration += time.time() - self.pause_start
-                    self.pause_start = None
-            except Exception as e:
-                print(f"Error resuming: {e}")
+        """Resume the playback using daemon socket command."""
+        success, response = self._send_socket_command("resume")
+        if success:
+            if self.pause_start:
+                # Add the paused duration to our total paused time
+                self.paused_duration += time.time() - self.pause_start
+                self.pause_start = None
+            print(f"Resume command response: {response}")
+        else:
+            print(f"Error resuming: {response}")
+        return success
     
     def stop(self):
-        """Stop the playback using daemon command."""
+        """Stop the playback using daemon socket command."""
         # Set should_stop immediately to break the position update loop
         self.should_stop = True
         
         if self.process and self.process.poll() is None:
+            # Try to stop via socket first
+            success, response = self._send_socket_command("stop")
+            if success:
+                print(f"Stop command response: {response}")
+            else:
+                print(f"Error stopping via socket: {response}")
+            
+            # Wait a moment for graceful shutdown
             try:
-                modules_dir = Path(__file__).parent.parent / "modules"
-                # Send stop command to daemon
-                subprocess.run(
-                    ["python", "walrio.py", "player", "--command", "stop"],
-                    cwd=str(modules_dir),
-                    timeout=2
-                )
-                # Wait a moment for graceful shutdown
-                try:
-                    self.process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    self.process.terminate()
-                    self.process.wait()
-            except Exception as e:
-                print(f"Error stopping via command: {e}")
-                # Fallback to process termination if command fails
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                # Fallback to process termination if socket stop didn't work
                 try:
                     self.process.terminate()
                     self.process.wait(timeout=2)
@@ -194,57 +227,73 @@ class PlayerWorker(QThread):
         # Give the run loop a moment to notice should_stop and exit
         time.sleep(0.05)
                     
+    def _send_socket_command(self, command):
+        """Send a command to the player daemon via socket.
+        
+        Args:
+            command (str): Command to send to the daemon
+            
+        Returns:
+            tuple: (success: bool, response: str)
+        """
+        if not (self.process and self.process.poll() is None):
+            return False, "No active player process"
+            
+        try:
+            import socket
+            import tempfile
+            import os
+            
+            # Find the socket file for this daemon
+            temp_dir = tempfile.gettempdir()
+            socket_files = []
+            
+            for filename in os.listdir(temp_dir):
+                if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+                    socket_path = os.path.join(temp_dir, filename)
+                    if os.path.exists(socket_path):
+                        socket_files.append((socket_path, os.path.getmtime(socket_path)))
+            
+            if not socket_files:
+                return False, "No socket file found"
+                
+            # Use the most recent socket file
+            socket_path = max(socket_files, key=lambda x: x[1])[0]
+            
+            # Connect to socket and send command
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.connect(socket_path)
+                sock.send(command.encode('utf-8'))
+                response = sock.recv(1024).decode('utf-8')
+                return response.startswith("OK:"), response
+            finally:
+                sock.close()
+                
+        except Exception as e:
+            return False, f"Socket error: {e}"
+    
     def seek(self, position):
         """Seek to a specific position using daemon socket command.
         
         Args:
             position (float): Position in seconds to seek to
         """
-        if self.process and self.process.poll() is None:
-            try:
-                import socket
-                import tempfile
-                import os
-                
-                # Find the socket file for this daemon
-                temp_dir = tempfile.gettempdir()
-                socket_files = []
-                
-                for filename in os.listdir(temp_dir):
-                    if filename.startswith("walrio_player_") and filename.endswith(".sock"):
-                        socket_path = os.path.join(temp_dir, filename)
-                        if os.path.exists(socket_path):
-                            socket_files.append((socket_path, os.path.getmtime(socket_path)))
-                
-                if socket_files:
-                    # Use the most recent socket file
-                    socket_path = max(socket_files, key=lambda x: x[1])[0]
-                    
-                    # Connect to socket and send seek command
-                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    try:
-                        sock.connect(socket_path)
-                        command = f"seek {position:.2f}"
-                        sock.send(command.encode('utf-8'))
-                        response = sock.recv(1024).decode('utf-8')
-                        print(f"Seek command response: {response}")
-                        
-                        # If seek was successful, update our timing
-                        if response.startswith("OK:"):
-                            current_time = time.time()
-                            self.start_time = current_time - position
-                            self.paused_duration = 0
-                            self.pause_start = None
-                            self.last_known_position = position
-                            return True
-                        return False
-                    finally:
-                        sock.close()
-                        
-            except Exception as e:
-                print(f"Error seeking: {e}")
-                return False
-        return False
+        command = f"seek {position:.2f}"
+        success, response = self._send_socket_command(command)
+        
+        if success:
+            print(f"Seek command response: {response}")
+            # If seek was successful, update our timing
+            current_time = time.time()
+            self.start_time = current_time - position
+            self.paused_duration = 0
+            self.pause_start = None
+            self.last_known_position = position
+        else:
+            print(f"Error seeking: {response}")
+            
+        return success
     
     def set_volume(self, volume):
         """Set the playback volume using daemon socket command.
@@ -252,39 +301,15 @@ class PlayerWorker(QThread):
         Args:
             volume (float): Volume level between 0.0 and 1.0
         """
-        if self.process and self.process.poll() is None:
-            try:
-                import socket
-                import tempfile
-                import os
-                
-                # Find the socket file for this daemon
-                temp_dir = tempfile.gettempdir()
-                socket_files = []
-                
-                for filename in os.listdir(temp_dir):
-                    if filename.startswith("walrio_player_") and filename.endswith(".sock"):
-                        socket_path = os.path.join(temp_dir, filename)
-                        if os.path.exists(socket_path):
-                            socket_files.append((socket_path, os.path.getmtime(socket_path)))
-                
-                if socket_files:
-                    # Use the most recent socket file
-                    socket_path = max(socket_files, key=lambda x: x[1])[0]
-                    
-                    # Connect to socket and send volume command
-                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    try:
-                        sock.connect(socket_path)
-                        command = f"volume {volume:.2f}"
-                        sock.send(command.encode('utf-8'))
-                        response = sock.recv(1024).decode('utf-8')
-                        print(f"Volume command response: {response}")
-                    finally:
-                        sock.close()
-                        
-            except Exception as e:
-                print(f"Error setting volume: {e}")
+        command = f"volume {volume:.2f}"
+        success, response = self._send_socket_command(command)
+        
+        if success:
+            print(f"Volume command response: {response}")
+        else:
+            print(f"Error setting volume: {response}")
+            
+        return success
 
 
 class WalrioMusicPlayer(QMainWindow):
@@ -768,24 +793,12 @@ class WalrioMusicPlayer(QMainWindow):
             self.start_playback()
             return
         
-        # Try to seek to the beginning first (fastest method)
+        # Try to seek to the beginning using socket method (same as GUI seeking)
         try:
             if self.player_worker.process and self.player_worker.process.poll() is None:
-                modules_dir = Path(__file__).parent.parent / "modules"
-                result = subprocess.run(
-                    ["python", "walrio.py", "player", "--command", "seek", "0"],
-                    cwd=str(modules_dir),
-                    timeout=1,
-                    capture_output=True,
-                    text=True
-                )
+                success = self.player_worker.seek(0)
                 
-                if result.returncode == 0:
-                    # Seek successful - reset timing and UI
-                    self.player_worker.start_time = time.time()
-                    self.player_worker.paused_duration = 0
-                    self.player_worker.pause_start = None
-                    
+                if success:
                     # Reset UI position
                     self.position = 0
                     self.progress_slider.setValue(0)
@@ -793,6 +806,8 @@ class WalrioMusicPlayer(QMainWindow):
                     
                     print("Track restarted via seek")
                     return
+                else:
+                    print("Socket seek to 0 failed")
         except Exception as e:
             print(f"Seek restart failed: {e}")
         
