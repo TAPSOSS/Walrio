@@ -1,0 +1,538 @@
+name: PR Check Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  pr-check-bot:
+    # Only run on pull request comments with "bot, check"
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'bot, check')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: React to comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.reactions.createForIssueComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: context.payload.comment.id,
+            content: 'rocket'
+          });
+
+    - name: Get PR info
+      id: pr-info
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          console.log(`PR #${pr.number}: ${pr.title}`);
+          console.log(`Author: ${pr.user.login}`);
+          console.log(`Head SHA: ${pr.head.sha}`);
+          
+          core.setOutput('pr_number', pr.number);
+          core.setOutput('pr_title', pr.title);
+          core.setOutput('pr_author', pr.user.login);
+          core.setOutput('head_sha', pr.head.sha);
+          core.setOutput('head_ref', pr.head.ref);
+
+    - name: Checkout PR code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        ref: refs/pull/${{ github.event.issue.number }}/head
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Post initial status
+      id: initial-comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const author = '${{ steps.pr-info.outputs.pr_author }}';
+          
+          const message = `## 🤖 PR Check Bot Started
+
+          Running comprehensive checks for PR #${prNumber} by @${author}
+
+          ### 📊 Check Status:
+          - ⚠️ **PR Requirements**: Validating title, description, checklist
+          - ⚠️ **CONTRIBUTING.md**: Checking for unauthorized changes
+          - ⚠️ **Style Check**: Analyzing Python code style and headers
+          - ⚠️ **Documentation**: Building docs if relevant files changed
+          
+          *Running all checks... This message will be updated with results.*`;
+          
+          const { data: comment } = await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: message
+          });
+          
+          core.setOutput('comment_id', comment.id);
+
+    # CHECK 1: PR Requirements (from pr-requirements-check.yml)
+    - name: 1️⃣ PR Requirements Check
+      id: pr-requirements
+      uses: actions/github-script@v7
+      with:
+        script: |
+          console.log('🔍 Starting PR Requirements Check...');
+          
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+
+          const title = pr.title;
+          const body = pr.body || '';
+          
+          let errors = [];
+          let warnings = [];
+
+          // Check 1: PR Title Guidelines
+          const titlePatterns = [
+            /^Added .+: .+$/,
+            /^Bug Fix .+: .+$/,
+            /^Updated .+: .+$/,
+            /^Documentation: .+$/
+          ];
+          
+          const titleValid = titlePatterns.some(pattern => pattern.test(title));
+          if (!titleValid) {
+            console.log('❌ PR Title check failed');
+            console.log(`Current title: "${title}"`);
+            errors.push('❌ **PR Title**: Title does not follow the required format. Please use one of:\n' +
+                       '   - "Added [word]: [description]" - for new features\n' +
+                       '   - "Bug Fix [word]: [description]" - for bug fixes\n' +
+                       '   - "Updated [word]: [description]" - for updates\n' +
+                       '   - "Documentation: [description]" - for documentation only');
+          } else {
+            console.log('✅ PR Title format is correct');
+          }
+
+          // Check 2: Description has content
+          console.log('🔍 Checking description...');
+          const descriptionSection = body.match(/## Description\s*\n.*?\n(.*?)(?=\n##|$)/s);
+          let description = descriptionSection ? descriptionSection[1].trim() : '';
+          description = description.replace(/<!--[\s\S]*?-->/g, '').trim();
+          
+          if (!description || description.length < 1 || description.match(/^\s*$/)) {
+            console.log('❌ Description check failed - no content found');
+            errors.push('❌ **Description**: Please provide a description of your changes in the Description section.');
+          } else {
+            console.log('✅ Description provided');
+          }
+
+          // Check 3: Type of Change box checked
+          console.log('🔍 Checking Type of Change...');
+          const typeOfChangeSection = body.match(/## Type of Change.*?\n(.*?)(?=\n##|$)/s);
+          const typeOfChangeChecked = typeOfChangeSection && (typeOfChangeSection[1].includes('- [x]') || typeOfChangeSection[1].includes('- [X]'));
+          
+          if (!typeOfChangeChecked) {
+            console.log('❌ Type of Change check failed');
+            errors.push('❌ **Type of Change**: Please check at least one box in the "Type of Change" section.');
+          } else {
+            console.log('✅ Type of Change selected');
+          }
+
+          // Check 4: Checklist items checked
+          console.log('🔍 Checking Checklist...');
+          const checklistSection = body.match(/## Checklist.*?\n(.*?)(?=\n##|$)/s);
+          if (checklistSection) {
+            const checklistItems = checklistSection[1].match(/- \[[ xX]\]/g) || [];
+            const checkedItems = checklistSection[1].match(/- \[[xX]\]/g) || [];
+            
+            console.log(`Found ${checklistItems.length} checklist items, ${checkedItems.length} checked`);
+            
+            if (checklistItems.length === 0) {
+              console.log('⚠️ No checklist items found');
+              warnings.push('⚠️ **Checklist**: No checklist items found.');
+            } else if (checkedItems.length < checklistItems.length) {
+              const uncheckedCount = checklistItems.length - checkedItems.length;
+              console.log(`❌ Checklist check failed - ${uncheckedCount} items unchecked`);
+              errors.push(`❌ **Checklist**: ${uncheckedCount} checklist item(s) not checked off. Please complete all checklist items.`);
+            } else {
+              console.log('✅ All checklist items completed');
+            }
+          } else {
+            console.log('⚠️ Checklist section not found');
+            warnings.push('⚠️ **Checklist**: Checklist section not found.');
+          }
+
+          // Set outputs
+          core.setOutput('errors', JSON.stringify(errors));
+          core.setOutput('warnings', JSON.stringify(warnings));
+          core.setOutput('passed', errors.length === 0);
+          
+          console.log(`PR Requirements: ${errors.length} errors, ${warnings.length} warnings`);
+
+    # CHECK 2: CONTRIBUTING.md Check (from contributing-checker.yml)
+    - name: Get changed files for CONTRIBUTING.md check
+      id: contributing-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files_yaml: |
+          contributing:
+            - CONTRIBUTING.md
+          style_workflow:
+            - .github/workflows/style-requirement.yml
+
+    - name: 2️⃣ CONTRIBUTING.md Check
+      id: contributing-check
+      run: |
+        echo "🔍 Starting CONTRIBUTING.md Check..."
+        
+        CONTRIBUTING_CHANGED="${{ steps.contributing-files.outputs.contributing_changed }}"
+        
+        if [ "$CONTRIBUTING_CHANGED" == "true" ]; then
+          echo "❌ CONTRIBUTING.md was modified - requires admin approval"
+          echo "blocked=true" >> $GITHUB_OUTPUT
+          echo "passed=false" >> $GITHUB_OUTPUT
+          
+          # Create detailed error message
+          ERROR_MSG="❌ **CONTRIBUTING.md Modified**: Changes to CONTRIBUTING.md require administrator review and approval before merging.
+
+          🛑 **This merge is blocked because:**
+          - CONTRIBUTING.md contains critical project guidelines and requirements
+          - Changes to contribution guidelines affect all future contributors
+          - Administrative oversight ensures consistency and quality standards
+
+          📖 **Modified file**: \`CONTRIBUTING.md\`
+          
+          **🚫 This PR is blocked and requires administrator approval to proceed.**"
+          
+          echo "error_message<<EOF" >> $GITHUB_OUTPUT
+          echo "$ERROR_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "✅ CONTRIBUTING.md was not modified"
+          echo "blocked=false" >> $GITHUB_OUTPUT
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "error_message=" >> $GITHUB_OUTPUT
+        fi
+
+    # CHECK 3: Style Check (from style-requirement.yml)
+    - name: Get changed Python files
+      id: python-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files: |
+          **/*.py
+        files_ignore: |
+          .github/workflows/**
+          __pycache__/**
+          *.pyc
+          build/**
+          dist/**
+
+    - name: 3️⃣ Style Check
+      id: style-check
+      if: steps.python-files.outputs.any_changed == 'true'
+      run: |
+        echo "🔍 Starting Style Check..."
+        echo "🎨 Running style check on changed Python files..."
+        echo "Changed files: ${{ steps.python-files.outputs.all_changed_files }}"
+        
+        if [ -f ".github/scripts/enhanced_style_checker.py" ]; then
+          chmod +x .github/scripts/enhanced_style_checker.py
+          
+          # Capture both exit code and output
+          set +e
+          OUTPUT=$(python3 .github/scripts/enhanced_style_checker.py ${{ steps.python-files.outputs.all_changed_files }} 2>&1)
+          STYLE_EXIT_CODE=$?
+          set -e
+          
+          echo "Style checker output:"
+          echo "$OUTPUT"
+          
+          if [ $STYLE_EXIT_CODE -eq 0 ]; then
+            echo "✅ Style check passed"
+            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "error_message=" >> $GITHUB_OUTPUT
+          else
+            echo "❌ Style check failed with exit code $STYLE_EXIT_CODE"
+            echo "passed=false" >> $GITHUB_OUTPUT
+            
+            ERROR_MSG="❌ **Style Check Failed**: Some of your Python files don't meet our styling requirements.
+
+            ### 🚨 Issues Found:
+            \`\`\`
+            $OUTPUT
+            \`\`\`
+
+            ### Quick fixes:
+            - **Missing BSD header**: Add the required copyright header to the top of your Python files
+            - **Missing docstrings**: Add docstrings to functions and classes  
+            - **Incomplete docstrings**: Add \`Args:\` and \`Returns:\` sections where needed
+
+            📖 **Full style guide**: [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements)"
+            
+            echo "error_message<<EOF" >> $GITHUB_OUTPUT
+            echo "$ERROR_MSG" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "exit_code=$STYLE_EXIT_CODE" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️ Style checker script not found"
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "exit_code=0" >> $GITHUB_OUTPUT
+          echo "error_message=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 3️⃣ Style Check - No Python files
+      id: style-check-skipped
+      if: steps.python-files.outputs.any_changed != 'true'
+      run: |
+        echo "✅ No Python files changed - style check skipped"
+        echo "passed=true" >> $GITHUB_OUTPUT
+        echo "exit_code=0" >> $GITHUB_OUTPUT
+        echo "error_message=" >> $GITHUB_OUTPUT
+
+    # CHECK 4: Documentation Build (from docs.yml)
+    - name: Get documentation related files
+      id: docs-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files: |
+          docs/**
+          modules/**
+          GUI/**
+          .github/workflows/docs.yml
+
+    - name: 4️⃣ Documentation Build Check
+      id: docs-check
+      if: steps.docs-files.outputs.any_changed == 'true'
+      run: |
+        echo "🔍 Starting Documentation Build Check..."
+        echo "📚 Documentation-related files changed, building docs..."
+        
+        # Initialize tracking
+        ALL_PASSED=true
+        ERROR_DETAILS=""
+        
+        # Install dependencies
+        echo "Installing documentation dependencies..."
+        cd docs
+        if pip install -r requirements.txt; then
+          echo "✅ Dependencies installed successfully"
+        else
+          echo "❌ Failed to install dependencies"
+          ALL_PASSED=false
+          ERROR_DETAILS="$ERROR_DETAILS- Failed to install documentation dependencies\n"
+        fi
+        
+        # Generate CLI documentation
+        echo "📖 Generating CLI documentation..."
+        if python generate_cli_docs.py; then
+          echo "✅ CLI documentation generated successfully"
+        else
+          echo "❌ Failed to generate CLI documentation"
+          ALL_PASSED=false
+          ERROR_DETAILS="$ERROR_DETAILS- Failed to generate CLI documentation\n"
+        fi
+        
+        # Generate API documentation
+        echo "📝 Generating API documentation..."
+        if python generate_api_docs.py; then
+          echo "✅ API documentation generated successfully"
+        else
+          echo "❌ Failed to generate API documentation"
+          ALL_PASSED=false
+          ERROR_DETAILS="$ERROR_DETAILS- Failed to generate API documentation\n"
+        fi
+        
+        # Generate GUI documentation
+        echo "🖥️ Generating GUI documentation..."
+        if python generate_gui_docs.py; then
+          echo "✅ GUI documentation generated successfully"
+        else
+          echo "❌ Failed to generate GUI documentation"
+          ALL_PASSED=false
+          ERROR_DETAILS="$ERROR_DETAILS- Failed to generate GUI documentation\n"
+        fi
+        
+        # Build Sphinx documentation
+        echo "🏗️ Building Sphinx documentation..."
+        if sphinx-build -b html source build/html; then
+          echo "✅ Sphinx documentation built successfully"
+        else
+          echo "❌ Failed to build Sphinx documentation"
+          ALL_PASSED=false
+          ERROR_DETAILS="$ERROR_DETAILS- Failed to build Sphinx documentation\n"
+        fi
+        
+        # Set outputs
+        if [ "$ALL_PASSED" = true ]; then
+          echo "✅ All documentation builds passed"
+          echo "passed=true" >> $GITHUB_OUTPUT
+          echo "error_message=" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Some documentation builds failed"
+          echo "passed=false" >> $GITHUB_OUTPUT
+          
+          ERROR_MSG="❌ **Documentation Build Failed**: Some documentation generation steps failed.
+
+          ### 🚨 Issues Found:
+          $ERROR_DETAILS
+
+          Please check the documentation source files and ensure all dependencies are properly configured."
+          
+          echo "error_message<<EOF" >> $GITHUB_OUTPUT
+          echo "$ERROR_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 4️⃣ Documentation Build - No relevant files
+      id: docs-check-skipped
+      if: steps.docs-files.outputs.any_changed != 'true'
+      run: |
+        echo "✅ No documentation-related files changed - docs build skipped"
+        echo "passed=true" >> $GITHUB_OUTPUT
+        echo "error_message=" >> $GITHUB_OUTPUT
+
+    # FINAL RESULTS
+    - name: Generate final results
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const author = '${{ steps.pr-info.outputs.pr_author }}';
+          
+          // Collect results from all checks
+          const checks = [
+            {
+              name: 'PR Requirements',
+              passed: '${{ steps.pr-requirements.outputs.passed }}' === 'true',
+              errors: JSON.parse('${{ steps.pr-requirements.outputs.errors }}' || '[]'),
+              warnings: JSON.parse('${{ steps.pr-requirements.outputs.warnings }}' || '[]'),
+              errorMessage: ''
+            },
+            {
+              name: 'CONTRIBUTING.md Check',
+              passed: '${{ steps.contributing-check.outputs.passed }}' === 'true',
+              errors: [],
+              warnings: [],
+              errorMessage: `${{ steps.contributing-check.outputs.error_message }}`
+            },
+            {
+              name: 'Style Check',
+              passed: ('${{ steps.style-check.outputs.passed }}' === 'true' || '${{ steps.style-check-skipped.outputs.passed }}' === 'true'),
+              errors: [],
+              warnings: [],
+              errorMessage: `${{ steps.style-check.outputs.error_message }}`
+            },
+            {
+              name: 'Documentation Build',
+              passed: ('${{ steps.docs-check.outputs.passed }}' === 'true' || '${{ steps.docs-check-skipped.outputs.passed }}' === 'true'),
+              errors: [],
+              warnings: [],
+              errorMessage: `${{ steps.docs-check.outputs.error_message }}`
+            }
+          ];
+          
+          // Generate final message
+          let message = `## 🤖 PR Check Bot Results
+
+          Completed comprehensive checks for PR #${prNumber} by @${author}
+
+          ### 📊 Final Results:
+          `;
+          
+          let allPassed = true;
+          let failedChecks = [];
+          let passedChecks = [];
+          
+          for (const check of checks) {
+            if (check.passed) {
+              message += `- ✅ **${check.name}**: **PASSED**\n`;
+              passedChecks.push(check.name);
+            } else {
+              message += `- ❌ **${check.name}**: **FAILED**\n`;
+              failedChecks.push(check.name);
+              allPassed = false;
+            }
+          }
+          
+          // Add detailed error messages for failed checks
+          if (!allPassed) {
+            message += '\n### 🚨 Detailed Error Reports:\n\n';
+            
+            for (const check of checks) {
+              if (!check.passed) {
+                message += `#### ${check.name}\n`;
+                
+                if (check.errors && check.errors.length > 0) {
+                  for (const error of check.errors) {
+                    message += `${error}\n\n`;
+                  }
+                }
+                
+                if (check.errorMessage && check.errorMessage.trim()) {
+                  message += `${check.errorMessage}\n\n`;
+                }
+                
+                if (check.warnings && check.warnings.length > 0) {
+                  message += '**Warnings:**\n';
+                  for (const warning of check.warnings) {
+                    message += `${warning}\n`;
+                  }
+                  message += '\n';
+                }
+              }
+            }
+          }
+          
+          message += '\n---\n\n';
+          
+          // Summary
+          if (allPassed) {
+            message += `🎉 **All ${passedChecks.length} checks passed!** This PR is ready for review.\n\n`;
+          } else {
+            message += `⚠️ **${failedChecks.length} check(s) failed, ${passedChecks.length} passed.**\n\n`;
+            message += `**Failed:** ${failedChecks.join(', ')}\n`;
+            message += `**Passed:** ${passedChecks.join(', ')}\n\n`;
+            message += 'Please address the issues above and run `bot, check` again.\n\n';
+          }
+          
+          message += '*To re-run all checks, comment: `bot, check`*';
+          
+          // Update the original comment
+          await github.rest.issues.updateComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: commentId,
+            body: message
+          });
+          
+          // Set final job status without failing the workflow
+          if (!allPassed) {
+            console.log(`❌ ${failedChecks.length} check(s) failed: ${failedChecks.join(', ')}`);
+            console.log(`✅ ${passedChecks.length} check(s) passed: ${passedChecks.join(', ')}`);
+            // Note: We don't call core.setFailed() here so the workflow shows as successful
+            // but the comment clearly shows what failed
+          } else {
+            console.log(`✅ All ${passedChecks.length} checks passed successfully`);
+          }
