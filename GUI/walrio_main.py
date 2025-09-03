@@ -659,8 +659,6 @@ class WalrioMusicPlayer(QMainWindow):
                 new_value = slider_min + (ratio * slider_range)
                 new_value = max(slider_min, min(slider_max, int(new_value)))
                 
-                print(f"Click position: {click_pos}, slider width: {slider_width}, new value: {new_value}")
-                
                 # Set the slider to this position
                 self.progress_slider.setValue(new_value)
         
@@ -669,15 +667,11 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_slider_value_changed(self, value):
         """Debug method to track slider value changes."""
-        if self.is_seeking:
-            print(f"Slider value changed to: {value} (during seeking)")
-        else:
-            print(f"Slider value changed to: {value} (not seeking)")
+        pass  # Remove debug output for production use
     
     def on_seek_start(self):
         """Handle when user starts seeking."""
         self.is_seeking = True
-        print(f"Seek start - slider value: {self.progress_slider.value()}")
     
     def on_seek_end(self):
         """Handle when user finishes seeking."""
@@ -685,7 +679,6 @@ class WalrioMusicPlayer(QMainWindow):
         
         # Always use the slider position where user released it
         seek_position = self.progress_slider.value()
-        print(f"Seek end - slider value: {seek_position}")
         self.position = seek_position
         self.time_current.setText(self.format_time(seek_position))
         
