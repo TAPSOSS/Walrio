@@ -183,8 +183,8 @@ class AudioPlayer:
         if should_loop:
             self.repeat_count += 1
             print(f"Looping song (repeat #{self.repeat_count})")
-            # Seek back to beginning
-            self.seek(0)
+            # Seek back to beginning with explicit 0.0 to ensure it's a proper float
+            self.seek(0.0)
         else:
             print(f"Finished looping after {self.repeat_count} repeats")
             self.stop()
@@ -397,35 +397,44 @@ class AudioPlayer:
         if not self.current_file:
             print("Error: No file loaded")
             return False
-        
+
+        # Convert to float and validate input
+        try:
+            position_seconds = float(position_seconds)
+        except (ValueError, TypeError) as e:
+            print(f"Error: Invalid seek position: {position_seconds}, error: {e}")
+            return False
+
         if position_seconds < 0:
             print("Error: Seek position cannot be negative")
             return False
-        
+
         if self.duration > 0 and position_seconds > self.duration:
             print(f"Error: Seek position {position_seconds:.1f}s exceeds duration {self.duration:.1f}s")
             return False
-        
+
         if not self.pipeline:
             print("Error: No pipeline available for seeking")
             return False
         
         try:
+            # Ensure position_seconds is within safe bounds
+            position_seconds = max(0.0, min(float(position_seconds), 86400.0))  # Cap at 24 hours
+            
             # Convert position to nanoseconds for GStreamer
-            position_ns = int(position_seconds * Gst.SECOND)
+            GST_SECOND = 1000000000
+            position_ns = int(position_seconds * GST_SECOND)
             
-            # Perform the seek
-            seek_event = Gst.Event.new_seek(
-                1.0,  # Rate
-                Gst.Format.TIME,  # Format
-                Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE,  # Flags
-                Gst.SeekType.SET,  # Start type
-                position_ns,  # Start position
-                Gst.SeekType.NONE,  # Stop type
-                Gst.CLOCK_TIME_NONE  # Stop position
+            # Ensure the nanosecond value is within acceptable range
+            if position_ns < 0:
+                position_ns = 0
+            
+            # Use simpler seek approach that avoids GStreamer constant issues
+            result = self.pipeline.seek_simple(
+                Gst.Format.TIME,
+                Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE,
+                position_ns
             )
-            
-            result = self.pipeline.send_event(seek_event)
             
             if result:
                 self.position = position_seconds
