@@ -156,7 +156,7 @@ class FileRelocater:
     
     def get_file_metadata(self, filepath: str) -> Dict[str, str]:
         """
-        Extract metadata from an audio file using the metadata module.
+        Extract metadata from an audio file using the metadata module's specific functions.
         
         Args:
             filepath (str): Path to the audio file
@@ -165,42 +165,23 @@ class FileRelocater:
             dict: Dictionary containing all available metadata with "Unknown" for missing values
         """
         try:
-            # Use the metadata module to extract metadata
-            editor = metadata.MetadataEditor()
-            file_metadata = editor.get_metadata(filepath)
-            
-            # Convert to the format expected by the file relocater
-            # Always provide "Unknown" for missing values instead of empty strings
+            # Use specific metadata functions for more efficient extraction
             standardized_metadata = {}
             
-            # Map the metadata fields to our expected format
-            field_mappings = {
-                'title': 'title',
-                'artist': 'artist', 
-                'album': 'album',
-                'albumartist': 'albumartist',
-                'date': 'date',
-                'year': 'year',
-                'genre': 'genre',
-                'track': 'track',
-                'disc': 'disc',
-                'comment': 'comment',
-                'composer': 'composer',
-                'performer': 'performer',
-                'grouping': 'grouping'
-            }
-            
-            for our_field, metadata_field in field_mappings.items():
-                if file_metadata and metadata_field in file_metadata and file_metadata[metadata_field]:
-                    standardized_metadata[our_field] = str(file_metadata[metadata_field]).strip()
-                else:
-                    # Use "Unknown" for any missing or empty metadata
-                    standardized_metadata[our_field] = "Unknown"
-            
-            # Special handling for year field - use date if year is not available
-            if (standardized_metadata.get('year') == "Unknown" and 
-                file_metadata and 'date' in file_metadata and file_metadata['date']):
-                standardized_metadata['year'] = str(file_metadata['date']).strip()
+            # Extract each metadata field individually
+            standardized_metadata['title'] = metadata.get_title(filepath) or "Unknown"
+            standardized_metadata['artist'] = metadata.get_artist(filepath) or "Unknown"
+            standardized_metadata['album'] = metadata.get_album(filepath) or "Unknown"
+            standardized_metadata['albumartist'] = metadata.get_albumartist(filepath) or "Unknown"
+            standardized_metadata['date'] = metadata.get_year(filepath) or "Unknown"
+            standardized_metadata['year'] = metadata.get_year(filepath) or "Unknown"
+            standardized_metadata['genre'] = metadata.get_genre(filepath) or "Unknown"
+            standardized_metadata['track'] = metadata.get_track(filepath) or "Unknown"
+            standardized_metadata['disc'] = metadata.get_disc(filepath) or "Unknown"
+            standardized_metadata['comment'] = metadata.get_comment(filepath) or "Unknown"
+            standardized_metadata['composer'] = metadata.get_composer(filepath) or "Unknown"
+            standardized_metadata['performer'] = metadata.get_performer(filepath) or "Unknown"
+            standardized_metadata['grouping'] = metadata.get_grouping(filepath) or "Unknown"
             
             # Special handling for albumartist - use artist as backup if albumartist is missing
             if (standardized_metadata.get('albumartist') == "Unknown" and 
@@ -230,12 +211,6 @@ class FileRelocater:
                     getattr(self, '_auto_approve_all_artists', False)):
                     standardized_metadata['albumartist'] = artist_name
                     logger.info(f"Using Artist '{artist_name}' as AlbumArtist for {os.path.basename(filepath)}")
-            
-            # Also add any additional metadata fields that might be useful for custom formats
-            if file_metadata:
-                for key, value in file_metadata.items():
-                    if key not in field_mappings.values() and value:
-                        standardized_metadata[key] = str(value)
             
             return standardized_metadata
             

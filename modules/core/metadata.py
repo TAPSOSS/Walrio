@@ -16,6 +16,7 @@ import logging
 import subprocess
 import base64
 import io
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -1682,3 +1683,132 @@ def get_duration(filepath: str) -> float:
     except Exception:
         pass
     return 0.0
+
+
+# Specific metadata extraction functions
+def _get_specific_tag(filepath: str, tag_key: str, alt_keys: list = None) -> str:
+    """
+    Helper function to extract a specific tag from an audio file without loading all metadata.
+    
+    Args:
+        filepath (str): Path to the audio file
+        tag_key (str): Primary tag key to look for
+        alt_keys (list): Alternative tag keys to check if primary is not found
+        
+    Returns:
+        str: The tag value or empty string if not found
+    """
+    if not MUTAGEN_AVAILABLE:
+        return ''
+    
+    try:
+        audio_file = MutagenFile(filepath)
+        if audio_file is None:
+            return ''
+        
+        # Try primary tag key first
+        if hasattr(audio_file, 'tags') and audio_file.tags:
+            # Check primary key
+            if tag_key in audio_file.tags:
+                value = audio_file.tags[tag_key]
+                if isinstance(value, list) and value:
+                    return str(value[0]).strip()
+                elif value:
+                    return str(value).strip()
+            
+            # Check alternative keys if provided
+            if alt_keys:
+                for alt_key in alt_keys:
+                    if alt_key in audio_file.tags:
+                        value = audio_file.tags[alt_key]
+                        if isinstance(value, list) and value:
+                            return str(value[0]).strip()
+                        elif value:
+                            return str(value).strip()
+        
+        return ''
+    except Exception:
+        return ''
+
+
+def get_title(filepath: str) -> str:
+    """Get the title tag from an audio file."""
+    return _get_specific_tag(filepath, 'TIT2', ['TITLE', 'Title'])
+
+
+def get_artist(filepath: str) -> str:
+    """Get the artist tag from an audio file."""
+    return _get_specific_tag(filepath, 'TPE1', ['ARTIST', 'Artist'])
+
+
+def get_album(filepath: str) -> str:
+    """Get the album tag from an audio file."""
+    return _get_specific_tag(filepath, 'TALB', ['ALBUM', 'Album'])
+
+
+def get_albumartist(filepath: str) -> str:
+    """Get the albumartist tag from an audio file."""
+    return _get_specific_tag(filepath, 'TPE2', ['ALBUMARTIST', 'AlbumArtist', 'ALBUM ARTIST', 'Album Artist'])
+
+
+def get_year(filepath: str) -> str:
+    """Get the year/date tag from an audio file."""
+    # Try year first, then date
+    year = _get_specific_tag(filepath, 'TDRC', ['DATE', 'YEAR', 'Year'])
+    if year:
+        # Extract just the year part if it's a full date
+        year_match = re.match(r'(\d{4})', year)
+        if year_match:
+            return year_match.group(1)
+    
+    # Try alternative date tags
+    date = _get_specific_tag(filepath, 'TYER', ['date'])
+    if date:
+        year_match = re.match(r'(\d{4})', date)
+        if year_match:
+            return year_match.group(1)
+    
+    return ''
+
+
+def get_genre(filepath: str) -> str:
+    """Get the genre tag from an audio file."""
+    return _get_specific_tag(filepath, 'TCON', ['GENRE', 'Genre'])
+
+
+def get_track(filepath: str) -> str:
+    """Get the track number from an audio file."""
+    track = _get_specific_tag(filepath, 'TRCK', ['TRACKNUMBER', 'Track'])
+    # Extract just the track number (remove "/total" if present)
+    if track and '/' in track:
+        return track.split('/')[0]
+    return track
+
+
+def get_disc(filepath: str) -> str:
+    """Get the disc number from an audio file."""
+    disc = _get_specific_tag(filepath, 'TPOS', ['DISCNUMBER', 'Disc'])
+    # Extract just the disc number (remove "/total" if present)
+    if disc and '/' in disc:
+        return disc.split('/')[0]
+    return disc
+
+
+def get_comment(filepath: str) -> str:
+    """Get the comment tag from an audio file."""
+    return _get_specific_tag(filepath, 'COMM::eng', ['COMMENT', 'Comment'])
+
+
+def get_composer(filepath: str) -> str:
+    """Get the composer tag from an audio file."""
+    return _get_specific_tag(filepath, 'TCOM', ['COMPOSER', 'Composer'])
+
+
+def get_performer(filepath: str) -> str:
+    """Get the performer tag from an audio file."""
+    return _get_specific_tag(filepath, 'TPE3', ['PERFORMER', 'Performer'])
+
+
+def get_grouping(filepath: str) -> str:
+    """Get the grouping tag from an audio file."""
+    return _get_specific_tag(filepath, 'TIT1', ['GROUPING', 'Grouping'])
