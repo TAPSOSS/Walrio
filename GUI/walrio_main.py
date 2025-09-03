@@ -194,6 +194,58 @@ class PlayerWorker(QThread):
         # Give the run loop a moment to notice should_stop and exit
         time.sleep(0.05)
                     
+    def seek(self, position):
+        """Seek to a specific position using daemon socket command.
+        
+        Args:
+            position (float): Position in seconds to seek to
+        """
+        if self.process and self.process.poll() is None:
+            try:
+                import socket
+                import tempfile
+                import os
+                
+                # Find the socket file for this daemon
+                temp_dir = tempfile.gettempdir()
+                socket_files = []
+                
+                for filename in os.listdir(temp_dir):
+                    if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+                        socket_path = os.path.join(temp_dir, filename)
+                        if os.path.exists(socket_path):
+                            socket_files.append((socket_path, os.path.getmtime(socket_path)))
+                
+                if socket_files:
+                    # Use the most recent socket file
+                    socket_path = max(socket_files, key=lambda x: x[1])[0]
+                    
+                    # Connect to socket and send seek command
+                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    try:
+                        sock.connect(socket_path)
+                        command = f"seek {position:.2f}"
+                        sock.send(command.encode('utf-8'))
+                        response = sock.recv(1024).decode('utf-8')
+                        print(f"Seek command response: {response}")
+                        
+                        # If seek was successful, update our timing
+                        if response.startswith("OK:"):
+                            current_time = time.time()
+                            self.start_time = current_time - position
+                            self.paused_duration = 0
+                            self.pause_start = None
+                            self.last_known_position = position
+                            return True
+                        return False
+                    finally:
+                        sock.close()
+                        
+            except Exception as e:
+                print(f"Error seeking: {e}")
+                return False
+        return False
+    
     def set_volume(self, volume):
         """Set the playback volume using daemon socket command.
         
@@ -253,6 +305,7 @@ class WalrioMusicPlayer(QMainWindow):
         self.is_seeking = False
         self.loop_mode = "off"  # Can be "off" or "track"
         self.queue_manager = None  # Queue manager for loop handling
+        self.pending_position = 0  # Position to apply when user stops seeking
         
         self.setup_ui()
         self.setup_timer()
@@ -590,34 +643,47 @@ class WalrioMusicPlayer(QMainWindow):
     def on_seek_end(self):
         """Handle when user finishes seeking."""
         self.is_seeking = False
-        # Update position based on slider value (now in seconds)
-        if self.duration > 0:
-            self.position = self.progress_slider.value()
-            self.time_current.setText(self.format_time(self.position))
-        # Note: Actual seeking would need to be implemented in the player module
+        
+        # Always use the slider position where user released it
+        seek_position = self.progress_slider.value()
+        self.position = seek_position
+        self.time_current.setText(self.format_time(seek_position))
+        
+        # Try to seek the actual player to this position using socket
+        if self.player_worker:
+            success = self.player_worker.seek(seek_position)
+            if not success:
+                print(f"Seek to {seek_position}s failed")
+        
+        # Clear pending position
+        self.pending_position = 0
     
     def on_position_updated(self, position):
         """
         Handle position updates from the player worker.
+        Uses Strawberry Music Player approach: ignore updates when user is interacting with slider.
         
         Args:
             position (float): Current playback position in seconds.
         """
-        # Ignore position updates if we're not supposed to be playing
+        # Ignore position updates if we're not playing
         if not self.is_playing or not self.player_worker:
             return
             
-        if not self.is_seeking:
-            # Cap position at duration to prevent going beyond song length
-            if self.duration > 0 and position >= self.duration:
-                # Don't update UI beyond song duration - let playback finish naturally
-                return
-                
-            self.position = position
+        # Strawberry approach: Don't update slider when user is holding it down
+        if self.progress_slider.isSliderDown():
+            # Store the real position for reference but don't update UI
+            self.pending_position = position
+            return
             
-            # Normal position update (no special loop handling needed)
-            self.progress_slider.setValue(int(position))
-            self.time_current.setText(self.format_time(position))
+        # Cap position at duration to prevent going beyond song length
+        if self.duration > 0 and position >= self.duration:
+            position = self.duration
+            
+        # Update position and UI (only when user is not interacting with slider)
+        self.position = position
+        self.progress_slider.setValue(int(position))
+        self.time_current.setText(self.format_time(position))
     
     def update_ui(self):
         """Update UI elements (called by timer)."""
