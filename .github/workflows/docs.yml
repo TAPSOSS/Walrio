@@ -12,12 +12,19 @@ on:
     paths:
       - 'docs/**'
       - 'modules/**'
+  pull_request_target:
+    branches: [ main, master ]
+    paths:
+      - 'docs/**'
+      - 'modules/**'
   workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: "pages"
