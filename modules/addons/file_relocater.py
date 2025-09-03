@@ -162,19 +162,15 @@ class FileRelocater:
             filepath (str): Path to the audio file
             
         Returns:
-            dict: Dictionary containing all available metadata
+            dict: Dictionary containing all available metadata with "Unknown" for missing values
         """
         try:
             # Use the metadata module to extract metadata
             editor = metadata.MetadataEditor()
             file_metadata = editor.get_metadata(filepath)
             
-            if not file_metadata:
-                logger.warning(f"No metadata found for {os.path.basename(filepath)}")
-                return {}
-            
             # Convert to the format expected by the file relocater
-            # The metadata module returns more structured data, so we need to map it
+            # Always provide "Unknown" for missing values instead of empty strings
             standardized_metadata = {}
             
             # Map the metadata fields to our expected format
@@ -195,20 +191,73 @@ class FileRelocater:
             }
             
             for our_field, metadata_field in field_mappings.items():
-                if metadata_field in file_metadata and file_metadata[metadata_field]:
-                    standardized_metadata[our_field] = str(file_metadata[metadata_field])
+                if file_metadata and metadata_field in file_metadata and file_metadata[metadata_field]:
+                    standardized_metadata[our_field] = str(file_metadata[metadata_field]).strip()
+                else:
+                    # Use "Unknown" for any missing or empty metadata
+                    standardized_metadata[our_field] = "Unknown"
+            
+            # Special handling for year field - use date if year is not available
+            if (standardized_metadata.get('year') == "Unknown" and 
+                file_metadata and 'date' in file_metadata and file_metadata['date']):
+                standardized_metadata['year'] = str(file_metadata['date']).strip()
+            
+            # Special handling for albumartist - use artist as backup if albumartist is missing
+            if (standardized_metadata.get('albumartist') == "Unknown" and 
+                standardized_metadata.get('artist') != "Unknown"):
+                
+                # Check if we haven't asked about this artist before
+                artist_name = standardized_metadata['artist']
+                if not hasattr(self, '_artist_confirmations'):
+                    self._artist_confirmations = {}
+                
+                if artist_name not in self._artist_confirmations:
+                    # Ask user for confirmation
+                    response = input(f"\nAlbumArtist missing for '{os.path.basename(filepath)}'. "
+                                   f"Use Artist '{artist_name}' as AlbumArtist? (y/n/a=all): ").lower().strip()
+                    
+                    if response in ['y', 'yes']:
+                        self._artist_confirmations[artist_name] = True
+                    elif response in ['a', 'all']:
+                        self._artist_confirmations[artist_name] = True
+                        # Also set a flag to auto-approve all future missing albumartists
+                        self._auto_approve_all_artists = True
+                    else:
+                        self._artist_confirmations[artist_name] = False
+                
+                # Apply the decision
+                if (self._artist_confirmations.get(artist_name, False) or 
+                    getattr(self, '_auto_approve_all_artists', False)):
+                    standardized_metadata['albumartist'] = artist_name
+                    logger.info(f"Using Artist '{artist_name}' as AlbumArtist for {os.path.basename(filepath)}")
             
             # Also add any additional metadata fields that might be useful for custom formats
-            for key, value in file_metadata.items():
-                if key not in field_mappings.values() and value:
-                    standardized_metadata[key] = str(value)
+            if file_metadata:
+                for key, value in file_metadata.items():
+                    if key not in field_mappings.values() and value:
+                        standardized_metadata[key] = str(value)
             
             return standardized_metadata
             
         except Exception as e:
             logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
             self.metadata_error_count += 1
-            return {}
+            # Return a dictionary with "Unknown" values for all standard fields
+            return {
+                'title': 'Unknown',
+                'artist': 'Unknown', 
+                'album': 'Unknown',
+                'albumartist': 'Unknown',
+                'date': 'Unknown',
+                'year': 'Unknown',
+                'genre': 'Unknown',
+                'track': 'Unknown',
+                'disc': 'Unknown',
+                'comment': 'Unknown',
+                'composer': 'Unknown',
+                'performer': 'Unknown',
+                'grouping': 'Unknown'
+            }
     
     def generate_folder_path(self, filepath: str) -> Optional[str]:
         """
