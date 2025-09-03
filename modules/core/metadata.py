@@ -16,6 +16,7 @@ import logging
 import subprocess
 import base64
 import io
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -287,6 +288,7 @@ class MetadataEditor:
             'ARTIST': 'artist',
             'ALBUM': 'album',
             'ALBUMARTIST': 'albumartist',
+            'ALBUM ARTIST': 'albumartist',  # Alternative format with space
             'DATE': 'date',
             'YEAR': 'year',
             'GENRE': 'genre',
@@ -1230,6 +1232,9 @@ class MetadataEditor:
             logger.error(f"Could not read metadata from {os.path.basename(filepath)}")
             return
         
+        # Get audio properties including duration
+        audio_info = self._get_audio_info(filepath)
+        
         print(f"\nMetadata for: {os.path.basename(filepath)}")
         print("=" * 50)
         print(f"Format: {metadata.get('format', 'Unknown')}")
@@ -1243,6 +1248,22 @@ class MetadataEditor:
         print(f"Disc: {metadata.get('disc', 'Unknown')}")
         print(f"Comment: {metadata.get('comment', 'None')}")
         print(f"Album Art: {'Yes' if metadata.get('has_album_art') else 'No'}")
+        
+        # Display audio properties
+        if audio_info.get('duration', 0) > 0:
+            duration = audio_info['duration']
+            minutes = int(duration // 60)
+            seconds = int(duration % 60)
+            print(f"Duration: {minutes:02d}:{seconds:02d} ({duration:.1f} seconds)")
+        else:
+            print("Duration: Unknown")
+        
+        if audio_info.get('bitrate', 0) > 0:
+            print(f"Bitrate: {audio_info['bitrate']} kbps")
+        if audio_info.get('sample_rate', 0) > 0:
+            print(f"Sample Rate: {audio_info['sample_rate']} Hz")
+        if audio_info.get('bit_depth', 0) > 0:
+            print(f"Bit Depth: {audio_info['bit_depth']} bits")
 
     def extract_metadata_for_database(self, filepath: str) -> Dict[str, Any]:
         """
@@ -1334,46 +1355,51 @@ class MetadataEditor:
                           bitrate, sample rate, etc., or empty dict if analysis fails
         """
         try:
-            cmd = [
-                'ffprobe', '-v', 'error',
-                '-show_entries', 'format=duration,bit_rate:stream=sample_rate,bits_per_sample,bits_per_raw_sample',
+            info = {}
+            
+            # Get duration
+            duration_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'format=duration',
                 '-of', 'csv=p=0',
                 str(filepath)
             ]
+            duration_result = subprocess.run(duration_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if duration_result.stdout.strip():
+                try:
+                    info['duration'] = float(duration_result.stdout.strip())
+                except ValueError:
+                    pass
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=30
-            )
+            # Get bit rate
+            bitrate_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'format=bit_rate',
+                '-of', 'csv=p=0',
+                str(filepath)
+            ]
+            bitrate_result = subprocess.run(bitrate_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if bitrate_result.stdout.strip():
+                try:
+                    info['bitrate'] = int(float(bitrate_result.stdout.strip())) // 1000  # Convert to kbps
+                except ValueError:
+                    pass
             
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                info = {}
-                
-                # Parse the output
-                for line in lines:
-                    parts = line.split(',')
-                    if len(parts) >= 2:
-                        try:
-                            if 'duration' not in info and parts[0]:
-                                info['duration'] = float(parts[0])
-                            if 'bitrate' not in info and parts[1]:
-                                info['bitrate'] = int(float(parts[1]))
-                            if len(parts) >= 3 and parts[2]:
-                                info['sample_rate'] = int(parts[2])
-                            if len(parts) >= 4 and parts[3]:
-                                info['bit_depth'] = int(parts[3])
-                            elif len(parts) >= 5 and parts[4]:
-                                info['bit_depth'] = int(parts[4])
-                        except ValueError:
-                            continue
-                
-                return info
+            # Get sample rate
+            samplerate_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'stream=sample_rate',
+                '-of', 'csv=p=0',
+                str(filepath)
+            ]
+            samplerate_result = subprocess.run(samplerate_cmd, capture_output=True, text=True, check=True, timeout=30)
+            if samplerate_result.stdout.strip():
+                try:
+                    info['sample_rate'] = int(samplerate_result.stdout.strip())
+                except ValueError:
+                    pass
             
-            return {}
+            return info
             
         except Exception:
             return {}
@@ -1458,6 +1484,7 @@ Examples:
     
     parser.add_argument('files', nargs='*', help='Audio files to process')
     parser.add_argument('--show', action='store_true', help='Display current metadata')
+    parser.add_argument('--duration', action='store_true', help='Show only duration in seconds')
     parser.add_argument('--set-title', help='Set title tag')
     parser.add_argument('--set-artist', help='Set artist tag')
     parser.add_argument('--set-album', help='Set album tag')
@@ -1490,6 +1517,18 @@ Examples:
                 editor.display_metadata(filepath)
             else:
                 logger.error(f"File not found: {filepath}")
+        return 0
+    
+    # Check if we're just getting duration
+    if args.duration:
+        for filepath in args.files:
+            if os.path.exists(filepath):
+                audio_info = editor._get_audio_info(filepath)
+                duration = audio_info.get('duration', 0)
+                print(f"{duration}")
+            else:
+                logger.error(f"File not found: {filepath}")
+                print("0")
         return 0
     
     # Build metadata dictionary from arguments
@@ -1625,3 +1664,247 @@ def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
     """
     editor = MetadataEditor()
     return editor.embed_opus_album_art(opus_filepath, image_path)
+
+
+def get_duration(filepath: str) -> float:
+    """
+    Get the duration of an audio file in seconds.
+    
+    Args:
+        filepath (str): Path to the audio file
+        
+    Returns:
+        float: Duration in seconds, or 0.0 if unable to determine
+    """
+    try:
+        metadata = extract_metadata(filepath)
+        if metadata and 'length' in metadata:
+            return float(metadata['length'])
+    except Exception:
+        pass
+    return 0.0
+
+
+# Specific metadata extraction functions
+def _get_specific_tag(filepath: str, tag_key: str, alt_keys: list = None) -> str:
+    """
+    Helper function to extract a specific tag from an audio file without loading all metadata.
+    
+    Args:
+        filepath (str): Path to the audio file
+        tag_key (str): Primary tag key to look for
+        alt_keys (list): Alternative tag keys to check if primary is not found
+        
+    Returns:
+        str: The tag value or empty string if not found
+    """
+    if not MUTAGEN_AVAILABLE:
+        return ''
+    
+    try:
+        audio_file = MutagenFile(filepath)
+        if audio_file is None:
+            return ''
+        
+        # Try primary tag key first
+        if hasattr(audio_file, 'tags') and audio_file.tags:
+            # Check primary key
+            if tag_key in audio_file.tags:
+                value = audio_file.tags[tag_key]
+                if isinstance(value, list) and value:
+                    return str(value[0]).strip()
+                elif value:
+                    return str(value).strip()
+            
+            # Check alternative keys if provided
+            if alt_keys:
+                for alt_key in alt_keys:
+                    if alt_key in audio_file.tags:
+                        value = audio_file.tags[alt_key]
+                        if isinstance(value, list) and value:
+                            return str(value[0]).strip()
+                        elif value:
+                            return str(value).strip()
+        
+        return ''
+    except Exception:
+        return ''
+
+
+def get_title(filepath: str) -> str:
+    """
+    Get the title tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The title tag value or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TIT2', ['TITLE', 'Title'])
+
+
+def get_artist(filepath: str) -> str:
+    """
+    Get the artist tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The artist tag value or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TPE1', ['ARTIST', 'Artist'])
+
+
+def get_album(filepath: str) -> str:
+    """
+    Get the album tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The album tag value or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TALB', ['ALBUM', 'Album'])
+
+
+def get_albumartist(filepath: str) -> str:
+    """
+    Get the albumartist tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The album artist tag value or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TPE2', ['ALBUMARTIST', 'AlbumArtist', 'ALBUM ARTIST', 'Album Artist'])
+
+
+def get_year(filepath: str) -> str:
+    """
+    Get the year/date tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The year value or empty string if not found.
+    """
+    # Try year first, then date
+    year = _get_specific_tag(filepath, 'TDRC', ['DATE', 'YEAR', 'Year'])
+    if year:
+        # Extract just the year part if it's a full date
+        year_match = re.match(r'(\d{4})', year)
+        if year_match:
+            return year_match.group(1)
+    
+    # Try alternative date tags
+    date = _get_specific_tag(filepath, 'TYER', ['date'])
+    if date:
+        year_match = re.match(r'(\d{4})', date)
+        if year_match:
+            return year_match.group(1)
+    
+    return ''
+
+
+def get_genre(filepath: str) -> str:
+    """
+    Get the genre tag from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The genre tag value or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TCON', ['GENRE', 'Genre'])
+
+
+def get_track(filepath: str) -> str:
+    """
+    Get the track number from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The track number or empty string if not found.
+    """
+    track = _get_specific_tag(filepath, 'TRCK', ['TRACKNUMBER', 'Track'])
+    # Extract just the track number (remove "/total" if present)
+    if track and '/' in track:
+        return track.split('/')[0]
+    return track
+
+
+def get_disc(filepath: str) -> str:
+    """
+    Get the disc number from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The disc number or empty string if not found.
+    """
+    disc = _get_specific_tag(filepath, 'TPOS', ['DISCNUMBER', 'Disc'])
+    # Extract just the disc number (remove "/total" if present)
+    if disc and '/' in disc:
+        return disc.split('/')[0]
+    return disc
+
+
+def get_comment(filepath: str) -> str:
+    """
+    Get the comment from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The comment or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'COMM::eng', ['COMMENT', 'Comment'])
+
+
+def get_composer(filepath: str) -> str:
+    """
+    Get the composer from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The composer or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TCOM', ['COMPOSER', 'Composer'])
+
+
+def get_performer(filepath: str) -> str:
+    """
+    Get the performer from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The performer or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TPE3', ['PERFORMER', 'Performer'])
+
+
+def get_grouping(filepath: str) -> str:
+    """
+    Get the grouping from an audio file.
+    
+    Args:
+        filepath (str): Path to the audio file.
+        
+    Returns:
+        str: The grouping or empty string if not found.
+    """
+    return _get_specific_tag(filepath, 'TIT1', ['GROUPING', 'Grouping'])
