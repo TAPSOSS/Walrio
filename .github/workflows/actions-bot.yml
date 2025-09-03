@@ -1,0 +1,318 @@
+name: Bot Check Command
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  bot-check:
+    # Only run on pull request comments with "bot, check"
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'bot, check')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: React to comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.reactions.createForIssueComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: context.payload.comment.id,
+            content: 'rocket'
+          });
+
+    - name: Checkout PR code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        ref: refs/pull/${{ github.event.issue.number }}/head
+        fetch-depth: 0
+
+    - name: Get PR info
+      id: pr-info
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          console.log(`PR #${pr.number}: ${pr.title}`);
+          console.log(`Author: ${pr.user.login}`);
+          console.log(`Head SHA: ${pr.head.sha}`);
+          
+          core.setOutput('pr_number', pr.number);
+          core.setOutput('pr_title', pr.title);
+          core.setOutput('pr_author', pr.user.login);
+          core.setOutput('head_sha', pr.head.sha);
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Post start message
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const author = '${{ steps.pr-info.outputs.pr_author }}';
+          
+          const message = `## 🤖 Bot Check Started
+
+          Running all checks for PR #${prNumber} by @${author}
+
+          ### 🔍 Checks Running:
+          - ✅ **PR Requirements** - Title, description, checklist
+          - ✅ **Style Check** - Python code style, docstrings, BSD headers  
+          - ✅ **CONTRIBUTING.md** - Guidelines compliance
+          
+          *Results will be posted when complete...*`;
+          
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: message
+          });
+
+    # PR Requirements Check (from pr-requirements-check.yml)
+    - name: PR Requirements Check
+      id: pr-requirements
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+
+          const title = pr.title;
+          const body = pr.body || '';
+          
+          let errors = [];
+          let warnings = [];
+
+          // Check 1: PR Title Guidelines
+          const titlePatterns = [
+            /^Added .+: .+$/,
+            /^Bug Fix .+: .+$/,
+            /^Updated .+: .+$/,
+            /^Documentation: .+$/
+          ];
+          
+          const titleValid = titlePatterns.some(pattern => pattern.test(title));
+          if (!titleValid) {
+            console.log('❌ PR Title check failed');
+            errors.push('❌ **PR Title**: Title does not follow the required format');
+          } else {
+            console.log('✅ PR Title format is correct');
+          }
+
+          // Check 2: Description has content
+          const descriptionSection = body.match(/## Description\s*\n.*?\n(.*?)(?=\n##|$)/s);
+          let description = descriptionSection ? descriptionSection[1].trim() : '';
+          description = description.replace(/<!--[\s\S]*?-->/g, '').trim();
+          
+          if (!description || description.length < 1 || description.match(/^\s*$/)) {
+            console.log('❌ Description check failed');
+            errors.push('❌ **Description**: Please provide a description of your changes');
+          } else {
+            console.log('✅ Description provided');
+          }
+
+          // Check 3: Type of Change box checked
+          const typeOfChangeSection = body.match(/## Type of Change.*?\n(.*?)(?=\n##|$)/s);
+          const typeOfChangeChecked = typeOfChangeSection && (typeOfChangeSection[1].includes('- [x]') || typeOfChangeSection[1].includes('- [X]'));
+          
+          if (!typeOfChangeChecked) {
+            console.log('❌ Type of Change check failed');
+            errors.push('❌ **Type of Change**: Please check at least one box');
+          } else {
+            console.log('✅ Type of Change selected');
+          }
+
+          // Check 4: Checklist items checked
+          const checklistSection = body.match(/## Checklist.*?\n(.*?)(?=\n##|$)/s);
+          if (checklistSection) {
+            const checklistItems = checklistSection[1].match(/- \[[ xX]\]/g) || [];
+            const checkedItems = checklistSection[1].match(/- \[[xX]\]/g) || [];
+            
+            if (checklistItems.length === 0) {
+              warnings.push('⚠️ **Checklist**: No checklist items found');
+            } else if (checkedItems.length < checklistItems.length) {
+              const uncheckedCount = checklistItems.length - checkedItems.length;
+              errors.push(`❌ **Checklist**: ${uncheckedCount} checklist item(s) not checked off`);
+            } else {
+              console.log('✅ All checklist items completed');
+            }
+          } else {
+            warnings.push('⚠️ **Checklist**: Checklist section not found');
+          }
+
+          core.setOutput('pr_errors', errors.length);
+          core.setOutput('pr_error_details', errors.join('\n'));
+          core.setOutput('pr_warnings', warnings.length);
+          core.setOutput('pr_warning_details', warnings.join('\n'));
+
+    # Style Check (from style-requirement.yml)
+    - name: Get changed Python files
+      id: changed-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files: |
+          **/*.py
+        files_ignore: |
+          .github/workflows/**
+          __pycache__/**
+          *.pyc
+          build/**
+          dist/**
+
+    - name: Style Check
+      id: style-check
+      if: steps.changed-files.outputs.any_changed == 'true'
+      run: |
+        echo "🎨 Running style check on changed Python files..."
+        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+        
+        # Make the style checker executable and run it
+        if [ -f ".github/scripts/enhanced_style_checker.py" ]; then
+          chmod +x .github/scripts/enhanced_style_checker.py
+          python3 .github/scripts/enhanced_style_checker.py ${{ steps.changed-files.outputs.all_changed_files }}
+          STYLE_EXIT_CODE=$?
+          echo "style_exit_code=$STYLE_EXIT_CODE" >> $GITHUB_OUTPUT
+        else
+          echo "⚠️ Style checker script not found"
+          echo "style_exit_code=0" >> $GITHUB_OUTPUT
+        fi
+
+    - name: No Python files changed
+      if: steps.changed-files.outputs.any_changed != 'true'
+      run: |
+        echo "✅ No Python files changed - style check skipped"
+        echo "style_exit_code=0" >> $GITHUB_OUTPUT
+      id: no-python-files
+
+    # CONTRIBUTING.md Check (from contributing-checker.yml)  
+    - name: Get CONTRIBUTING.md changes
+      id: contributing-changes
+      uses: tj-actions/changed-files@v41
+      with:
+        files_yaml: |
+          contributing:
+            - CONTRIBUTING.md
+          style_workflow:
+            - .github/workflows/style-requirement.yml
+
+    - name: CONTRIBUTING.md Check
+      id: contributing-check
+      run: |
+        if [ "${{ steps.contributing-changes.outputs.contributing_changed }}" == "true" ]; then
+          echo "❌ CONTRIBUTING.md was modified - requires admin approval"
+          echo "contributing_blocked=true" >> $GITHUB_OUTPUT
+          echo "contributing_exit_code=1" >> $GITHUB_OUTPUT
+        else
+          echo "✅ CONTRIBUTING.md was not modified"
+          echo "contributing_blocked=false" >> $GITHUB_OUTPUT
+          echo "contributing_exit_code=0" >> $GITHUB_OUTPUT
+        fi
+
+    # Post Results
+    - name: Post results
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prErrors = '${{ steps.pr-requirements.outputs.pr_errors }}' || '0';
+          const prErrorDetails = '${{ steps.pr-requirements.outputs.pr_error_details }}' || '';
+          const prWarnings = '${{ steps.pr-requirements.outputs.pr_warnings }}' || '0';
+          const prWarningDetails = '${{ steps.pr-requirements.outputs.pr_warning_details }}' || '';
+          
+          const styleExitCode = '${{ steps.style-check.outputs.style_exit_code }}' || '${{ steps.no-python-files.outputs.style_exit_code }}' || '0';
+          const contributingBlocked = '${{ steps.contributing-check.outputs.contributing_blocked }}' === 'true';
+          
+          let message = `## 🤖 Bot Check Results
+
+          ### 📋 PR Requirements Check:
+          `;
+          
+          if (prErrors === '0') {
+            message += '✅ **PASSED** - All PR requirements met\n';
+          } else {
+            message += `❌ **FAILED** - ${prErrors} issue(s) found:\n\`\`\`\n${prErrorDetails}\n\`\`\`\n`;
+          }
+          
+          if (prWarnings !== '0') {
+            message += `⚠️ **Warnings** (${prWarnings}):\n\`\`\`\n${prWarningDetails}\n\`\`\`\n`;
+          }
+          
+          message += `\n### 🎨 Style Check:
+          `;
+          
+          if (styleExitCode === '0') {
+            message += '✅ **PASSED** - Code style meets requirements\n';
+          } else {
+            message += '❌ **FAILED** - Style issues found (see logs above)\n';
+          }
+          
+          message += `\n### 📖 CONTRIBUTING.md Check:
+          `;
+          
+          if (contributingBlocked) {
+            message += '❌ **BLOCKED** - CONTRIBUTING.md was modified (requires admin approval)\n';
+          } else {
+            message += '✅ **PASSED** - No CONTRIBUTING.md changes\n';
+          }
+          
+          message += '\n---\n';
+          
+          const allPassed = prErrors === '0' && styleExitCode === '0' && !contributingBlocked;
+          
+          if (allPassed) {
+            message += '🎉 **All checks passed!** This PR is ready for review.\n\n';
+          } else {
+            message += '⚠️ **Some checks failed.** Please address the issues above and run `bot, check` again.\n\n';
+          }
+          
+          message += '*To re-run all checks, comment: `bot, check`*';
+          
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: message
+          });
+
+    # Set final job status
+    - name: Set job status
+      run: |
+        PR_ERRORS="${{ steps.pr-requirements.outputs.pr_errors }}"
+        STYLE_CODE="${{ steps.style-check.outputs.style_exit_code }}"
+        NO_PYTHON_STYLE_CODE="${{ steps.no-python-files.outputs.style_exit_code }}"
+        CONTRIBUTING_CODE="${{ steps.contributing-check.outputs.contributing_exit_code }}"
+        
+        # Use the appropriate style code
+        FINAL_STYLE_CODE="${STYLE_CODE:-${NO_PYTHON_STYLE_CODE:-0}}"
+        
+        echo "PR Errors: $PR_ERRORS"
+        echo "Style Exit Code: $FINAL_STYLE_CODE"
+        echo "Contributing Exit Code: $CONTRIBUTING_CODE"
+        
+        # Check if any checks failed
+        if [[ "$PR_ERRORS" != "0" || "$FINAL_STYLE_CODE" != "0" || "$CONTRIBUTING_CODE" != "0" ]]; then
+          echo "❌ Some checks failed"
+          exit 1
+        else
+          echo "✅ All checks passed"
+          exit 0
+        fi
