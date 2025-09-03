@@ -17,7 +17,8 @@ If you're interested in contributing to Walrio check out our [Contributing Guide
 - ImageMagick (for image conversion and processing)
 
 ### Dependency install commands
-I only have the developer environment set up properly for my OS of choice (fedora), feel free to contribute the other required dependecy commands if you know them for other operating systems.
+I only have the developer environment set up properly for my OS of choice (fedora).
+*Contributions for installation instructions on other platforms are welcome.*
 
 #### Fedora/RHEL/CentOS:
 ```bash
