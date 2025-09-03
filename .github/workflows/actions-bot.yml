@@ -1,0 +1,251 @@
+name: Actions Bot
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  bot-check:
+    # Only run on pull request comments with "bot, check"
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'bot, check')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: React to comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          await github.rest.reactions.createForIssueComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            comment_id: context.payload.comment.id,
+            content: 'rocket'
+          });
+
+    - name: Get PR info
+      id: pr-info
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: pr } = await github.rest.pulls.get({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: context.issue.number
+          });
+          
+          console.log(`PR #${pr.number}: ${pr.title}`);
+          console.log(`Author: ${pr.user.login}`);
+          console.log(`Head SHA: ${pr.head.sha}`);
+          
+          core.setOutput('pr_number', pr.number);
+          core.setOutput('pr_title', pr.title);
+          core.setOutput('pr_author', pr.user.login);
+          core.setOutput('head_sha', pr.head.sha);
+          core.setOutput('head_ref', pr.head.ref);
+
+    - name: Post start message
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const author = '${{ steps.pr-info.outputs.pr_author }}';
+          
+          const message = `## 🤖 Bot Check Started
+
+          Running all checks for PR #${prNumber} by @${author}
+
+          ### 🔍 Checks Running:
+          - ✅ **PR Requirements** - Title, description, checklist
+          - ✅ **Style Check** - Python code style, docstrings, BSD headers  
+          - ✅ **CONTRIBUTING.md** - Guidelines compliance
+          - ✅ **Documentation** - Build CLI, API, GUI docs and Sphinx
+          
+          *All workflows are running in parallel. Results will be posted when complete...*`;
+          
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: message
+          });
+
+    # Trigger all workflows using repository_dispatch
+    - name: Trigger all check workflows
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const headSha = '${{ steps.pr-info.outputs.head_sha }}';
+          const headRef = '${{ steps.pr-info.outputs.head_ref }}';
+          
+          console.log(`Triggering bot-check workflows for PR #${prNumber}`);
+          console.log(`Head SHA: ${headSha}`);
+          console.log(`Head Ref: ${headRef}`);
+          
+          // Dispatch bot-check event to trigger all workflows
+          await github.rest.repos.createDispatchEvent({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            event_type: 'bot-check',
+            client_payload: {
+              pr_number: prNumber,
+              head_sha: headSha,
+              head_ref: headRef,
+              triggered_by: 'bot-comment'
+            }
+          });
+          
+          console.log('✅ Repository dispatch event sent');
+
+    - name: Wait for workflows to start
+      run: sleep 15
+
+    - name: Monitor workflows and post results
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
+          const headSha = '${{ steps.pr-info.outputs.head_sha }}';
+          
+          // Define the workflows we're monitoring
+          const workflows = [
+            { file: 'pr-requirements-check.yml', name: 'PR Requirements Check' },
+            { file: 'style-requirement.yml', name: 'Style Checker' },
+            { file: 'contributing-checker.yml', name: 'CONTRIBUTING.md Checker' },
+            { file: 'docs.yml', name: 'Documentation Build' }
+          ];
+
+          // Function to get recent workflow runs
+          const getWorkflowRuns = async (workflowFile) => {
+            try {
+              const { data: runs } = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflowFile,
+                per_page: 20
+              });
+              
+              // Find runs triggered by repository_dispatch in the last 10 minutes
+              const recentRuns = runs.workflow_runs.filter(run => 
+                run.event === 'repository_dispatch' && 
+                new Date(run.created_at) > new Date(Date.now() - 10 * 60 * 1000)
+              );
+              
+              return recentRuns.length > 0 ? recentRuns[0] : null;
+            } catch (error) {
+              console.log(`Error getting runs for ${workflowFile}: ${error.message}`);
+              return null;
+            }
+          };
+
+          // Wait for all workflows to complete (max 10 minutes)
+          let allCompleted = false;
+          let attempts = 0;
+          const maxAttempts = 60; // 10 minutes with 10s intervals
+          const results = {};
+
+          console.log('🔍 Monitoring workflow runs...');
+
+          while (!allCompleted && attempts < maxAttempts) {
+            allCompleted = true;
+            let completedCount = 0;
+            
+            for (const workflow of workflows) {
+              if (!results[workflow.file]) {
+                const run = await getWorkflowRuns(workflow.file);
+                if (run) {
+                  console.log(`${workflow.name}: ${run.status} (${run.conclusion || 'running'})`);
+                  if (run.status === 'completed') {
+                    results[workflow.file] = {
+                      name: workflow.name,
+                      conclusion: run.conclusion,
+                      url: run.html_url,
+                      status: 'completed'
+                    };
+                    completedCount++;
+                  } else {
+                    allCompleted = false;
+                  }
+                } else {
+                  console.log(`${workflow.name}: No recent runs found`);
+                  allCompleted = false;
+                }
+              } else {
+                completedCount++;
+              }
+            }
+            
+            console.log(`Progress: ${completedCount}/${workflows.length} workflows completed`);
+            
+            if (!allCompleted) {
+              await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+              attempts++;
+            }
+          }
+
+          // Generate results comment
+          let message = `## 🤖 Bot Check Results\n\n`;
+          let allPassed = true;
+          let timeoutOccurred = false;
+
+          for (const workflow of workflows) {
+            const result = results[workflow.file];
+            if (result) {
+              let statusIcon, statusText;
+              if (result.conclusion === 'success') {
+                statusIcon = '✅';
+                statusText = '**PASSED**';
+              } else if (result.conclusion === 'failure') {
+                statusIcon = '❌';
+                statusText = '**FAILED**';
+                allPassed = false;
+              } else if (result.conclusion === 'cancelled') {
+                statusIcon = '🚫';
+                statusText = '**CANCELLED**';
+                allPassed = false;
+              } else {
+                statusIcon = '⚠️';
+                statusText = `**${result.conclusion?.toUpperCase() || 'UNKNOWN'}**`;
+                allPassed = false;
+              }
+              
+              message += `### ${result.name}:\n${statusIcon} ${statusText} - [View Details](${result.url})\n\n`;
+            } else {
+              message += `### ${workflow.name}:\n⏳ **TIMEOUT** - Workflow did not complete within 10 minutes\n\n`;
+              allPassed = false;
+              timeoutOccurred = true;
+            }
+          }
+
+          message += '---\n\n';
+          
+          if (allPassed) {
+            message += '🎉 **All checks passed!** This PR is ready for review.\n\n';
+          } else if (timeoutOccurred) {
+            message += '⏳ **Some workflows timed out.** Check the individual workflow runs for more details.\n\n';
+          } else {
+            message += '⚠️ **Some checks failed.** Please address the issues and run `bot, check` again.\n\n';
+          }
+          
+          message += '*To re-run all checks, comment: `bot, check`*';
+          
+          // Post results comment
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+            body: message
+          });
+
+          // Set final job status
+          if (!allPassed) {
+            core.setFailed('Some workflow checks failed or timed out');
+          } else {
+            console.log('✅ All checks passed successfully');
+          }
