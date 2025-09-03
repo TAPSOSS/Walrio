@@ -1,3 +1,4 @@
 # Python package dependencies for Walrio
 mutagen>=1.45.0
 PySide6>=6.0.0
+PyGObject>=3.30.0

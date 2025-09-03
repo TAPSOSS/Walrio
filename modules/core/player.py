@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Audio Player using GStreamer Command-Line Tools
+Audio Player using GStreamer Python Bindings
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A simple audio player that uses GStreamer command-line tools (gst-launch-1.0) 
-for playback control.
+A simple audio player that uses GStreamer Python bindings for real-time control
+including volume, seeking, and playback management.
 """
 
 import sys
@@ -20,47 +20,56 @@ import socket
 import tempfile
 from pathlib import Path
 
-import subprocess
-import shlex
+# GStreamer Python bindings
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GLib
 
 class AudioPlayer:
     """
-    A GStreamer command-line based audio player with playback control.
+    A GStreamer Python bindings based audio player with real-time control.
     
-    This class provides audio playback functionality using GStreamer's
-    command-line tools (gst-launch-1.0) including play, pause, stop,
-    volume control, and looping capabilities. No PyGObject bindings required.
+    This class provides audio playback functionality using GStreamer Python
+    bindings for real-time volume control, seeking, and playback management.
     """
     
     def __init__(self):
         """
-        Initialize the AudioPlayer with command-line GStreamer support.
+        Initialize the AudioPlayer with GStreamer Python bindings.
         
         Raises:
-            RuntimeError: If gst-launch-1.0 is not available.
+            RuntimeError: If GStreamer initialization fails.
         """
-        # Check if gst-launch-1.0 is available
-        try:
-            subprocess.run(['gst-launch-1.0', '--version'], 
-                         capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("gst-launch-1.0 not found. Please install GStreamer.")
+        # Initialize GStreamer
+        Gst.init(None)
+        
+        # Create pipeline elements
+        self.pipeline = None
+        self.source = None
+        self.decodebin = None
+        self.volume = None
+        self.audioconvert = None
+        self.audioresample = None
+        self.audiosink = None
         
         # Player state
-        self.process = None
         self.is_playing = False
         self.is_paused = False
         self.current_file = None
         self.duration = 0
         self.position = 0
-        self.volume = 1.0
+        self.volume_value = 1.0
         self.should_quit = False
         self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
         self.repeat_count = 0
         self.interactive_mode = False  # Track if we're in interactive mode
-        self.start_time = None  # Track when playback started
-        self.pause_time = None  # Track when playback was paused
-        self.position_thread = None  # Thread for position tracking
+        
+        # GLib main loop for handling messages
+        self.loop = GLib.MainLoop()
+        self.loop_thread = None
+        
+        # Position tracking
+        self.position_thread = None
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self.signal_handler)
@@ -77,41 +86,103 @@ class AudioPlayer:
         print(f"\nReceived signal {signum}, stopping playback...")
         self.stop()
         self.should_quit = True
+        if self.loop.is_running():
+            self.loop.quit()
     
-    def _handle_looping(self):
-        """Handle looping functionality by monitoring process completion."""
-        if not self.process:
+    def _create_pipeline(self):
+        """Create and configure the GStreamer pipeline."""
+        # Create pipeline
+        self.pipeline = Gst.Pipeline.new("audio-player")
+        
+        # Create elements
+        self.source = Gst.ElementFactory.make("filesrc", "source")
+        self.decodebin = Gst.ElementFactory.make("decodebin", "decoder")
+        self.volume = Gst.ElementFactory.make("volume", "volume")
+        self.audioconvert = Gst.ElementFactory.make("audioconvert", "convert")
+        self.audioresample = Gst.ElementFactory.make("audioresample", "resample")
+        self.audiosink = Gst.ElementFactory.make("autoaudiosink", "sink")
+        
+        if not all([self.source, self.decodebin, self.volume, self.audioconvert, 
+                   self.audioresample, self.audiosink]):
+            raise RuntimeError("Failed to create GStreamer elements")
+        
+        # Add elements to pipeline
+        self.pipeline.add(self.source)
+        self.pipeline.add(self.decodebin)
+        self.pipeline.add(self.volume)
+        self.pipeline.add(self.audioconvert)
+        self.pipeline.add(self.audioresample)
+        self.pipeline.add(self.audiosink)
+        
+        # Link static elements
+        self.source.link(self.decodebin)
+        self.volume.link(self.audioconvert)
+        self.audioconvert.link(self.audioresample)
+        self.audioresample.link(self.audiosink)
+        
+        # Connect dynamic pad for decodebin
+        self.decodebin.connect("pad-added", self._on_pad_added)
+        
+        # Set up message bus
+        bus = self.pipeline.get_bus()
+        bus.add_signal_watch()
+        bus.connect("message", self._on_bus_message)
+    
+    def _on_pad_added(self, decodebin, pad):
+        """Handle dynamic pad addition from decodebin."""
+        caps = pad.query_caps(None)
+        structure = caps.get_structure(0)
+        
+        if structure and structure.get_name().startswith("audio/"):
+            sink_pad = self.volume.get_static_pad("sink")
+            if not sink_pad.is_linked():
+                pad.link(sink_pad)
+    
+    def _on_bus_message(self, bus, message):
+        """Handle GStreamer bus messages."""
+        if message.type == Gst.MessageType.EOS:
+            # End of stream - handle looping
+            self._handle_eos()
+        elif message.type == Gst.MessageType.ERROR:
+            error, debug = message.parse_error()
+            print(f"GStreamer Error: {error}, Debug: {debug}")
+            self.stop()
+        elif message.type == Gst.MessageType.STATE_CHANGED:
+            if message.src == self.pipeline:
+                old_state, new_state, pending_state = message.parse_state_changed()
+                if new_state == Gst.State.PLAYING:
+                    self.is_playing = True
+                    self.is_paused = False
+                elif new_state == Gst.State.PAUSED:
+                    self.is_paused = True
+    
+    def _handle_eos(self):
+        """Handle end of stream for looping."""
+        if self.should_quit:
             return
             
-        try:
-            # Wait for process to complete
-            self.process.wait()
-            
-            # Check if we should loop - must check paused state to avoid race condition
-            if self.should_quit or not self.is_playing or self.is_paused:
-                return
-                
-            should_loop = False
-            if self.loop_mode == 'infinite':
+        should_loop = False
+        if self.loop_mode == 'infinite':
+            should_loop = True
+        elif self.loop_mode.isdigit():
+            if self.repeat_count < int(self.loop_mode):
                 should_loop = True
-            elif self.loop_mode.isdigit():
-                if self.repeat_count < int(self.loop_mode):
-                    should_loop = True
-            
-            if should_loop:
-                self.repeat_count += 1
-                print(f"Looping song (repeat #{self.repeat_count})")
-                # Restart playback
-                self.is_playing = False  # Reset state
-                self.play()
-            else:
-                print(f"Finished looping after {self.repeat_count} repeats")
-                self.is_playing = False
-                if self.interactive_mode:
-                    print("player> ", end="", flush=True)
-                
-        except Exception as e:
-            print(f"Error in looping handler: {e}")
+        
+        if should_loop:
+            self.repeat_count += 1
+            print(f"Looping song (repeat #{self.repeat_count})")
+            # Seek back to beginning
+            self.seek(0)
+        else:
+            print(f"Finished looping after {self.repeat_count} repeats")
+            self.stop()
+            if self.interactive_mode:
+                print("player> ", end="", flush=True)
+    
+    def _handle_looping(self):
+        """Handle looping functionality - now handled by EOS message."""
+        # This method is kept for compatibility but functionality moved to _handle_eos
+        pass
     
     def load_file(self, filepath):
         """
@@ -135,12 +206,21 @@ class AudioPlayer:
             print(f"Error: '{filepath}' is not a file.")
             return False
         
+        # Stop any existing playback
+        if self.pipeline:
+            self.stop()
+        
         # Store the file path for playback
         self.current_file = absolute_path
         
         # Reset position for new file
         self.position = 0
-        self._stop_position_tracking()
+        
+        # Create new pipeline
+        self._create_pipeline()
+        
+        # Set file source
+        self.source.set_property("location", absolute_path)
         
         # Get the duration of the file
         self.duration = self._get_file_duration(absolute_path)
@@ -164,121 +244,43 @@ class AudioPlayer:
             print("Error: No file loaded")
             return False
         
-        # Stop any existing playback
-        if self.process:
-            self.stop()
+        if not self.pipeline:
+            if not self.load_file(self.current_file):
+                return False
         
-        # Reset repeat count for new playback session (unless resuming)
-        if seek_position is None:
+        # Start GLib main loop in separate thread if not running
+        if not self.loop_thread or not self.loop_thread.is_alive():
+            self.loop_thread = threading.Thread(target=self._run_loop, daemon=True)
+            self.loop_thread.start()
+        
+        # Set volume
+        self.volume.set_property("volume", self.volume_value)
+        
+        # Seek to position if specified
+        if seek_position is not None:
+            self.pipeline.set_state(Gst.State.PAUSED)
+            self.pipeline.get_state(Gst.CLOCK_TIME_NONE)
+            self.seek(seek_position)
+        
+        # Start playback
+        ret = self.pipeline.set_state(Gst.State.PLAYING)
+        if ret == Gst.StateChangeReturn.FAILURE:
+            print("Error: Failed to start playback")
+            return False
+        
+        # Reset repeat count for new playback
+        if seek_position is None or seek_position == 0:
             self.repeat_count = 0
         
-        try:
-            # Build GStreamer pipeline command
-            if seek_position and seek_position > 0:
-                # Use ffmpeg to seek and pipe to GStreamer for more accurate seeking
-                cmd = [
-                    'ffmpeg', '-ss', str(seek_position), 
-                    '-i', self.current_file,
-                    '-f', 'wav', '-'
-                ]
-                
-                # Start ffmpeg process
-                ffmpeg_proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Pipe to GStreamer with volume control support
-                gst_cmd = [
-                    'gst-launch-1.0',
-                    'fdsrc', 'fd=0',
-                    '!', 'wavparse',
-                    '!', 'audioconvert',
-                    '!', 'audioresample',
-                    '!', 'volume', f'name=volume_element', f'volume={self.volume}',
-                    '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
-                ]
-                
-                self.process = subprocess.Popen(
-                    gst_cmd,
-                    stdin=ffmpeg_proc.stdout,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                
-                # Close ffmpeg stdout in parent to allow proper cleanup
-                ffmpeg_proc.stdout.close()
-                
-            else:
-                # Normal playback from beginning with interactive volume control
-                # Create a named pipe for volume control
-                import tempfile
-                self.volume_fifo = f"/tmp/walrio_volume_fifo_{os.getpid()}"
-                
-                try:
-                    # Remove existing fifo if present
-                    if os.path.exists(self.volume_fifo):
-                        os.unlink(self.volume_fifo)
-                    
-                    # Create named pipe
-                    os.mkfifo(self.volume_fifo)
-                    
-                    # Use filesrc to read volume changes from FIFO and apply to volume element
-                    cmd = [
-                        'gst-launch-1.0',
-                        'filesrc', f'location={shlex.quote(self.current_file)}',
-                        '!', 'decodebin',
-                        '!', 'audioconvert',
-                        '!', 'audioresample',
-                        '!', 'volume', f'name=vol', f'volume={self.volume}',
-                        '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
-                    ]
-                    
-                except OSError:
-                    # Fallback to regular pipeline if FIFO creation fails
-                    self.volume_fifo = None
-                    cmd = [
-                        'gst-launch-1.0',
-                        'filesrc', f'location={shlex.quote(self.current_file)}',
-                        '!', 'decodebin',
-                        '!', 'audioconvert',
-                        '!', 'audioresample',
-                        '!', 'volume', f'name=vol', f'volume={self.volume}',
-                        '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
-                    ]
-                
-                self.process = subprocess.Popen(
-                    cmd,
-                    stdin=subprocess.PIPE,  # Enable stdin for commands
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-            
-            # Set player state
-            self.is_playing = True
-            self.is_paused = False
-            
-            # Set start time (adjust for seek position if resuming)
-            if seek_position and seek_position > 0:
-                self.start_time = time.time() - seek_position
-                print(f"Playback resumed from {seek_position:.1f}s")
-            else:
-                self.start_time = time.time()
-                print("Playback started")
-            
-            # Start position tracking
-            self._start_position_tracking()
-            
-            # Handle looping in a separate thread
-            if self.loop_mode != 'none':
-                threading.Thread(target=self._handle_looping, daemon=True).start()
-            
-            return True
-            
-        except Exception as e:
-            print(f"Error starting playback: {e}")
-            return False
+        # Start position tracking
+        self._start_position_tracking()
+        
+        print("Playback started")
+        return True
+    
+    def _run_loop(self):
+        """Run the GLib main loop."""
+        self.loop.run()
     
     def pause(self):
         """
@@ -287,72 +289,36 @@ class AudioPlayer:
         Returns:
             bool: True if paused successfully, False otherwise.
         """
-        if not self.is_playing or not self.process:
+        if not self.is_playing or not self.pipeline:
             print("Player is not currently playing")
             return False
         
-        try:
-            # Set pause state immediately to prevent race condition with looping
-            self.is_paused = True
-            self.is_playing = False
-            
-            # Store current position before pausing
-            self.pause_time = time.time()
-            
-            # For GStreamer, we need to restart with seek to current position
-            # This is more reliable than SIGSTOP/SIGCONT for audio
-            if self.start_time:
-                # Calculate current position
-                self.pause_position = time.time() - self.start_time
-            else:
-                self.pause_position = 0
-            
-            # Stop current process
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
-            
-            self.process = None
-            print("Playback paused")
-            return True
-            
-        except Exception as e:
-            print(f"Error pausing playback: {e}")
+        ret = self.pipeline.set_state(Gst.State.PAUSED)
+        if ret == Gst.StateChangeReturn.FAILURE:
+            print("Error: Failed to pause playback")
             return False
+        
+        print("Playback paused")
+        return True
     
     def resume(self):
         """
-        Resume paused playback by restarting from pause position.
+        Resume paused playback.
         
         Returns:
             bool: True if resumed successfully, False otherwise.
         """
-        if not self.is_paused:
+        if not self.is_paused or not self.pipeline:
             print("Player is not currently paused")
             return False
         
-        try:
-            # Restart playback from the paused position
-            if hasattr(self, 'pause_position') and self.pause_position > 0:
-                success = self.play(seek_position=self.pause_position)
-            else:
-                success = self.play()
-            
-            if success:
-                self.is_paused = False
-                self.is_playing = True
-                # Note: play() method already prints the resume message, so no need to print again
-                return True
-            else:
-                print("Failed to resume playback")
-                return False
-                
-        except Exception as e:
-            print(f"Error resuming playback: {e}")
+        ret = self.pipeline.set_state(Gst.State.PLAYING)
+        if ret == Gst.StateChangeReturn.FAILURE:
+            print("Error: Failed to resume playback")
             return False
+        
+        print("Playback resumed")
+        return True
     
     def stop(self):
         """
@@ -361,30 +327,20 @@ class AudioPlayer:
         Returns:
             bool: True if stopped successfully, False otherwise.
         """
-        if self.process:
-            try:
-                self.process.terminate()
-                # Give it a moment to terminate gracefully
-                try:
-                    self.process.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    # Force kill if it doesn't terminate
-                    self.process.kill()
-                    self.process.wait()
-            except Exception as e:
-                print(f"Error stopping playback: {e}")
-                return False
-            finally:
-                self.process = None
+        if self.pipeline:
+            self.pipeline.set_state(Gst.State.NULL)
+            self.pipeline = None
         
         self.is_playing = False
         self.is_paused = False
         self._stop_position_tracking()
+        
+        print("Playback stopped")
         return True
     
     def set_volume(self, volume):
         """
-        Set playback volume.
+        Set playback volume in real-time.
         
         Args:
             volume (float): Volume level between 0.0 and 1.0.
@@ -396,56 +352,14 @@ class AudioPlayer:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
         
-        old_volume = self.volume
-        self.volume = volume
-        print(f"Volume set to {volume:.2f}")
+        self.volume_value = volume
         
-        # Apply volume to currently running process using GStreamer volume element control
-        if self.process and self.process.poll() is None and self.is_playing:
-            try:
-                # Use gst-inspect to find and control the volume element
-                # Send element property change via named pipe or signal
-                import os
-                import tempfile
-                
-                # Create a temporary file with the new volume value
-                volume_file = f"/tmp/walrio_volume_{os.getpid()}.txt"
-                with open(volume_file, 'w') as f:
-                    f.write(str(volume))
-                
-                # Use gst-launch-1.0's ability to set element properties dynamically
-                # This approach uses the fact that pulsesink can accept volume changes
-                try:
-                    # Alternative: restart with quick crossfade to minimize interruption
-                    if hasattr(self, 'start_time') and self.start_time:
-                        current_pos = time.time() - self.start_time
-                        # Quick restart from current position
-                        was_playing = self.is_playing
-                        
-                        # Store FFmpeg process if exists
-                        old_process = self.process
-                        
-                        # Start new process at current position
-                        success = self.play(seek_position=current_pos)
-                        
-                        # Terminate old process after new one starts
-                        if old_process and old_process.poll() is None:
-                            old_process.terminate()
-                            try:
-                                old_process.wait(timeout=0.5)
-                            except subprocess.TimeoutExpired:
-                                old_process.kill()
-                        
-                        if success:
-                            print(f"Applied volume {volume:.2f} with minimal interruption")
-                        return success
-                        
-                except Exception as inner_e:
-                    print(f"Crossfade restart failed: {inner_e}")
-                    
-            except Exception as e:
-                print(f"Could not apply volume to running process: {e}")
-                # Volume will be applied when next playback starts
+        # Apply volume immediately to the GStreamer pipeline
+        if self.volume and self.pipeline:
+            self.volume.set_property("volume", volume)
+            print(f"Volume set to {volume:.2f}")
+        else:
+            print(f"Volume will be set to {volume:.2f} when playback starts")
         
         return True
     
@@ -456,11 +370,11 @@ class AudioPlayer:
         Returns:
             float: Current volume between 0.0 and 1.0.
         """
-        return self.volume
+        return self.volume_value
     
     def seek(self, position_seconds):
         """
-        Seek to a specific position in the audio.
+        Seek to a specific position in the audio using GStreamer.
         
         Args:
             position_seconds (float): Position to seek to in seconds.
@@ -480,87 +394,57 @@ class AudioPlayer:
             print(f"Error: Seek position {position_seconds:.1f}s exceeds duration {self.duration:.1f}s")
             return False
         
-        # Store current playing state
-        was_playing = self.is_playing
+        if not self.pipeline:
+            print("Error: No pipeline available for seeking")
+            return False
         
         try:
-            # Stop current playback if any
-            if self.process:
-                self.stop()
+            # Convert position to nanoseconds for GStreamer
+            position_ns = int(position_seconds * Gst.SECOND)
             
-            # Use ffmpeg to create a temporary stream starting at the seek position
-            # This is more reliable than trying to seek with gst-launch-1.0
-            cmd = [
-                'ffmpeg',
-                '-ss', str(position_seconds),  # Seek to position
-                '-i', self.current_file,       # Input file
-                '-f', 'wav',                   # Output format
-                '-af', f'volume={self.volume}', # Apply volume
-                '-',                           # Output to stdout
-            ]
-            
-            # Pipe ffmpeg output to gst-launch-1.0 for playback
-            ffmpeg_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+            # Perform the seek
+            seek_event = Gst.Event.new_seek(
+                1.0,  # Rate
+                Gst.Format.TIME,  # Format
+                Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE,  # Flags
+                Gst.SeekType.SET,  # Start type
+                position_ns,  # Start position
+                Gst.SeekType.NONE,  # Stop type
+                Gst.CLOCK_TIME_NONE  # Stop position
             )
             
-            gst_cmd = [
-                'gst-launch-1.0',
-                'fdsrc', 'fd=0',
-                '!', 'wavparse',
-                '!', 'audioconvert',
-                '!', 'audioresample', 
-                '!', 'autoaudiosink'
-            ]
+            result = self.pipeline.send_event(seek_event)
             
-            self.process = subprocess.Popen(
-                gst_cmd,
-                stdin=ffmpeg_process.stdout,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            
-            # Close the ffmpeg stdout in the parent process
-            ffmpeg_process.stdout.close()
-            
-            # Update our position tracking
-            self.position = position_seconds
-            
-            if was_playing:
-                self.is_playing = True
-                self.is_paused = False
-                # Adjust start time to account for the seek position
-                self.start_time = time.time() - position_seconds
-                
-                # Start position tracking
-                if self.position_thread is None or not self.position_thread.is_alive():
-                    self.position_thread = threading.Thread(target=self._update_position, daemon=True)
-                    self.position_thread.start()
-                
-                print(f"Seeked to {position_seconds:.1f} seconds and resumed playback")
-            else:
-                self.is_playing = False
-                self.is_paused = True
-                # Pause the process immediately after seeking
-                time.sleep(0.1)
-                self.process.send_signal(signal.SIGSTOP)
+            if result:
+                self.position = position_seconds
                 print(f"Seeked to {position_seconds:.1f} seconds")
-            
-            return True
-            
+                return True
+            else:
+                print(f"Failed to seek to {position_seconds:.1f} seconds")
+                return False
+                
         except Exception as e:
             print(f"Error seeking to {position_seconds} seconds: {e}")
             return False
     
     def get_position(self):
         """
-        Get current playback position.
+        Get current playback position from GStreamer pipeline.
         
         Returns:
             float: Current position in seconds.
         """
+        if self.pipeline and self.is_playing:
+            try:
+                # Query current position from pipeline
+                success, position = self.pipeline.query_position(Gst.Format.TIME)
+                if success:
+                    # Convert from nanoseconds to seconds
+                    self.position = position / Gst.SECOND
+                    return self.position
+            except Exception:
+                pass
+        
         return self.position
     
     def get_duration(self):
@@ -871,11 +755,11 @@ class AudioPlayer:
             print(f"Error cleaning up daemon: {e}")
     
     def _update_position(self):
-        """Update position tracking while playing."""
+        """Update position tracking using GStreamer pipeline queries."""
         while self.is_playing and not self.should_quit:
-            if self.start_time and not self.is_paused:
-                elapsed = time.time() - self.start_time
-                self.position = elapsed
+            if self.pipeline and not self.is_paused:
+                # Query position from GStreamer pipeline
+                self.get_position()
             time.sleep(0.1)  # Update every 100ms
     
     def _start_position_tracking(self):
@@ -883,20 +767,17 @@ class AudioPlayer:
         if self.position_thread and self.position_thread.is_alive():
             return
         
-        self.start_time = time.time()
         self.position_thread = threading.Thread(target=self._update_position, daemon=True)
         self.position_thread.start()
     
     def _stop_position_tracking(self):
         """Stop position tracking."""
-        self.start_time = None
-        self.pause_time = None
         if self.position_thread:
             self.position_thread = None
 
     def _get_file_duration(self, filepath):
         """
-        Get the duration of an audio file using ffprobe.
+        Get the duration of an audio file using GStreamer discoverer.
         
         Args:
             filepath (str): Path to the audio file.
@@ -905,45 +786,20 @@ class AudioPlayer:
             float: Duration in seconds, or 0 if unable to determine.
         """
         try:
-            # Use ffprobe to get duration
-            cmd = [
-                'ffprobe', 
-                '-v', 'quiet',
-                '-show_entries', 'format=duration',
-                '-of', 'csv=p=0',
-                filepath
-            ]
+            # Create a temporary pipeline to discover duration
+            uri = f"file://{os.path.abspath(filepath)}"
+            discoverer = Gst.PbUtilsDiscoverer.new(10 * Gst.SECOND)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0 and result.stdout.strip():
-                duration = float(result.stdout.strip())
-                return duration
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, FileNotFoundError):
-            # Fallback: try using gst-discoverer-1.0 if ffprobe fails
             try:
-                cmd = [
-                    'gst-discoverer-1.0',
-                    '-v',
-                    filepath
-                ]
+                info = discoverer.discover_uri(uri)
+                duration = info.get_duration()
+                if duration != Gst.CLOCK_TIME_NONE:
+                    return duration / Gst.SECOND
+            except Exception as e:
+                print(f"Error discovering duration: {e}")
                 
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                if result.returncode == 0:
-                    # Parse duration from gst-discoverer output
-                    for line in result.stdout.split('\n'):
-                        if 'Duration:' in line:
-                            # Format is usually "Duration: 0:03:45.123456789"
-                            duration_str = line.split('Duration:')[1].strip()
-                            # Convert time format to seconds
-                            time_parts = duration_str.split(':')
-                            if len(time_parts) >= 3:
-                                hours = float(time_parts[0])
-                                minutes = float(time_parts[1])
-                                seconds = float(time_parts[2])
-                                total_seconds = hours * 3600 + minutes * 60 + seconds
-                                return total_seconds
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, FileNotFoundError):
-                pass
+        except Exception:
+            pass
         
         return 0.0
 
