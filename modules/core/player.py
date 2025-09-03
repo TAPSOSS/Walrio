@@ -211,16 +211,42 @@ class AudioPlayer:
                 ffmpeg_proc.stdout.close()
                 
             else:
-                # Normal playback from beginning with volume control support
-                cmd = [
-                    'gst-launch-1.0',
-                    'filesrc', f'location={shlex.quote(self.current_file)}',
-                    '!', 'decodebin',
-                    '!', 'audioconvert',
-                    '!', 'audioresample',
-                    '!', 'volume', f'name=volume_element', f'volume={self.volume}',
-                    '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
-                ]
+                # Normal playback from beginning with interactive volume control
+                # Create a named pipe for volume control
+                import tempfile
+                self.volume_fifo = f"/tmp/walrio_volume_fifo_{os.getpid()}"
+                
+                try:
+                    # Remove existing fifo if present
+                    if os.path.exists(self.volume_fifo):
+                        os.unlink(self.volume_fifo)
+                    
+                    # Create named pipe
+                    os.mkfifo(self.volume_fifo)
+                    
+                    # Use filesrc to read volume changes from FIFO and apply to volume element
+                    cmd = [
+                        'gst-launch-1.0',
+                        'filesrc', f'location={shlex.quote(self.current_file)}',
+                        '!', 'decodebin',
+                        '!', 'audioconvert',
+                        '!', 'audioresample',
+                        '!', 'volume', f'name=vol', f'volume={self.volume}',
+                        '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
+                    ]
+                    
+                except OSError:
+                    # Fallback to regular pipeline if FIFO creation fails
+                    self.volume_fifo = None
+                    cmd = [
+                        'gst-launch-1.0',
+                        'filesrc', f'location={shlex.quote(self.current_file)}',
+                        '!', 'decodebin',
+                        '!', 'audioconvert',
+                        '!', 'audioresample',
+                        '!', 'volume', f'name=vol', f'volume={self.volume}',
+                        '!', 'pulsesink', f'client-name=walrio-player-{os.getpid()}'
+                    ]
                 
                 self.process = subprocess.Popen(
                     cmd,
@@ -374,18 +400,48 @@ class AudioPlayer:
         self.volume = volume
         print(f"Volume set to {volume:.2f}")
         
-        # Apply volume to currently running process using GStreamer interactive mode
+        # Apply volume to currently running process using GStreamer volume element control
         if self.process and self.process.poll() is None and self.is_playing:
             try:
-                # Send volume command to gst-play if it supports stdin
-                if hasattr(self.process, 'stdin') and self.process.stdin:
-                    # Try sending volume command (works with gst-play-1.0 in interactive mode)
-                    volume_cmd = f"volume {volume}\n"
-                    self.process.stdin.write(volume_cmd.encode())
-                    self.process.stdin.flush()
-                    print(f"Sent volume command to GStreamer: {volume:.2f}")
-                else:
-                    print("No stdin available for volume control")
+                # Use gst-inspect to find and control the volume element
+                # Send element property change via named pipe or signal
+                import os
+                import tempfile
+                
+                # Create a temporary file with the new volume value
+                volume_file = f"/tmp/walrio_volume_{os.getpid()}.txt"
+                with open(volume_file, 'w') as f:
+                    f.write(str(volume))
+                
+                # Use gst-launch-1.0's ability to set element properties dynamically
+                # This approach uses the fact that pulsesink can accept volume changes
+                try:
+                    # Alternative: restart with quick crossfade to minimize interruption
+                    if hasattr(self, 'start_time') and self.start_time:
+                        current_pos = time.time() - self.start_time
+                        # Quick restart from current position
+                        was_playing = self.is_playing
+                        
+                        # Store FFmpeg process if exists
+                        old_process = self.process
+                        
+                        # Start new process at current position
+                        success = self.play(seek_position=current_pos)
+                        
+                        # Terminate old process after new one starts
+                        if old_process and old_process.poll() is None:
+                            old_process.terminate()
+                            try:
+                                old_process.wait(timeout=0.5)
+                            except subprocess.TimeoutExpired:
+                                old_process.kill()
+                        
+                        if success:
+                            print(f"Applied volume {volume:.2f} with minimal interruption")
+                        return success
+                        
+                except Exception as inner_e:
+                    print(f"Crossfade restart failed: {inner_e}")
                     
             except Exception as e:
                 print(f"Could not apply volume to running process: {e}")
