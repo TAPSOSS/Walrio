@@ -8,14 +8,6 @@ on:
       - 'modules/**'
       - 'GUI/**'
       - '.github/workflows/docs.yml'
-  pull_request:
-    branches: [ main, master ]
-    paths:
-      - 'docs/**'
-      - 'modules/**'
-      - 'GUI/**'
-  repository_dispatch:
-    types: [bot-check]
   workflow_dispatch:
 
 permissions:
