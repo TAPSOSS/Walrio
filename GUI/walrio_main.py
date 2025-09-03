@@ -648,14 +648,58 @@ class WalrioMusicPlayer(QMainWindow):
                 current_song = self.queue_manager.current_song()
                 if current_song:
                     print(f"Queue decision: Continue playback - {self.queue_manager.repeat_mode.value}")
-                    # Restart playback with the current song
-                    self.start_playback()
+                    
+                    # For track repeat, use lightweight restart instead of full restart
+                    if self.queue_manager.repeat_mode.value == "track":
+                        self.restart_current_track()
+                    else:
+                        # For other modes, use full restart
+                        self.start_playback()
                     return
             else:
                 print("Queue decision: End playback")
         
         # No queue or queue says stop - end playback
         self.stop_playback()
+    
+    def restart_current_track(self):
+        """Quickly restart the current track by seeking to the beginning."""
+        if not self.player_worker or not self.current_file:
+            # Fallback to full restart if no worker exists
+            self.start_playback()
+            return
+        
+        # Try to seek to the beginning first (fastest method)
+        try:
+            if self.player_worker.process and self.player_worker.process.poll() is None:
+                modules_dir = Path(__file__).parent.parent / "modules"
+                result = subprocess.run(
+                    ["python", "walrio.py", "player", "--command", "seek", "0"],
+                    cwd=str(modules_dir),
+                    timeout=1,
+                    capture_output=True,
+                    text=True
+                )
+                
+                if result.returncode == 0:
+                    # Seek successful - reset timing and UI
+                    self.player_worker.start_time = time.time()
+                    self.player_worker.paused_duration = 0
+                    self.player_worker.pause_start = None
+                    
+                    # Reset UI position
+                    self.position = 0
+                    self.progress_slider.setValue(0)
+                    self.time_current.setText("00:00")
+                    
+                    print("Track restarted via seek")
+                    return
+        except Exception as e:
+            print(f"Seek restart failed: {e}")
+        
+        # Fallback to process restart if seek fails
+        print("Falling back to process restart")
+        self.start_playback()
     
     def on_playback_error(self, error):
         """
