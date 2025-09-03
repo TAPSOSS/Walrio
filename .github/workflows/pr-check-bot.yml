@@ -479,10 +479,10 @@ jobs:
           
           for (const check of checks) {
             if (check.passed) {
-              message += `- ✅ **${check.name}**: **PASSED**\n`;
+              message += `- ✅ **${check.name}**: **PASSED** ([view logs](${actionUrl}))\n`;
               passedChecks.push(check.name);
             } else {
-              message += `- ❌ **${check.name}**: **FAILED**\n`;
+              message += `- ❌ **${check.name}**: **FAILED** ([view logs](${actionUrl}))\n`;
               failedChecks.push(check.name);
               allPassed = false;
             }
@@ -526,6 +526,7 @@ jobs:
           // Summary
           if (allPassed) {
             message += `🎉 **All ${passedChecks.length} checks passed!** This PR is ready for review.\n\n`;
+            message += `🔗 **[View the full action run](${actionUrl})** to see detailed check results and logs.\n\n`;
           } else {
             message += `⚠️ **${failedChecks.length} check(s) failed, ${passedChecks.length} passed.**\n\n`;
             message += `**Failed:** ${failedChecks.join(', ')}\n`;
