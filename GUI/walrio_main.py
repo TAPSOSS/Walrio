@@ -105,8 +105,9 @@ class PlayerWorker(QThread):
                     
                     # Don't emit positions beyond the song duration
                     if self.duration > 0 and safe_position >= self.duration:
-                        # Song has finished, emit final position and stop
+                        # Song has finished, emit final position and signal completion
                         self.position_updated.emit(self.duration)
+                        self.playback_finished.emit()
                         break
                     
                     self.last_known_position = safe_position
@@ -297,7 +298,7 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_open = QPushButton("Open File")
         self.btn_play_pause = QPushButton("▶ Play")
         self.btn_stop = QPushButton("⏹ Stop")
-        self.btn_loop = QPushButton("🔁 Loop: None")
+        self.btn_loop = QPushButton("🔁 Repeat: Off")
         
         # Style buttons
         button_style = """
@@ -421,10 +422,10 @@ class WalrioMusicPlayer(QMainWindow):
                 self.start_playback()
     
     def toggle_loop(self):
-        """Toggle loop mode between 'off' and 'track' (queue-based approach)."""
+        """Toggle repeat mode between 'off' and 'track' (queue-based approach)."""
         if self.loop_mode == "off":
             self.loop_mode = "track"  # Use queue-based track repeat
-            self.btn_loop.setText("🔁 Loop: Track")
+            self.btn_loop.setText("🔁 Repeat: Track")
             self.btn_loop.setStyleSheet("""
                 QPushButton {
                     font-size: 14px;
@@ -436,7 +437,7 @@ class WalrioMusicPlayer(QMainWindow):
             """)
         else:
             self.loop_mode = "off"
-            self.btn_loop.setText("🔁 Loop: Off")
+            self.btn_loop.setText("🔁 Repeat: Off")
             self.btn_loop.setStyleSheet("""
                 QPushButton {
                     font-size: 14px;
@@ -445,7 +446,7 @@ class WalrioMusicPlayer(QMainWindow):
                 }
             """)
         
-        print(f"Loop mode changed to: {self.loop_mode}")
+        print(f"Repeat mode changed to: {self.loop_mode}")
         
         # Update queue manager if one exists
         if hasattr(self, 'queue_manager') and self.queue_manager:
@@ -641,9 +642,6 @@ class WalrioMusicPlayer(QMainWindow):
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for loop decisions."""
         if self.queue_manager:
-            print(f"Playback finished. Current repeat mode: {self.queue_manager.repeat_mode.value}")
-            print(f"Current index: {self.queue_manager.current_index}, Queue length: {len(self.queue_manager.songs)}")
-            
             # Use queue's next_track logic for repeat handling
             if self.queue_manager.next_track():
                 # Queue wants to continue (either repeat track or move to next)
