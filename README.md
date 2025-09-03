@@ -35,7 +35,7 @@ The sphinx documentation gives a nice overview of the files and what they do [cl
 This is where automated GitHub scritps run to do things like check pull requests, auto-build docs, build and GUIs, and more.
 
 ### GUI
-This is where you can find the official/mainline GUI versions of Walrio which should always stay up to date and are made to make it possible to just click around to use this music player like you would any other music player. If lots of folks start making their own UIs, I will try to find a way to simply have a webpage linking to all their repos directly which can be submitted to so those GUIs can be easily browsed and users can install the GUI they like most so that this repository doesn't get cluttered or large in size.
+This is where you can find the official/mainline GUI versions of Walrio which should always stay up to date and are made to make it possible to just click around to use this music player like you would any other music player. If lots of folks start making their own UIs, I will try to find a way to simply have a webpage linking to all their repos directly which can be submitted to so those GUIs can be easily browsed and users can install the GUI they like most. That way, this repository doesn't get cluttered or large in size.
 
 ### Docs
 The Docs folder is where sphinx documentation files go to auto-generate the relevant [documentation](https://tapsoss.github.io/Walrio/) for this project.
