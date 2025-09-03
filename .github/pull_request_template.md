@@ -1,3 +1,4 @@
+<!-- IF YOU'RE A FIRST TIME CONTRIBUTOR, YOU NEED TO WRITE "bot, check" IN A COMMENT ON YOUR PULL REQUEST AFTER FILLING OUT THIS FORM -->
 <!-- Use this format for title: Added (Component): (Name), Bug Fix (Name): (Desc), Updated (Name): (Desc), Documentation: (Description)-->
 ## Description
 <!-- Provide a brief description of the changes in this pull request -->
