@@ -143,9 +143,48 @@ class PlayerWorker(QThread):
                     self.process.wait(timeout=2)
                 except subprocess.TimeoutExpired:
                     self.process.kill()
-                    self.process.wait()
-                except Exception:
-                    pass
+                    
+    def set_volume(self, volume):
+        """Set the playback volume using daemon socket command.
+        
+        Args:
+            volume (float): Volume level between 0.0 and 1.0
+        """
+        if self.process and self.process.poll() is None:
+            try:
+                import socket
+                import tempfile
+                import os
+                
+                # Find the socket file for this daemon
+                temp_dir = tempfile.gettempdir()
+                socket_files = []
+                
+                for filename in os.listdir(temp_dir):
+                    if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+                        socket_path = os.path.join(temp_dir, filename)
+                        if os.path.exists(socket_path):
+                            socket_files.append((socket_path, os.path.getmtime(socket_path)))
+                
+                if socket_files:
+                    # Use the most recent socket file
+                    socket_path = max(socket_files, key=lambda x: x[1])[0]
+                    
+                    # Connect to socket and send volume command
+                    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    try:
+                        sock.connect(socket_path)
+                        command = f"volume {volume:.2f}"
+                        sock.send(command.encode('utf-8'))
+                        response = sock.recv(1024).decode('utf-8')
+                        print(f"Volume command response: {response}")
+                    finally:
+                        sock.close()
+                        
+            except Exception as e:
+                print(f"Error setting volume: {e}")
+
+
 class SimpleMusicPlayer(QMainWindow):
     """Simple music player with basic controls."""
     
@@ -390,8 +429,13 @@ class SimpleMusicPlayer(QMainWindow):
     def on_volume_change(self, value):
         """Handle volume slider changes."""
         self.volume_label.setText(f"{value}%")
-        # Note: Volume control would need to be implemented in the player module
-        # For now, this just updates the display
+        
+        # Convert slider value (0-100) to volume range (0.0-1.0)
+        volume = value / 100.0
+        
+        # Set volume if player worker exists (playing or paused)
+        if self.player_worker:
+            self.player_worker.set_volume(volume)
     
     def on_seek_start(self):
         """Handle when user starts seeking."""
