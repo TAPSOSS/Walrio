@@ -100,8 +100,22 @@ class PlayerWorker(QThread):
         """Stop the playback."""
         self.should_stop = True
         if self.process and self.process.poll() is None:
-            self.process.terminate()
-            self.process.wait()
+            try:
+                # First try to terminate gracefully
+                self.process.terminate()
+                # Wait up to 2 seconds for graceful termination
+                self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                # If it doesn't terminate gracefully, force kill it
+                self.process.kill()
+                self.process.wait()
+            except Exception as e:
+                # If anything else goes wrong, force kill
+                try:
+                    self.process.kill()
+                    self.process.wait()
+                except:
+                    pass  # Process might already be dead
 
 
 class SimpleMusicPlayer(QMainWindow):
@@ -317,14 +331,25 @@ class SimpleMusicPlayer(QMainWindow):
         self.btn_play_pause.setText("▶ Play")
         
         if self.player_worker:
+            # Stop the worker thread
             self.player_worker.stop()
-            self.player_worker.wait()
+            
+            # Wait for the thread to finish, but with a timeout
+            if not self.player_worker.wait(3000):  # Wait up to 3 seconds
+                # If thread doesn't finish, terminate it forcefully
+                self.player_worker.terminate()
+                self.player_worker.wait()
+            
             self.player_worker = None
         
-        # Reset position
+        # Reset position and UI
         self.position = 0
         self.progress_slider.setValue(0)
         self.time_current.setText("00:00")
+        
+        # Re-enable play button and disable stop button
+        self.btn_play_pause.setEnabled(True)
+        self.btn_stop.setEnabled(False)
     
     def on_volume_change(self, value):
         """Handle volume slider changes."""
