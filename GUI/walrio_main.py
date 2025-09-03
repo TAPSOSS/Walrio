@@ -201,7 +201,6 @@ class SimpleMusicPlayer(QMainWindow):
         
         self.btn_open = QPushButton("Open File")
         self.btn_play_pause = QPushButton("▶ Play")
-        self.btn_pause = QPushButton("⏸ Pause")
         self.btn_stop = QPushButton("⏹ Stop")
         
         # Style buttons
@@ -214,19 +213,16 @@ class SimpleMusicPlayer(QMainWindow):
         """
         self.btn_open.setStyleSheet(button_style)
         self.btn_play_pause.setStyleSheet(button_style)
-        self.btn_pause.setStyleSheet(button_style)
         self.btn_stop.setStyleSheet(button_style)
         
         # Connect buttons
         self.btn_open.clicked.connect(self.open_file)
         self.btn_play_pause.clicked.connect(self.toggle_play_pause)
-        self.btn_pause.clicked.connect(self.pause_playback)
         self.btn_stop.clicked.connect(self.stop_playback)
         
         controls_layout.addStretch()
         controls_layout.addWidget(self.btn_open)
         controls_layout.addWidget(self.btn_play_pause)
-        controls_layout.addWidget(self.btn_pause)
         controls_layout.addWidget(self.btn_stop)
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
@@ -248,9 +244,8 @@ class SimpleMusicPlayer(QMainWindow):
         volume_layout.addStretch()
         layout.addLayout(volume_layout)
         
-        # Initially disable play/pause/stop buttons
+        # Initially disable play/stop buttons
         self.btn_play_pause.setEnabled(False)
-        self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
     
     def setup_timer(self):
@@ -306,7 +301,6 @@ class SimpleMusicPlayer(QMainWindow):
             
             # Enable controls
             self.btn_play_pause.setEnabled(True)
-            self.btn_pause.setEnabled(False)  # Only enable when playing
             self.btn_stop.setEnabled(True)
             
             duration_text = f"{self.format_time(self.duration)}" if self.duration > 0 else "unknown duration"
@@ -334,7 +328,6 @@ class SimpleMusicPlayer(QMainWindow):
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
-        self.btn_pause.setEnabled(True)
         self.btn_stop.setEnabled(True)
         
         # Start player worker
@@ -351,7 +344,6 @@ class SimpleMusicPlayer(QMainWindow):
             
         self.is_playing = False
         self.btn_play_pause.setText("▶ Resume")
-        self.btn_pause.setEnabled(False)
         
         # Send pause command to the player
         if self.player_worker:
@@ -364,7 +356,6 @@ class SimpleMusicPlayer(QMainWindow):
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
-        self.btn_pause.setEnabled(True)
         
         # Send resume command to the player
         if self.player_worker:
@@ -392,9 +383,8 @@ class SimpleMusicPlayer(QMainWindow):
         self.progress_slider.setValue(0)
         self.time_current.setText("00:00")
         
-        # Re-enable play button and disable pause/stop buttons
+        # Re-enable play button and disable stop button
         self.btn_play_pause.setEnabled(True)
-        self.btn_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
     
     def on_volume_change(self, value):
