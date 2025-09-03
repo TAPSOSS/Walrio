@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Walrio Simple Music Player GUI
+Walrio Music Player GUI
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A music player GUI built with PySide that focuses on core playback functionality
-using the Walrio CLI interface and related libararies.
+A music player GUI built with PySide that uses as many Walrio music library modules as possible to
+play, modify, display, and do other things relating to audio files.
 """
 
 import sys
@@ -185,8 +185,8 @@ class PlayerWorker(QThread):
                 print(f"Error setting volume: {e}")
 
 
-class SimpleMusicPlayer(QMainWindow):
-    """Simple music player with basic controls."""
+class WalrioMusicPlayer(QMainWindow):
+    """Walrio music player with full playback controls."""
     
     def __init__(self):
         super().__init__()
@@ -202,7 +202,7 @@ class SimpleMusicPlayer(QMainWindow):
     
     def setup_ui(self):
         """Setup the user interface."""
-        self.setWindowTitle("Walrio Simple Music Player")
+        self.setWindowTitle("Walrio")
         self.setGeometry(300, 300, 600, 200)
         
         # Central widget
@@ -501,11 +501,11 @@ class SimpleMusicPlayer(QMainWindow):
 
 
 def main():
-    """Main entry point for the simple music player."""
+    """Main entry point for Walrio."""
     app = QApplication(sys.argv)
-    app.setApplicationName("Walrio Simple Music Player")
+    app.setApplicationName("Walrio")
     
-    player = SimpleMusicPlayer()
+    player = WalrioMusicPlayer()
     player.show()
     
     sys.exit(app.exec())
