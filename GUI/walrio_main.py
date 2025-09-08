@@ -29,19 +29,19 @@ from modules.core.queue import QueueManager, RepeatMode  # Import queue system
 try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox
+        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QColor
 except ImportError:
     print("PySide6 not found. Installing...")
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox
+        QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QColor
 
 
 class PlayerWorker(QThread):
@@ -349,6 +349,8 @@ class WalrioMusicPlayer(QMainWindow):
         self.loop_mode = "off"  # Can be "off" or "track"
         self.queue_manager = None  # Queue manager for loop handling
         self.pending_position = 0  # Position to apply when user stops seeking
+        self.queue_songs = []  # List of songs in the queue
+        self.current_queue_index = 0  # Current song index in queue
         
         self.setup_ui()
         self.setup_timer()
@@ -356,12 +358,42 @@ class WalrioMusicPlayer(QMainWindow):
     def setup_ui(self):
         """Setup the user interface."""
         self.setWindowTitle("Walrio")
-        self.setGeometry(300, 300, 600, 200)
+        self.setGeometry(300, 300, 800, 500)
         
         # Central widget
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        
+        # Queue List Widget
+        queue_label = QLabel("Queue")
+        queue_label.setAlignment(Qt.AlignCenter)
+        queue_font = QFont()
+        queue_font.setPointSize(10)
+        queue_font.setBold(True)
+        queue_label.setFont(queue_font)
+        layout.addWidget(queue_label)
+        
+        self.queue_list = QListWidget()
+        self.queue_list.setMaximumHeight(150)
+        self.queue_list.setAlternatingRowColors(True)
+        self.queue_list.itemClicked.connect(self.on_queue_item_clicked)
+        layout.addWidget(self.queue_list)
+        
+        # Add/Remove queue buttons
+        queue_buttons_layout = QHBoxLayout()
+        self.btn_add_files = QPushButton("Add Files to Queue")
+        self.btn_clear_queue = QPushButton("Clear Queue")
+        self.btn_remove_selected = QPushButton("Remove Selected")
+        
+        self.btn_add_files.clicked.connect(self.add_files_to_queue)
+        self.btn_clear_queue.clicked.connect(self.clear_queue)
+        self.btn_remove_selected.clicked.connect(self.remove_selected_from_queue)
+        
+        queue_buttons_layout.addWidget(self.btn_add_files)
+        queue_buttons_layout.addWidget(self.btn_remove_selected)
+        queue_buttons_layout.addWidget(self.btn_clear_queue)
+        layout.addLayout(queue_buttons_layout)
         
         # Track info
         self.track_label = QLabel("No file selected")
@@ -397,8 +429,10 @@ class WalrioMusicPlayer(QMainWindow):
         controls_layout = QHBoxLayout()
         
         self.btn_open = QPushButton("Open File")
+        self.btn_previous = QPushButton("⏮ Previous")
         self.btn_play_pause = QPushButton("▶ Play")
         self.btn_stop = QPushButton("⏹ Stop")
+        self.btn_next = QPushButton("⏭ Next")
         self.btn_loop = QPushButton("🔁 Repeat: Off")
         
         # Style buttons
@@ -410,20 +444,26 @@ class WalrioMusicPlayer(QMainWindow):
             }
         """
         self.btn_open.setStyleSheet(button_style)
+        self.btn_previous.setStyleSheet(button_style)
         self.btn_play_pause.setStyleSheet(button_style)
         self.btn_stop.setStyleSheet(button_style)
+        self.btn_next.setStyleSheet(button_style)
         self.btn_loop.setStyleSheet(button_style)
         
         # Connect buttons
         self.btn_open.clicked.connect(self.open_file)
+        self.btn_previous.clicked.connect(self.previous_track)
         self.btn_play_pause.clicked.connect(self.toggle_play_pause)
         self.btn_stop.clicked.connect(self.stop_playback)
+        self.btn_next.clicked.connect(self.next_track)
         self.btn_loop.clicked.connect(self.toggle_loop)
         
         controls_layout.addStretch()
         controls_layout.addWidget(self.btn_open)
+        controls_layout.addWidget(self.btn_previous)
         controls_layout.addWidget(self.btn_play_pause)
         controls_layout.addWidget(self.btn_stop)
+        controls_layout.addWidget(self.btn_next)
         controls_layout.addWidget(self.btn_loop)
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
@@ -448,6 +488,8 @@ class WalrioMusicPlayer(QMainWindow):
         # Initially disable play/stop buttons
         self.btn_play_pause.setEnabled(False)
         self.btn_stop.setEnabled(False)
+        self.btn_previous.setEnabled(False)
+        self.btn_next.setEnabled(False)
     
     def setup_timer(self):
         """Setup timer for updating UI (reduced frequency since position comes from worker)."""
@@ -455,57 +497,255 @@ class WalrioMusicPlayer(QMainWindow):
         self.timer.timeout.connect(self.update_ui)
         self.timer.start(100)  # Update UI every 100ms for smooth updates
     
-    def open_file(self):
-        """Open an audio file."""
-        filepath, _ = QFileDialog.getOpenFileName(
-            self, "Open Audio File", "",
+    def add_files_to_queue(self):
+        """Add files to the queue."""
+        filepaths, _ = QFileDialog.getOpenFileNames(
+            self, "Add Audio Files to Queue", "",
             "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.aac *.opus)"
         )
         
-        if filepath:
-            self.current_file = filepath
-            filename = Path(filepath).name
-            self.track_label.setText(filename)
+        if filepaths:
+            for filepath in filepaths:
+                # Get metadata for the file
+                metadata = self.get_file_metadata(filepath)
+                song = {
+                    'url': filepath,
+                    'title': metadata['title'],
+                    'artist': metadata['artist'],
+                    'album': metadata['album'],
+                    'duration': metadata['duration']
+                }
+                self.queue_songs.append(song)
+            
+            self.update_queue_display()
+            
+            # Enable navigation buttons if we have multiple songs
+            if len(self.queue_songs) > 1:
+                self.btn_previous.setEnabled(True)
+                self.btn_next.setEnabled(True)
+            
+            # If no current file, load the first song from queue
+            if not self.current_file and self.queue_songs:
+                self.load_song_from_queue(0)
+    
+    def clear_queue(self):
+        """Clear all songs from the queue."""
+        self.queue_songs.clear()
+        self.current_queue_index = 0
+        self.update_queue_display()
+        
+        # Clear current file if it was from queue
+        if self.current_file:
+            self.current_file = None
+            self.track_label.setText("No file selected")
+            self.btn_play_pause.setEnabled(False)
+            self.btn_stop.setEnabled(False)
+            self.btn_previous.setEnabled(False)
+            self.btn_next.setEnabled(False)
+            self.stop_playback()
+    
+    def remove_selected_from_queue(self):
+        """Remove selected song from the queue."""
+        current_row = self.queue_list.currentRow()
+        if current_row >= 0 and current_row < len(self.queue_songs):
+            # Check if we're removing the currently playing song
+            if current_row == self.current_queue_index and self.is_playing:
+                self.stop_playback()
+            
+            # Remove the song
+            self.queue_songs.pop(current_row)
+            
+            # Update current index if needed
+            if current_row < self.current_queue_index:
+                self.current_queue_index -= 1
+            elif current_row == self.current_queue_index and current_row >= len(self.queue_songs):
+                self.current_queue_index = 0
+            
+            self.update_queue_display()
+            
+            # If queue is empty, clear current file
+            if not self.queue_songs:
+                self.current_file = None
+                self.track_label.setText("No file selected")
+                self.btn_play_pause.setEnabled(False)
+                self.btn_stop.setEnabled(False)
+                self.btn_previous.setEnabled(False)
+                self.btn_next.setEnabled(False)
+            else:
+                # Update navigation buttons
+                self.btn_previous.setEnabled(len(self.queue_songs) > 1)
+                self.btn_next.setEnabled(len(self.queue_songs) > 1)
+    
+    def on_queue_item_clicked(self, item):
+        """Handle clicking on a queue item to play it."""
+        row = self.queue_list.row(item)
+        if 0 <= row < len(self.queue_songs):
+            self.load_song_from_queue(row)
+            if not self.is_playing:
+                self.start_playback()
+    
+    def load_song_from_queue(self, index):
+        """Load a song from the queue by index."""
+        if 0 <= index < len(self.queue_songs):
+            song = self.queue_songs[index]
+            self.current_queue_index = index
+            self.current_file = song['url']
+            
+            filename = Path(song['url']).name
+            self.track_label.setText(f"{song['artist']} - {song['title']}")
             
             # Reset position
             self.position = 0
             self.progress_slider.setValue(0)
             self.time_current.setText("00:00")
             
-            # Get actual file duration using Walrio metadata CLI
-            try:
-                modules_dir = Path(__file__).parent.parent / "modules"
-                result = subprocess.run(
-                    ["python", "walrio.py", "metadata", "--duration", filepath],
-                    cwd=str(modules_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0 and result.stdout.strip():
-                    self.duration = float(result.stdout.strip())
-                else:
-                    self.duration = 0
-            except Exception as e:
-                print(f"Error getting duration: {e}")
-                self.duration = 0
+            # Use cached duration or get it
+            if song.get('duration', 0) > 0:
+                self.duration = song['duration']
+            else:
+                # If no duration cached, get fresh metadata
+                metadata = self.get_file_metadata(song['url'])
+                self.duration = metadata['duration']
+                # Update the song with fresh metadata
+                song.update(metadata)
             
             if self.duration > 0:
                 self.time_total.setText(self.format_time(self.duration))
-                # Update progress slider maximum to match duration in seconds
                 self.progress_slider.setMaximum(int(self.duration))
             else:
                 self.time_total.setText("--:--")
-                # Fallback to percentage-based progress
                 self.progress_slider.setMaximum(100)
-                self.show_message("Duration Warning", "Could not determine file duration. Progress bar may not be accurate.")
             
             # Enable controls
             self.btn_play_pause.setEnabled(True)
             self.btn_stop.setEnabled(True)
+            self.btn_previous.setEnabled(len(self.queue_songs) > 1)
+            self.btn_next.setEnabled(len(self.queue_songs) > 1)
             
-            duration_text = f"{self.format_time(self.duration)}" if self.duration > 0 else "unknown duration"
-            self.show_message("File Loaded", f"Ready to play: {filename}\nDuration: {duration_text}")
+            # Update queue display to highlight current song
+            self.update_queue_display()
+    
+    def get_file_duration(self, filepath):
+        """Get the duration of an audio file."""
+        try:
+            modules_dir = Path(__file__).parent.parent / "modules"
+            result = subprocess.run(
+                ["python", "walrio.py", "metadata", "--duration", filepath],
+                cwd=str(modules_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return float(result.stdout.strip())
+        except Exception as e:
+            print(f"Error getting duration for {filepath}: {e}")
+        return 0
+    
+    def get_file_metadata(self, filepath):
+        """Get metadata for an audio file including artist, title, album, and duration."""
+        try:
+            modules_dir = Path(__file__).parent.parent / "modules"
+            
+            # Get full metadata using --show
+            result = subprocess.run(
+                ["python", "walrio.py", "metadata", "--show", filepath],
+                cwd=str(modules_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse the metadata output
+                metadata = {}
+                for line in result.stdout.strip().split('\n'):
+                    if ':' in line and not line.startswith('='):
+                        key, value = line.split(':', 1)
+                        key = key.strip().lower().replace(' ', '_')
+                        value = value.strip()
+                        if value and value != 'None' and value != 'Unknown':
+                            metadata[key] = value
+                
+                # Extract the information we need with proper fallbacks
+                artist = metadata.get('artist') or metadata.get('album_artist') or 'Unknown Artist'
+                title = metadata.get('title') or Path(filepath).stem
+                album = metadata.get('album') or 'Unknown Album'
+                
+                # Get duration separately since --show might not include it
+                duration = 0
+                try:
+                    duration_result = subprocess.run(
+                        ["python", "walrio.py", "metadata", "--duration", filepath],
+                        cwd=str(modules_dir),
+                        capture_output=True,
+                        text=True,
+                        timeout=10
+                    )
+                    if duration_result.returncode == 0 and duration_result.stdout.strip():
+                        duration = float(duration_result.stdout.strip())
+                except:
+                    pass
+                
+                return {
+                    'artist': artist,
+                    'title': title,
+                    'album': album,
+                    'duration': duration
+                }
+        except Exception as e:
+            print(f"Error getting metadata for {filepath}: {e}")
+        
+        # Fallback to basic info
+        return {
+            'artist': 'Unknown Artist',
+            'title': Path(filepath).stem,
+            'album': 'Unknown Album',
+            'duration': self.get_file_duration(filepath)
+        }
+    
+    def update_queue_display(self):
+        """Update the queue list widget display."""
+        self.queue_list.clear()
+        
+        for i, song in enumerate(self.queue_songs):
+            # Format display text
+            duration_text = self.format_time(song['duration']) if song['duration'] > 0 else "--:--"
+            display_text = f"{song['artist']} - {song['title']} [{duration_text}]"
+            
+            item = QListWidgetItem(display_text)
+            
+            # Highlight currently playing song
+            if i == self.current_queue_index and self.current_file:
+                item.setBackground(QColor(200, 255, 200))  # Light green background
+                font = item.font()
+                font.setBold(True)
+                item.setFont(font)
+            
+            self.queue_list.addItem(item)
+    
+    def open_file(self):
+        """Open an audio file (legacy single file method)."""
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open Audio File", "",
+            "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.aac *.opus)"
+        )
+        
+        if filepath:
+            # Get metadata for the file
+            metadata = self.get_file_metadata(filepath)
+            song = {
+                'url': filepath,
+                'title': metadata['title'],
+                'artist': metadata['artist'],
+                'album': metadata['album'],
+                'duration': metadata['duration']
+            }
+            
+            # Add to beginning of queue
+            self.queue_songs.insert(0, song)
+            self.current_queue_index = 0
+            self.load_song_from_queue(0)
     
     def toggle_play_pause(self):
         """Toggle between play, pause, and resume."""
@@ -582,22 +822,27 @@ class WalrioMusicPlayer(QMainWindow):
             self.player_worker.wait(1000)  # Wait up to 1 second
             self.player_worker = None
         
-        # Create queue manager for current file
-        song = {
-            'url': self.current_file,
-            'title': Path(self.current_file).stem,
-            'artist': 'Unknown Artist',
-            'album': 'Unknown Album'
-        }
+        # Create queue manager with current queue
+        if self.queue_songs:
+            self.queue_manager = QueueManager(self.queue_songs)
+            self.queue_manager.set_current_index(self.current_queue_index)
+        else:
+            # Fallback to single song
+            song = {
+                'url': self.current_file,
+                'title': Path(self.current_file).stem,
+                'artist': 'Unknown Artist',
+                'album': 'Unknown Album'
+            }
+            self.queue_manager = QueueManager([song])
         
-        self.queue_manager = QueueManager([song])
         self.queue_manager.set_repeat_mode(self.loop_mode)
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
         self.btn_stop.setEnabled(True)
         
-        # Start player worker (no longer needs loop_mode since queue handles it)
+        # Start player worker
         self.player_worker = PlayerWorker(self.current_file, self.duration)
         self.player_worker.playback_finished.connect(self.on_playback_finished)
         self.player_worker.error.connect(self.on_playback_error)
@@ -799,12 +1044,21 @@ class WalrioMusicPlayer(QMainWindow):
                 if current_song:
                     print(f"Queue decision: Continue playback - {self.queue_manager.repeat_mode.value}")
                     
+                    # Update current queue index to match queue manager
+                    if self.queue_songs and hasattr(self.queue_manager, 'current_index'):
+                        self.current_queue_index = self.queue_manager.current_index
+                    
                     # For track repeat, use lightweight restart instead of full restart
                     if self.queue_manager.repeat_mode.value == "track":
                         self.restart_current_track()
                     else:
-                        # For other modes, use full restart
-                        self.start_playback()
+                        # Load next song from queue and play
+                        if self.queue_songs and self.current_queue_index < len(self.queue_songs):
+                            self.load_song_from_queue(self.current_queue_index)
+                            self.start_playback()
+                        else:
+                            # Fallback to full restart
+                            self.start_playback()
                     return
             else:
                 print("Queue decision: End playback")
@@ -840,6 +1094,44 @@ class WalrioMusicPlayer(QMainWindow):
         # Fallback to process restart if seek fails
         print("Falling back to process restart")
         self.start_playback()
+    
+    def next_track(self):
+        """Skip to the next track in the queue."""
+        if not self.queue_songs or len(self.queue_songs) <= 1:
+            return
+        
+        was_playing = self.is_playing
+        
+        # Stop current playback
+        if self.is_playing:
+            self.stop_playback()
+        
+        # Move to next track
+        self.current_queue_index = (self.current_queue_index + 1) % len(self.queue_songs)
+        self.load_song_from_queue(self.current_queue_index)
+        
+        # Resume playback if we were playing
+        if was_playing:
+            self.start_playback()
+    
+    def previous_track(self):
+        """Skip to the previous track in the queue."""
+        if not self.queue_songs or len(self.queue_songs) <= 1:
+            return
+        
+        was_playing = self.is_playing
+        
+        # Stop current playback
+        if self.is_playing:
+            self.stop_playback()
+        
+        # Move to previous track
+        self.current_queue_index = (self.current_queue_index - 1) % len(self.queue_songs)
+        self.load_song_from_queue(self.current_queue_index)
+        
+        # Resume playback if we were playing
+        if was_playing:
+            self.start_playback()
     
     def on_playback_error(self, error):
         """
