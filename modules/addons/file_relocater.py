@@ -500,7 +500,7 @@ def parse_arguments():
   python organize.py /music /organized --pnm y
 
   # For music player compatibility (in the english language), use conservative character replacements and sanitization
-  python organize.py /music /organized --replace-char "/" "-" --replace-char ":" "-" --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
+  python organize.py /music /organized --replace-char "/" "-" --replace-char "\\\\" "-" --replace-char ":" "-" --replace-char "|" "-" --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
 
   # Custom folder format with year and genre (copying files, skipping files with no metadata)
   python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
@@ -558,7 +558,7 @@ Folder format tips:
   - When --process-no-metadata y is used, files with no metadata use filename as folder name
   - Character replacements are applied before sanitization
   - When sanitization is enabled, problematic characters are removed/replaced
-  - For music player compatibility (with the english language), consider using: --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ " --rc "/" "-" --rc ":" "-" --rc "\\" "-" --rc "|" "-"
+  - For music player compatibility (with the english language), consider using: --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ " --rc "/" "-" --rc ":" "-" --rc "\\\\" "-" --rc "|" "-"
   - Default character set excludes apostrophes and special chars for maximum compatibility
 """)
     
