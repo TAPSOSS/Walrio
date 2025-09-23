@@ -71,8 +71,8 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         if use_defaults and stage_number:
             # Define stage-specific responses
             stage_responses = {
-                1: 'y\n',  # Stage 1 (convert): yes to overriding files
-                2: 'n\n',  # Stage 2 (rename): no to keeping special characters 
+                1: 'ya\n',  # Stage 1 (convert): yes to overriding files
+                2: 'na\n',  # Stage 2 (rename): no to keeping special characters 
                 4: 'y\n'   # Stage 4 (applyloudness): yes to applying loudness
             }
             
