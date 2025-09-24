@@ -181,6 +181,7 @@ class PlayerWorker(QThread):
         self.filepath = filepath
         self.duration = duration
         self.should_stop = False
+        self.stop_event_listener = False  # Separate flag for event listener thread
         self.start_time = None
         self.paused_duration = 0
         self.pause_start = None
@@ -309,6 +310,9 @@ class PlayerWorker(QThread):
         """Stop the playback using daemon socket command."""
         # Set should_stop immediately to break the position update loop
         self.should_stop = True
+        
+        # Stop the event listener thread
+        self.stop_event_listener = True
         
         if self.process and self.process.poll() is None:
             # Try to stop via socket first
@@ -600,7 +604,7 @@ class PlayerWorker(QThread):
     
     def _event_listener_loop(self):
         """Dedicated event listener loop running in separate thread."""
-        while not self.should_stop:
+        while not getattr(self, 'stop_event_listener', False):
             try:
                 # Connect to daemon if not connected
                 if not self.event_socket:
