@@ -122,8 +122,8 @@ class AudioPlayer:
         
         # Link static elements
         self.source.link(self.decodebin)
-        self.volume.link(self.audioconvert)
-        self.audioconvert.link(self.audioresample)
+        self.audioconvert.link(self.volume)
+        self.volume.link(self.audioresample)
         self.audioresample.link(self.audiosink)
         
         # Connect dynamic pad for decodebin
@@ -146,9 +146,17 @@ class AudioPlayer:
         structure = caps.get_structure(0)
         
         if structure and structure.get_name().startswith("audio/"):
-            sink_pad = self.volume.get_static_pad("sink")
+            # Link to audioconvert first for format conversion, then to volume
+            sink_pad = self.audioconvert.get_static_pad("sink")
             if not sink_pad.is_linked():
-                pad.link(sink_pad)
+                try:
+                    result = pad.link(sink_pad)
+                    if result != Gst.PadLinkReturn.OK:
+                        print(f"DEBUG: Pad linking failed with result: {result}")
+                    else:
+                        print("DEBUG: Successfully linked decodebin pad to audioconvert")
+                except Exception as e:
+                    print(f"DEBUG: Exception during pad linking: {e}")
     
     def _on_bus_message(self, bus, message):
         """
