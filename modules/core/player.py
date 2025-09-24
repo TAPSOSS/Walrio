@@ -843,6 +843,22 @@ class AudioPlayer:
                 result = self.set_loop_mode(parts[1])
                 return f"OK: Loop mode set to {parts[1]}" if result else "ERROR: Failed to set loop mode"
                 
+            elif cmd == 'load' and len(parts) > 1:
+                # Load a new file for playback
+                filepath = ' '.join(parts[1:])  # Handle paths with spaces
+                try:
+                    # Stop current playback first
+                    self.stop()
+                    # Load the new file
+                    result = self.load_file(filepath)
+                    if result:
+                        self._send_event("song_loaded", {"file": filepath})
+                        return f"OK: Loaded {filepath}"
+                    else:
+                        return f"ERROR: Failed to load {filepath}"
+                except Exception as e:
+                    return f"ERROR: Failed to load file: {str(e)}"
+                    
             elif cmd == 'subscribe':
                 # This command is handled in _handle_connection, but we need to handle it here too
                 return "OK: Subscribed to events"

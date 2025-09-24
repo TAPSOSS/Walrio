@@ -63,6 +63,9 @@ class QueueWorker(QThread):
             for filepath in self.filepaths:
                 if self.should_stop:
                     break
+                
+                # Debug: Print the actual filepath being processed
+                print(f"QueueWorker processing: {repr(filepath)}")
                     
                 # Get metadata for the file
                 metadata = self._get_file_metadata(filepath)
@@ -73,6 +76,9 @@ class QueueWorker(QThread):
                     'album': metadata['album'],
                     'duration': metadata['duration']
                 }
+                
+                # Debug: Print the song data
+                print(f"QueueWorker emitting song: {song['title']} -> {repr(song['url'])}")
                 
                 # Emit the processed file
                 self.file_processed.emit(song)
@@ -194,7 +200,7 @@ class PlayerWorker(QThread):
             # Main monitoring loop
             event_check_counter = 0
             while not self.should_stop and self.process.poll() is None:
-                # Check for daemon events less frequently to avoid timeout errors
+                # Check for daemon events regularly - with 30s timeout, we can check more often
                 event_check_counter += 1
                 if event_check_counter % 5 == 0:  # Check every 5 iterations (0.5 seconds)
                     self._check_daemon_events()
@@ -501,15 +507,15 @@ class PlayerWorker(QThread):
                 # Create event socket
                 self.event_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 self.event_socket.connect(socket_path)
-                self.event_socket.settimeout(1.0)  # Longer timeout for more reliable connection
+                self.event_socket.settimeout(1.0)  # Short timeout just for initial connection
                 
                 # Subscribe to events
                 self.event_socket.send(b"subscribe")
                 response = self.event_socket.recv(1024).decode('utf-8')
                 if "OK: Subscribed" in response:
                     print("PlayerWorker: Successfully subscribed to daemon events")
-                    # Set socket to non-blocking mode for event checking
-                    self.event_socket.settimeout(0.1)
+                    # Set socket for continuous listening - very long timeout for songs that play for minutes
+                    self.event_socket.settimeout(3600.0)  # 1 hour timeout - should be more than enough for any song
                     return True
                 else:
                     print(f"PlayerWorker: Event subscription failed: {response}")
@@ -538,14 +544,16 @@ class PlayerWorker(QThread):
         except Exception as e:
             # Handle different types of exceptions
             error_str = str(e).lower()
-            if "timeout" in error_str or "would block" in error_str:
-                # Normal timeout - no events available
-                pass
+            if "timeout" in error_str:
+                # Very rare 1-hour timeout - this shouldn't happen often
+                print("PlayerWorker: 1-hour timeout reached, no events received")
+                pass  # Continue checking events
             elif "connection" in error_str or "broken pipe" in error_str:
                 # Connection lost
                 print(f"PlayerWorker: Lost connection to daemon: {e}")
                 self.event_socket = None
             else:
+                # Log all other errors
                 print(f"PlayerWorker: Error checking daemon events: {e}")
                 self.event_socket = None
     
@@ -585,16 +593,12 @@ class PlayerWorker(QThread):
     
     def play_new_song(self, filepath, duration=0):
         """
-        Switch to a new song without recreating the PlayerWorker thread.
+        Switch to a new song using the persistent daemon.
         
         Args:
             filepath (str): Path to the new audio file
             duration (float): Duration of the new file in seconds
         """
-        # Stop current playback
-        if self.process and self.process.poll() is None:
-            self.stop()
-            
         # Update file info
         self.filepath = filepath
         self.duration = duration
@@ -606,22 +610,40 @@ class PlayerWorker(QThread):
         self.pause_start = None
         self.last_known_position = 0
         
-        # Start new playback
-        if not self.isRunning():
-            self.start()
+        # Debug: Print the filepath being used
+        print(f"PlayerWorker play_new_song called with: {repr(filepath)}")
+        
+        # If we have a running process, use load command to switch songs
+        if self.process and self.process.poll() is None:
+            # Use daemon's load command to switch to new file
+            print(f"PlayerWorker: Sending load command: load {filepath}")
+            success, response = self._send_socket_command(f"load {filepath}")
+            if success and "OK:" in response:
+                print(f"PlayerWorker: Loaded new song: {filepath}")
+                # Start playback of the loaded song
+                self._send_socket_command("play")
+                # Record the start time for this new song
+                self.start_time = time.time()
+            else:
+                print(f"PlayerWorker: Failed to load new song: {response}")
+                # Don't restart daemon - just report failure and keep using current daemon
+                # TODO: Consider implementing daemon restart strategy
         else:
-            # If thread is running, restart the audio process
-            self._start_audio_process()
+            # Start new daemon if no process is running
+            if not self.isRunning():
+                self.start()
+            else:
+                self._start_audio_process()
     
     def _start_audio_process(self):
-        """Start the audio process for the current file."""
+        """Start the persistent daemon process."""
         try:
             # Change to modules directory for walrio.py execution
             modules_dir = Path(__file__).parent.parent / "modules"
             
-            # Build command - no loop option needed (handled by queue)
+            # Build command - start daemon without specific file (persistent mode)
             cmd = ["python", "walrio.py", "player", "--daemon"]
-            cmd.append(self.filepath)
+            # Don't append self.filepath - we'll load files via commands
             
             # Run walrio player in daemon mode for external control
             self.process = subprocess.Popen(
@@ -632,11 +654,20 @@ class PlayerWorker(QThread):
                 text=True
             )
             
-            # Allow a brief moment for the audio player to initialize
-            time.sleep(0.1)
+            # Allow a brief moment for the daemon to initialize
+            time.sleep(0.2)
             
-            # Record the actual start time after initialization
-            self.start_time = time.time()
+            # If we have a file to play, load it now
+            if hasattr(self, 'filepath') and self.filepath:
+                success, response = self._send_socket_command(f"load {self.filepath}")
+                if success and "OK:" in response:
+                    print(f"PlayerWorker: Loaded initial song: {self.filepath}")
+                    # Start playback of the loaded song
+                    self._send_socket_command("play")
+                    # Record the start time
+                    self.start_time = time.time()
+                else:
+                    print(f"PlayerWorker: Failed to load initial song: {response}")
             
         except Exception as e:
             print(f"Error starting audio process: {e}")
