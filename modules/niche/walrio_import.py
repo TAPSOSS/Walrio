@@ -35,7 +35,7 @@ def get_walrio_path():
     
     return str(walrio_path)
 
-def run_walrio_command(module_name, input_path, extra_args=None, recursive=False, use_defaults=False, stage_number=None):
+def run_walrio_command(module_name, input_path, extra_args=None, recursive=False):
     """
     Run a walrio module command with the given arguments.
     
@@ -44,8 +44,6 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         input_path (str): Input file or directory path
         extra_args (list): Additional arguments for the module
         recursive (bool): Whether to add recursive flag
-        use_defaults (bool): Whether to use default responses to prompts
-        stage_number (int): Stage number for specific default responses
     
     Returns:
         bool: True if command succeeded, False otherwise
@@ -68,26 +66,8 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
     print("-" * 50)
     
     try:
-        if use_defaults and stage_number:
-            # Define stage-specific responses
-            stage_responses = {
-                1: 'ya\n',  # Stage 1 (convert): yes to overriding files
-                2: 'na\n',  # Stage 2 (rename): no to keeping special characters 
-                4: 'y\n'   # Stage 4 (applyloudness): yes to applying loudness
-            }
-            
-            if stage_number in stage_responses:
-                # Use echo to pipe the response to the command
-                response = stage_responses[stage_number].strip()
-                echo_cmd = f'echo "{response}" | ' + ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd)
-                print(f"Auto-responding with '{response}' for stage {stage_number}")
-                result = subprocess.run(echo_cmd, shell=True, check=True)
-            else:
-                # No automatic response for this stage, run normally
-                result = subprocess.run(cmd, check=True)
-        else:
-            # Run with live output and user interaction enabled
-            result = subprocess.run(cmd, check=True)
+        # Run with live output and user interaction enabled
+        result = subprocess.run(cmd, check=True)
         print("-" * 50)
         print(f"SUCCESS: {module_name} completed successfully")
         return True
@@ -96,7 +76,7 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
-def process_import_pipeline(input_path, recursive=False, dry_run=False, use_defaults=False):
+def process_import_pipeline(input_path, recursive=False, dry_run=False):
     """
     Run the complete import pipeline on the input path.
     
@@ -104,7 +84,6 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, use_defa
         input_path (str): Path to input file or directory
         recursive (bool): Whether to process recursively
         dry_run (bool): Whether to show commands without executing
-        use_defaults (bool): Whether to use default responses to prompts
     
     Returns:
         bool: True if all steps succeeded, False otherwise
@@ -112,11 +91,6 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, use_defa
     print(f"Starting Walrio Import Pipeline for: {input_path}")
     print(f"Recursive mode: {'enabled' if recursive else 'disabled'}")
     print(f"Dry run mode: {'enabled' if dry_run else 'disabled'}")
-    if use_defaults:
-        print("Default responses: enabled")
-        print("  • Stage 1 (convert): Will override files (y)")
-        print("  • Stage 2 (rename): Will not keep special characters (n)")
-        print("  • Stage 4 (applyloudness): Will apply loudness (y)")
     print("=" * 60)
     
     # Define the pipeline stages with their arguments
@@ -209,9 +183,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, use_defa
             stage['name'],
             input_path,
             stage['args'],
-            recursive,
-            use_defaults,
-            i  # Pass stage number
+            recursive
         )
         
         if success:
@@ -246,9 +218,6 @@ Examples:
   # Process recursively through subdirectories
   python walrio_import.py /path/to/music --recursive
 
-  # Use default responses to prompts (non-interactive)
-  python walrio_import.py /path/to/music --default
-
   # Show what would be executed without running
   python walrio_import.py /path/to/music --dry-run
         """
@@ -271,12 +240,7 @@ Examples:
         help='Show commands that would be executed without actually running them'
     )
     
-    #TODO: remove this temporary option and added functionality later.
-    parser.add_argument(
-        '--temp', '-t',
-        action='store_true',
-        help='Use default responses: Stage 1 override files (y), Stage 2 keep special chars (n), Stage 4 apply loudness (y)'
-    )
+
     
     args = parser.parse_args()
     
@@ -290,8 +254,7 @@ Examples:
         success = process_import_pipeline(
             str(input_path),
             recursive=args.recursive,
-            dry_run=args.dry_run,
-            use_defaults=args.temp
+            dry_run=args.dry_run
         )
         
         if not success:
