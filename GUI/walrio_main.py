@@ -206,14 +206,26 @@ class PlayerWorker(QThread):
                     self._check_daemon_events()
                 
                 if not self.pause_start and not self.should_stop:
-                    # Query actual position from the audio daemon
+                    # Query actual position from the audio daemon every 0.1 seconds for smooth seekbar
                     actual_position = self.get_position()
                     
-                    if actual_position > 0:
+                    # Debug: Print position info frequently for 3-second songs
+                    if event_check_counter % 10 == 0:  # Every 1 second for debug output
+                        print(f"PlayerWorker: Position query returned: {actual_position}")
+                    
+                    if actual_position >= 0:  # Emit position updates for all valid positions including 0
                         # Use the actual audio position
                         self.last_known_position = actual_position
                         if not self.should_stop:
+                            # Emit position update every 0.1 seconds for smooth seekbar
                             self.position_updated.emit(actual_position)
+                            # Debug: Print when position is emitted (less frequently to avoid spam)
+                            if event_check_counter % 10 == 0:
+                                print(f"PlayerWorker: Emitted position: {actual_position}")
+                    else:
+                        # Debug: Only show when position query actually failed (negative/error)
+                        if event_check_counter % 10 == 0:
+                            print(f"PlayerWorker: Position query failed: {actual_position}")
                 
                 # Short sleep to avoid busy waiting
                 time.sleep(0.1)
@@ -514,8 +526,8 @@ class PlayerWorker(QThread):
                 response = self.event_socket.recv(1024).decode('utf-8')
                 if "OK: Subscribed" in response:
                     print("PlayerWorker: Successfully subscribed to daemon events")
-                    # Set socket for continuous listening - very long timeout for songs that play for minutes
-                    self.event_socket.settimeout(3600.0)  # 1 hour timeout - should be more than enough for any song
+                    # Set socket for non-blocking reads so position updates aren't blocked
+                    self.event_socket.settimeout(0.01)  # Very short timeout for non-blocking behavior
                     return True
                 else:
                     print(f"PlayerWorker: Event subscription failed: {response}")
@@ -544,17 +556,16 @@ class PlayerWorker(QThread):
         except Exception as e:
             # Handle different types of exceptions
             error_str = str(e).lower()
-            if "timeout" in error_str:
-                # Very rare 1-hour timeout - this shouldn't happen often
-                print("PlayerWorker: 1-hour timeout reached, no events received")
+            if "timeout" in error_str or "would block" in error_str:
+                # Normal timeout - no events available right now, this is expected with short timeout
                 pass  # Continue checking events
             elif "connection" in error_str or "broken pipe" in error_str:
                 # Connection lost
                 print(f"PlayerWorker: Lost connection to daemon: {e}")
                 self.event_socket = None
             else:
-                # Log all other errors
-                print(f"PlayerWorker: Error checking daemon events: {e}")
+                # Log unexpected errors
+                print(f"PlayerWorker: Unexpected error checking daemon events: {e}")
                 self.event_socket = None
     
     def _process_daemon_event(self, event_data):
@@ -576,8 +587,8 @@ class PlayerWorker(QThread):
                     print(f"PlayerWorker: Song starting event - {data.get('file')}")
                     self.song_starting.emit(data)
                 elif event_name == "playback_complete":
-                    print("PlayerWorker: Playback complete event - emitting playback_finished")
-                    self.playback_finished.emit()
+                    print("PlayerWorker: Playback complete event - ignoring (already handled by song_finished)")
+                    # Don't emit playback_finished again - song_finished already did it
                     
         except Exception as e:
             print(f"PlayerWorker: Error processing daemon event: {e}")
@@ -621,7 +632,8 @@ class PlayerWorker(QThread):
             if success and "OK:" in response:
                 print(f"PlayerWorker: Loaded new song: {filepath}")
                 # Start playback of the loaded song
-                self._send_socket_command("play")
+                play_success, play_response = self._send_socket_command("play")
+                print(f"PlayerWorker: Play command result: {play_response}")
                 # Record the start time for this new song
                 self.start_time = time.time()
             else:
@@ -663,7 +675,8 @@ class PlayerWorker(QThread):
                 if success and "OK:" in response:
                     print(f"PlayerWorker: Loaded initial song: {self.filepath}")
                     # Start playback of the loaded song
-                    self._send_socket_command("play")
+                    play_success, play_response = self._send_socket_command("play")
+                    print(f"PlayerWorker: Play command result: {play_response}")
                     # Record the start time
                     self.start_time = time.time()
                 else:
@@ -1474,9 +1487,16 @@ class WalrioMusicPlayer(QMainWindow):
         """Handle when playback finishes - use queue system for completion logic."""
         print("on_playback_finished called - song has ended")
         
+        # Prevent multiple calls for the same song completion
+        if hasattr(self, '_processing_finish') and self._processing_finish:
+            print("Already processing playback finish - ignoring duplicate event")
+            return
+        self._processing_finish = True
+        
         if not self.queue_manager:
             print("No queue manager - stopping playback")
             self.stop_playback()
+            self._processing_finish = False
             return
         
         # Use the new handle_song_finished method from QueueManager
@@ -1495,6 +1515,9 @@ class WalrioMusicPlayer(QMainWindow):
             # Queue is finished or no next song
             print("Playback completed - no more songs")
             self.stop_playback()
+        
+        # Reset the flag after processing
+        self._processing_finish = False
     def next_track(self):
         """Skip to the next track in the queue."""
         if not self.queue_manager or not self.queue_manager.has_songs():

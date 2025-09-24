@@ -494,9 +494,30 @@ class AudioPlayer:
                 if success:
                     # Convert from nanoseconds to seconds
                     self.position = position / Gst.SECOND
+                    # Debug: Print position info occasionally
+                    import time
+                    current_time = time.time()
+                    if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
+                        print(f"DEBUG: Position query success - {self.position:.3f}s")
+                        self._last_position_debug = current_time
                     return self.position
-            except Exception:
-                pass
+                else:
+                    # Debug: Position query failed
+                    import time
+                    current_time = time.time()
+                    if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
+                        print(f"DEBUG: Position query failed")
+                        self._last_position_debug = current_time
+            except Exception as e:
+                # Debug: Exception in position query
+                print(f"DEBUG: Position query exception: {e}")
+        else:
+            # Debug: No pipeline or not playing
+            import time
+            current_time = time.time()
+            if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
+                print(f"DEBUG: No position - pipeline={bool(self.pipeline)}, is_playing={self.is_playing}")
+                self._last_position_debug = current_time
         
         return self.position
     
