@@ -767,6 +767,10 @@ class AudioPlayer:
                 except ValueError:
                     return "ERROR: Invalid seek position"
                     
+            elif cmd in ['position', 'pos']:
+                position = self.get_position()
+                return f"OK: {position:.3f}"
+                    
             else:
                 return f"ERROR: Unknown command '{cmd}'"
                 
