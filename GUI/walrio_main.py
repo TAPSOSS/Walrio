@@ -44,6 +44,117 @@ except ImportError:
     from PySide6.QtGui import QFont, QColor
 
 
+class QueueWorker(QThread):
+    """Worker thread for queue operations like metadata extraction."""
+    
+    # Signals
+    file_processed = Signal(dict)  # Emitted when a file's metadata is extracted
+    all_files_processed = Signal()  # Emitted when all files are done
+    error = Signal(str)  # Emitted on error
+    
+    def __init__(self, filepaths):
+        super().__init__()
+        self.filepaths = filepaths
+        self.should_stop = False
+    
+    def run(self):
+        """Process files in background thread."""
+        try:
+            for filepath in self.filepaths:
+                if self.should_stop:
+                    break
+                    
+                # Get metadata for the file
+                metadata = self._get_file_metadata(filepath)
+                song = {
+                    'url': filepath,
+                    'title': metadata['title'],
+                    'artist': metadata['artist'],
+                    'album': metadata['album'],
+                    'duration': metadata['duration']
+                }
+                
+                # Emit the processed file
+                self.file_processed.emit(song)
+                
+            # Signal that all files are processed
+            if not self.should_stop:
+                self.all_files_processed.emit()
+                
+        except Exception as e:
+            self.error.emit(f"Error processing files: {str(e)}")
+    
+    def _get_file_metadata(self, filepath):
+        """Get metadata for an audio file including artist, title, album, and duration."""
+        try:
+            modules_dir = Path(__file__).parent.parent / "modules"
+            
+            # Get full metadata using --show
+            result = subprocess.run(
+                ["python", "walrio.py", "metadata", "--show", filepath],
+                cwd=str(modules_dir),
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0 and result.stdout.strip():
+                # Parse the metadata output
+                metadata = {}
+                for line in result.stdout.strip().split('\n'):
+                    if ':' in line and not line.startswith('='):
+                        key, value = line.split(':', 1)
+                        key = key.strip().lower().replace(' ', '_')
+                        value = value.strip()
+                        metadata[key] = value
+                
+                # Return structured metadata with fallbacks
+                return {
+                    'title': metadata.get('title', Path(filepath).stem),
+                    'artist': metadata.get('artist', 'Unknown Artist'),
+                    'album': metadata.get('album', 'Unknown Album'),
+                    'duration': self._parse_duration(metadata.get('duration', '0:00'))
+                }
+            else:
+                # Fallback if metadata extraction fails
+                return {
+                    'title': Path(filepath).stem,
+                    'artist': 'Unknown Artist',
+                    'album': 'Unknown Album',
+                    'duration': 0
+                }
+                
+        except Exception as e:
+            print(f"Error getting metadata for {filepath}: {e}")
+            return {
+                'title': Path(filepath).stem,
+                'artist': 'Unknown Artist', 
+                'album': 'Unknown Album',
+                'duration': 0
+            }
+    
+    def _parse_duration(self, duration_str):
+        """Parse duration string like '3:45 (225.6 seconds)' and return seconds."""
+        try:
+            if '(' in duration_str and 'seconds)' in duration_str:
+                # Extract seconds from parentheses
+                seconds_part = duration_str.split('(')[1].split(' seconds)')[0]
+                return int(float(seconds_part))
+            elif ':' in duration_str:
+                # Parse MM:SS format
+                parts = duration_str.split(':')
+                if len(parts) == 2:
+                    minutes, seconds = parts
+                    return int(minutes) * 60 + int(seconds)
+            return 0
+        except:
+            return 0
+    
+    def stop(self):
+        """Stop the worker thread."""
+        self.should_stop = True
+
+
 class PlayerWorker(QThread):
     """Worker thread for running audio playback."""
     
@@ -499,35 +610,61 @@ class WalrioMusicPlayer(QMainWindow):
         self.timer.start(100)  # Update UI every 100ms for smooth updates
     
     def add_files_to_queue(self):
-        """Add files to the queue."""
+        """Add files to the queue using background thread."""
         filepaths, _ = QFileDialog.getOpenFileNames(
             self, "Add Audio Files to Queue", "",
             "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.aac *.opus)"
         )
         
         if filepaths:
-            for filepath in filepaths:
-                # Get metadata for the file
-                metadata = self.get_file_metadata(filepath)
-                song = {
-                    'url': filepath,
-                    'title': metadata['title'],
-                    'artist': metadata['artist'],
-                    'album': metadata['album'],
-                    'duration': metadata['duration']
-                }
-                self.queue_songs.append(song)
+            # Disable the add button while processing
+            self.btn_add_files.setEnabled(False)
+            self.btn_add_files.setText(f"Processing {len(filepaths)} files...")
             
-            self.update_queue_display()
-            
-            # Enable navigation buttons if we have multiple songs
-            if len(self.queue_songs) > 1:
-                self.btn_previous.setEnabled(True)
-                self.btn_next.setEnabled(True)
-            
-            # If no current file, load the first song from queue
-            if not self.current_file and self.queue_songs:
-                self.load_song_from_queue(0)
+            # Create and start the queue worker
+            self.queue_worker = QueueWorker(filepaths)
+            self.queue_worker.file_processed.connect(self.on_file_processed)
+            self.queue_worker.all_files_processed.connect(self.on_all_files_processed)
+            self.queue_worker.error.connect(self.on_queue_error)
+            self.queue_worker.start()
+    
+    def on_file_processed(self, song):
+        """Handle when a file has been processed by the queue worker."""
+        self.queue_songs.append(song)
+        self.update_queue_display()
+        
+        # Enable navigation buttons if we have multiple songs
+        if len(self.queue_songs) > 1:
+            self.btn_previous.setEnabled(True)
+            self.btn_next.setEnabled(True)
+        
+        # If no current file, load the first song from queue
+        if not self.current_file and len(self.queue_songs) == 1:
+            self.load_song_from_queue(0)
+    
+    def on_all_files_processed(self):
+        """Handle when all files have been processed."""
+        # Re-enable the add button
+        self.btn_add_files.setEnabled(True)
+        self.btn_add_files.setText("Add Files to Queue")
+        
+        # Clean up the worker
+        if hasattr(self, 'queue_worker'):
+            self.queue_worker.deleteLater()
+            del self.queue_worker
+    
+    def on_queue_error(self, error_message):
+        """Handle queue processing errors."""
+        QMessageBox.warning(self, "Queue Error", f"Error processing files: {error_message}")
+        
+        # Re-enable the add button
+        self.btn_add_files.setEnabled(True)  
+        self.btn_add_files.setText("Add Files to Queue")
+        
+        # Clean up the worker
+        if hasattr(self, 'queue_worker'):
+            self.queue_worker.deleteLater()
+            del self.queue_worker
     
     def clear_queue(self):
         """Clear all songs from the queue."""
