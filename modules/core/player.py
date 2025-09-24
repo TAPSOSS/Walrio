@@ -64,6 +64,9 @@ class AudioPlayer:
         self.repeat_count = 0
         self.interactive_mode = False  # Track if we're in interactive mode
         
+        # Event notification system for daemon mode
+        self.event_listeners = []  # List of sockets to send events to
+        
         # GLib main loop for handling messages
         self.loop = GLib.MainLoop()
         self.loop_thread = None
@@ -172,6 +175,13 @@ class AudioPlayer:
         """Handle end of stream for looping."""
         if self.should_quit:
             return
+        
+        # Send song finished event to listeners
+        self._send_event("song_finished", {
+            "file": self.current_file,
+            "repeat_count": self.repeat_count,
+            "loop_mode": self.loop_mode
+        })
             
         should_loop = False
         if self.loop_mode == 'infinite':
@@ -183,10 +193,21 @@ class AudioPlayer:
         if should_loop:
             self.repeat_count += 1
             print(f"Looping song (repeat #{self.repeat_count})")
+            # Send song starting event for repeat
+            self._send_event("song_starting", {
+                "file": self.current_file,
+                "repeat_count": self.repeat_count,
+                "is_repeat": True
+            })
             # Seek back to beginning with explicit 0.0 to ensure it's a proper float
             self.seek(0.0)
         else:
             print(f"Finished looping after {self.repeat_count} repeats")
+            # Send playback complete event
+            self._send_event("playback_complete", {
+                "file": self.current_file,
+                "total_repeats": self.repeat_count
+            })
             self.stop()
             if self.interactive_mode:
                 print("player> ", end="", flush=True)
@@ -283,6 +304,14 @@ class AudioPlayer:
         # Reset repeat count for new playback
         if seek_position is None or seek_position == 0:
             self.repeat_count = 0
+        
+        # Send song starting event
+        self._send_event("song_starting", {
+            "file": self.current_file,
+            "duration": self.duration,
+            "seek_position": seek_position or 0,
+            "is_repeat": False
+        })
         
         # Start position tracking
         self._start_position_tracking()
@@ -689,22 +718,51 @@ class AudioPlayer:
                 except socket.timeout:
                     continue
                 
-                with conn:
-                    # Receive command
-                    data = conn.recv(1024).decode('utf-8').strip()
-                    if not data:
-                        continue
-                    
-                    # Process command
-                    response = self._process_daemon_command(data)
-                    
-                    # Send response
-                    conn.send(response.encode('utf-8'))
+                # Handle connection in a separate thread to support persistent event listeners
+                threading.Thread(target=self._handle_connection, args=(conn,), daemon=True).start()
                     
             except Exception as e:
                 if not self.should_quit:
                     print(f"Error in command server: {e}")
                 break
+    
+    def _handle_connection(self, conn):
+        """Handle a single client connection."""
+        try:
+            while not self.should_quit:
+                # Receive command
+                data = conn.recv(1024).decode('utf-8').strip()
+                if not data:
+                    break
+                
+                # Check for event subscription
+                if data.lower() == 'subscribe':
+                    # Add to event listeners
+                    self.event_listeners.append(conn)
+                    conn.send(b"OK: Subscribed to events\n")
+                    # Keep connection open for events
+                    continue
+                
+                # Process regular command
+                response = self._process_daemon_command(data)
+                
+                # Send response
+                conn.send(response.encode('utf-8'))
+                
+                # Close connection for regular commands
+                break
+                
+        except Exception as e:
+            if not self.should_quit:
+                print(f"Error handling connection: {e}")
+        finally:
+            # Remove from event listeners if it was subscribed
+            if conn in self.event_listeners:
+                self.event_listeners.remove(conn)
+            try:
+                conn.close()
+            except:
+                pass
     
     def _process_daemon_command(self, command):
         """
@@ -770,6 +828,10 @@ class AudioPlayer:
             elif cmd in ['position', 'pos']:
                 position = self.get_position()
                 return f"OK: {position:.3f}"
+                
+            elif cmd == 'loop' and len(parts) > 1:
+                result = self.set_loop_mode(parts[1])
+                return f"OK: Loop mode set to {parts[1]}" if result else "ERROR: Failed to set loop mode"
                     
             else:
                 return f"ERROR: Unknown command '{cmd}'"
@@ -807,6 +869,42 @@ class AudioPlayer:
         """Stop position tracking."""
         if self.position_thread:
             self.position_thread = None
+    
+    def _send_event(self, event_type, data):
+        """
+        Send an event to all registered listeners.
+        
+        Args:
+            event_type (str): Type of event (e.g., 'song_finished', 'song_starting')
+            data (dict): Event data
+        """
+        if not hasattr(self, 'event_listeners'):
+            return
+            
+        event_message = json.dumps({
+            "type": "event",
+            "event": event_type,
+            "data": data,
+            "timestamp": time.time()
+        }) + "\n"
+        
+        # Send to all connected listeners
+        dead_listeners = []
+        for listener in self.event_listeners:
+            try:
+                listener.send(event_message.encode('utf-8'))
+            except Exception:
+                # Mark dead connections for removal
+                dead_listeners.append(listener)
+        
+        # Remove dead connections
+        for dead in dead_listeners:
+            if dead in self.event_listeners:
+                self.event_listeners.remove(dead)
+                try:
+                    dead.close()
+                except:
+                    pass
 
     def _get_file_duration(self, filepath):
         """
