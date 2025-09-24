@@ -200,10 +200,9 @@ class PlayerWorker(QThread):
             # Main monitoring loop
             event_check_counter = 0
             while not self.should_stop and self.process.poll() is None:
-                # Check for daemon events regularly - with 30s timeout, we can check more often
+                # Check for daemon events every iteration to catch song_finished events quickly
                 event_check_counter += 1
-                if event_check_counter % 5 == 0:  # Check every 5 iterations (0.5 seconds)
-                    self._check_daemon_events()
+                self._check_daemon_events()  # Check every iteration to catch song_finished events
                 
                 if not self.pause_start and not self.should_stop:
                     # Query actual position from the audio daemon every 0.1 seconds for smooth seekbar
@@ -527,7 +526,7 @@ class PlayerWorker(QThread):
                 if "OK: Subscribed" in response:
                     print("PlayerWorker: Successfully subscribed to daemon events")
                     # Set socket for non-blocking reads so position updates aren't blocked
-                    self.event_socket.settimeout(0.01)  # Very short timeout for non-blocking behavior
+                    self.event_socket.settimeout(1.0)  # 1 second timeout to catch events reliably while staying responsive
                     return True
                 else:
                     print(f"PlayerWorker: Event subscription failed: {response}")
@@ -581,10 +580,14 @@ class PlayerWorker(QThread):
                 print(f"PlayerWorker: Received event {event_name}: {data}")
                 
                 if event_name == "song_finished":
-                    print("PlayerWorker: Song finished event - emitting playback_finished")
+                    print("PlayerWorker: Song finished event - stopping position updates and emitting playback_finished")
+                    # Stop position updates to prevent repeating final position
+                    self.should_stop = True
                     self.playback_finished.emit()
                 elif event_name == "song_starting":
-                    print(f"PlayerWorker: Song starting event - {data.get('file')}")
+                    print(f"PlayerWorker: Song starting event - resuming position updates - {data.get('file')}")
+                    # Resume position updates for new song
+                    self.should_stop = False
                     self.song_starting.emit(data)
                 elif event_name == "playback_complete":
                     print("PlayerWorker: Playback complete event - ignoring (already handled by song_finished)")
@@ -615,11 +618,12 @@ class PlayerWorker(QThread):
         self.duration = duration
         
         # Reset timing state
-        self.should_stop = False
+        self.should_stop = False  # Allow position updates for new song
         self.start_time = None
         self.paused_duration = 0
         self.pause_start = None
         self.last_known_position = 0
+        print(f"PlayerWorker: Reset should_stop=False for new song")
         
         # Debug: Print the filepath being used
         print(f"PlayerWorker play_new_song called with: {repr(filepath)}")
@@ -658,11 +662,10 @@ class PlayerWorker(QThread):
             # Don't append self.filepath - we'll load files via commands
             
             # Run walrio player in daemon mode for external control
+            # Don't capture stdout/stderr so we can see debug output
             self.process = subprocess.Popen(
                 cmd,
                 cwd=str(modules_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
                 text=True
             )
             

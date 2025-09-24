@@ -158,8 +158,10 @@ class AudioPlayer:
             bus: The GStreamer bus that sent the message.
             message: The GStreamer message to process.
         """
+        print(f"DEBUG: Bus message received: {message.type}")
         if message.type == Gst.MessageType.EOS:
             # End of stream - handle looping
+            print("DEBUG: EOS message received - calling _handle_eos()")
             self._handle_eos()
         elif message.type == Gst.MessageType.ERROR:
             error, debug = message.parse_error()
@@ -176,10 +178,13 @@ class AudioPlayer:
     
     def _handle_eos(self):
         """Handle end of stream for looping."""
+        print("DEBUG: _handle_eos() called")
         if self.should_quit:
+            print("DEBUG: should_quit is True, returning early")
             return
         
         # Send song finished event to listeners
+        print("DEBUG: Sending song_finished event to listeners")
         self._send_event("song_finished", {
             "file": self.current_file,
             "repeat_count": self.repeat_count,
@@ -286,8 +291,11 @@ class AudioPlayer:
         
         # Start GLib main loop in separate thread if not running
         if not self.loop_thread or not self.loop_thread.is_alive():
+            print("DEBUG: Creating and starting GLib main loop thread")
             self.loop_thread = threading.Thread(target=self._run_loop, daemon=True)
             self.loop_thread.start()
+        else:
+            print("DEBUG: GLib main loop thread already running")
         
         # Set volume
         self.volume.set_property("volume", self.volume_value)
@@ -324,7 +332,9 @@ class AudioPlayer:
     
     def _run_loop(self):
         """Run the GLib main loop."""
+        print("DEBUG: Starting GLib main loop")
         self.loop.run()
+        print("DEBUG: GLib main loop ended")
     
     def pause(self):
         """
