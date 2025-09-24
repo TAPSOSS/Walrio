@@ -215,22 +215,23 @@ class PlayerWorker(QThread):
                 if self.should_stop:
                     break
                     
-                if self.start_time and not self.pause_start and not self.should_stop:
-                    # Calculate current position based on elapsed time
-                    elapsed = time.time() - self.start_time - self.paused_duration
-                    # Ensure position is never negative 
-                    safe_position = max(0, elapsed)
+                if not self.pause_start and not self.should_stop:
+                    # Query actual position from the audio daemon
+                    actual_position = self.get_position()
                     
-                    # Only emit positions within the song duration, but don't terminate early
-                    # Let the actual audio process finish naturally
-                    if self.duration > 0 and safe_position <= self.duration:
-                        self.last_known_position = safe_position
-                        if not self.should_stop:  # Double-check before emitting
-                            self.position_updated.emit(safe_position)
-                    elif self.duration > 0:
-                        # Position is beyond duration, just emit the max duration
+                    if actual_position > 0:
+                        # Use the actual audio position - much more accurate!
+                        self.last_known_position = actual_position
                         if not self.should_stop:
-                            self.position_updated.emit(self.duration)
+                            self.position_updated.emit(actual_position)
+                    else:
+                        # Fallback to elapsed time calculation if daemon query fails
+                        if self.start_time:
+                            elapsed = time.time() - self.start_time - self.paused_duration
+                            safe_position = max(0, elapsed)
+                            if self.duration <= 0 or safe_position <= self.duration:
+                                if not self.should_stop:
+                                    self.position_updated.emit(safe_position)
                 
                 # Use shorter sleep intervals to check should_stop more frequently
                 for _ in range(10):  # Check should_stop 10 times during 0.1 second
@@ -446,6 +447,21 @@ class PlayerWorker(QThread):
             print(f"Error setting volume: {response}")
             
         return success
+    
+    def get_position(self):
+        """
+        Get the current playback position from the daemon.
+        
+        Returns:
+            float: Current position in seconds, or 0 if query fails
+        """
+        success, response = self._send_socket_command("position")
+        if success and response.startswith("OK:"):
+            try:
+                return float(response.split(":")[1].strip())
+            except (ValueError, IndexError):
+                pass
+        return 0.0
 
 
 class WalrioMusicPlayer(QMainWindow):
