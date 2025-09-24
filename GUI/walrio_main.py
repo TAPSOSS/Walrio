@@ -183,31 +183,8 @@ class PlayerWorker(QThread):
     def run(self):
         """Run the audio player in daemon mode."""
         try:
-            # Change to modules directory for walrio.py execution
-            modules_dir = Path(__file__).parent.parent / "modules"
-            
-            # Record start time for position tracking
-            self.start_time = time.time()
-            
-            # Build command - no loop option needed (handled by queue)
-            cmd = ["python", "walrio.py", "player", "--daemon"]
-            cmd.append(self.filepath)
-            
-            # Run walrio player in daemon mode for external control
-            self.process = subprocess.Popen(
-                cmd,
-                cwd=str(modules_dir),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Allow a brief moment for the audio player to initialize
-            # This prevents late start timing issues
-            time.sleep(0.1)
-            
-            # Record the actual start time after initialization
-            self.start_time = time.time()
+            # Start the audio process
+            self._start_audio_process()
             
             # Monitor process and emit position updates
             while not self.should_stop and self.process.poll() is None:
@@ -462,6 +439,64 @@ class PlayerWorker(QThread):
             except (ValueError, IndexError):
                 pass
         return 0.0
+    
+    def play_new_song(self, filepath, duration=0):
+        """
+        Switch to a new song without recreating the PlayerWorker thread.
+        
+        Args:
+            filepath (str): Path to the new audio file
+            duration (float): Duration of the new file in seconds
+        """
+        # Stop current playback
+        if self.process and self.process.poll() is None:
+            self.stop()
+            
+        # Update file info
+        self.filepath = filepath
+        self.duration = duration
+        
+        # Reset timing state
+        self.should_stop = False
+        self.start_time = None
+        self.paused_duration = 0
+        self.pause_start = None
+        self.last_known_position = 0
+        
+        # Start new playback
+        if not self.isRunning():
+            self.start()
+        else:
+            # If thread is running, restart the audio process
+            self._start_audio_process()
+    
+    def _start_audio_process(self):
+        """Start the audio process for the current file."""
+        try:
+            # Change to modules directory for walrio.py execution
+            modules_dir = Path(__file__).parent.parent / "modules"
+            
+            # Build command - no loop option needed (handled by queue)
+            cmd = ["python", "walrio.py", "player", "--daemon"]
+            cmd.append(self.filepath)
+            
+            # Run walrio player in daemon mode for external control
+            self.process = subprocess.Popen(
+                cmd,
+                cwd=str(modules_dir),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Allow a brief moment for the audio player to initialize
+            time.sleep(0.1)
+            
+            # Record the actual start time after initialization
+            self.start_time = time.time()
+            
+        except Exception as e:
+            print(f"Error starting audio process: {e}")
 
 
 class WalrioMusicPlayer(QMainWindow):
@@ -513,30 +548,6 @@ class WalrioMusicPlayer(QMainWindow):
         else:
             # Update the current index
             self.queue_manager.set_current_index(self.current_queue_index)
-    
-    def _queue_songs_changed(self, new_songs):
-        """
-        Check if the queue songs have actually changed.
-        
-        Args:
-            new_songs (list): New list of songs to compare
-            
-        Returns:
-            bool: True if songs have changed, False otherwise
-        """
-        if not hasattr(self, '_last_queue_songs'):
-            return True
-            
-        # Compare lengths first (quick check)
-        if len(new_songs) != len(self._last_queue_songs):
-            return True
-            
-        # Compare song URLs (the key identifier)
-        for new_song, old_song in zip(new_songs, self._last_queue_songs):
-            if new_song.get('url') != old_song.get('url'):
-                return True
-                
-        return False
     
     def setup_ui(self):
         """Setup the user interface."""
@@ -1048,16 +1059,17 @@ class WalrioMusicPlayer(QMainWindow):
         if not self.current_file:
             return
         
-        # Stop any existing player worker first
-        if self.player_worker:
-            # Disconnect all signals to prevent interference
-            self.player_worker.position_updated.disconnect()
-            self.player_worker.playback_finished.disconnect()
-            self.player_worker.error.disconnect()
-            
-            self.player_worker.stop()
-            self.player_worker.wait(1000)  # Wait up to 1 second
-            self.player_worker = None
+        # Create or update player worker
+        if not self.player_worker:
+            # Create new PlayerWorker only if it doesn't exist
+            self.player_worker = PlayerWorker(self.current_file, self.duration)
+            self.player_worker.playback_finished.connect(self.on_playback_finished)
+            self.player_worker.error.connect(self.on_playback_error)
+            self.player_worker.position_updated.connect(self.on_position_updated)
+            self.player_worker.start()
+        else:
+            # Update existing PlayerWorker with new song
+            self.player_worker.play_new_song(self.current_file, self.duration)
         
         # Update queue manager with current queue (create if needed)
         self._update_queue_manager()
@@ -1069,13 +1081,6 @@ class WalrioMusicPlayer(QMainWindow):
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
         self.btn_stop.setEnabled(True)
-        
-        # Start player worker
-        self.player_worker = PlayerWorker(self.current_file, self.duration)
-        self.player_worker.playback_finished.connect(self.on_playback_finished)
-        self.player_worker.error.connect(self.on_playback_error)
-        self.player_worker.position_updated.connect(self.on_position_updated)
-        self.player_worker.start()
     
     def pause_playback(self):
         """Pause audio playback using CLI command."""
