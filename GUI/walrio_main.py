@@ -378,6 +378,7 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_list.setMaximumHeight(150)
         self.queue_list.setAlternatingRowColors(True)
         self.queue_list.itemClicked.connect(self.on_queue_item_clicked)
+        self.queue_list.itemDoubleClicked.connect(self.on_queue_item_double_clicked)
         layout.addWidget(self.queue_list)
         
         # Add/Remove queue buttons
@@ -577,12 +578,24 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
     def on_queue_item_clicked(self, item):
-        """Handle clicking on a queue item to play it."""
+        """Handle clicking on a queue item to select it."""
         row = self.queue_list.row(item)
         if 0 <= row < len(self.queue_songs):
+            # Just select the item, don't automatically play
+            # Playing is now handled by double-click
+            pass
+    
+    def on_queue_item_double_clicked(self, item):
+        """Handle double-clicking on a queue item to immediately play it."""
+        row = self.queue_list.row(item)
+        if 0 <= row < len(self.queue_songs):
+            # Stop current playback if playing
+            if self.is_playing:
+                self.stop_playback()
+            
+            # Load and immediately start playing the selected song
             self.load_song_from_queue(row)
-            if not self.is_playing:
-                self.start_playback()
+            self.start_playback()
     
     def load_song_from_queue(self, index):
         """Load a song from the queue by index."""
