@@ -202,6 +202,13 @@ class PlayerWorker(QThread):
                 text=True
             )
             
+            # Allow a brief moment for the audio player to initialize
+            # This prevents late start timing issues
+            time.sleep(0.1)
+            
+            # Record the actual start time after initialization
+            self.start_time = time.time()
+            
             # Monitor process and emit position updates
             while not self.should_stop and self.process.poll() is None:
                 # Check should_stop more frequently within the loop
@@ -214,16 +221,16 @@ class PlayerWorker(QThread):
                     # Ensure position is never negative 
                     safe_position = max(0, elapsed)
                     
-                    # Don't emit positions beyond the song duration
-                    if self.duration > 0 and safe_position >= self.duration:
-                        # Song has finished, emit final position and signal completion
-                        self.position_updated.emit(self.duration)
-                        self.playback_finished.emit()
-                        break
-                    
-                    self.last_known_position = safe_position
-                    if not self.should_stop:  # Double-check before emitting
-                        self.position_updated.emit(safe_position)
+                    # Only emit positions within the song duration, but don't terminate early
+                    # Let the actual audio process finish naturally
+                    if self.duration > 0 and safe_position <= self.duration:
+                        self.last_known_position = safe_position
+                        if not self.should_stop:  # Double-check before emitting
+                            self.position_updated.emit(safe_position)
+                    elif self.duration > 0:
+                        # Position is beyond duration, just emit the max duration
+                        if not self.should_stop:
+                            self.position_updated.emit(self.duration)
                 
                 # Use shorter sleep intervals to check should_stop more frequently
                 for _ in range(10):  # Check should_stop 10 times during 0.1 second
