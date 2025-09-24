@@ -173,7 +173,6 @@ class QueueManager:
         """
         self.songs.append(song)
         self._update_play_order()
-        print(f"Added song to queue: {song.get('title', 'Unknown')}")
     
     def add_songs(self, songs):
         """
@@ -184,7 +183,6 @@ class QueueManager:
         """
         self.songs.extend(songs)
         self._update_play_order()
-        print(f"Added {len(songs)} songs to queue")
     
     def remove_song(self, index):
         """

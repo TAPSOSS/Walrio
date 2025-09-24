@@ -716,11 +716,18 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_songs.append(song)
         self.update_queue_display()
         
-        # Add song to existing queue manager (create if needed)
+        # Add song to queue manager
         if not self.queue_manager:
-            self._update_queue_manager()
-        else:
-            self.queue_manager.add_song(song)
+            # Create QueueManager with empty list, then add this song
+            self.queue_manager = QueueManager([])
+            self.queue_manager.set_current_index(self.current_queue_index)
+            
+        # Always add the new song to the queue manager
+        self.queue_manager.add_song(song)
+        
+        # Log song addition
+        song_title = song.get('title', 'Unknown')
+        print(f"➕ Added to queue: {song_title} (Queue size: {len(self.queue_songs)})")
         
         # Enable navigation buttons if we have multiple songs
         if len(self.queue_songs) > 1:
@@ -1059,6 +1066,14 @@ class WalrioMusicPlayer(QMainWindow):
         if not self.current_file:
             return
         
+        # Log song starting
+        current_title = Path(self.current_file).stem if self.current_file else "Unknown"
+        if self.queue_songs and hasattr(self, 'current_queue_index'):
+            queue_position = f"#{self.current_queue_index + 1}/{len(self.queue_songs)}"
+        else:
+            queue_position = "Single song"
+        print(f"▶️ Starting song: {current_title} ({queue_position})")
+        
         # Create or update player worker
         if not self.player_worker:
             # Create new PlayerWorker only if it doesn't exist
@@ -1269,6 +1284,10 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for loop decisions."""
+        # Log song ending
+        current_title = Path(self.current_file).stem if self.current_file else "Unknown"
+        print(f"🎵 Song ended: {current_title}")
+        
         if self.queue_manager:
             # Use queue's next_track logic for repeat handling
             if self.queue_manager.next_track():
@@ -1281,18 +1300,26 @@ class WalrioMusicPlayer(QMainWindow):
                     
                     # For track repeat, use lightweight restart instead of full restart
                     if self.queue_manager.repeat_mode.value == "track":
+                        print(f"🔁 Repeating track: {current_title}")
                         self.restart_current_track()
                     else:
                         # Load next song from queue and play
                         if self.queue_songs and self.current_queue_index < len(self.queue_songs):
+                            next_song = self.queue_songs[self.current_queue_index]
+                            next_title = next_song.get('title', 'Unknown')
+                            print(f"⏭️ Moving to next song: {next_title} (#{self.current_queue_index + 1}/{len(self.queue_songs)})")
                             self.load_song_from_queue(self.current_queue_index)
                             self.start_playback()
                         else:
+                            print("⚠️ Queue index out of bounds, using fallback restart")
                             # Fallback to full restart
                             self.start_playback()
                     return
+            else:
+                print(f"🛑 Queue finished - no more songs to play")
         
         # No queue or queue says stop - end playback
+        print("⏹️ Stopping playback")
         self.stop_playback()
     
     def restart_current_track(self):
