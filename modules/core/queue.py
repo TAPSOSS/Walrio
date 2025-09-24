@@ -163,6 +163,59 @@ class QueueManager:
             self.current_index = index
             return True
         return False
+    
+    def add_song(self, song):
+        """
+        Add a song to the queue.
+        
+        Args:
+            song (dict): Song dictionary to add to the queue
+        """
+        self.songs.append(song)
+        self._update_play_order()
+        print(f"Added song to queue: {song.get('title', 'Unknown')}")
+    
+    def add_songs(self, songs):
+        """
+        Add multiple songs to the queue.
+        
+        Args:
+            songs (list): List of song dictionaries to add to the queue
+        """
+        self.songs.extend(songs)
+        self._update_play_order()
+        print(f"Added {len(songs)} songs to queue")
+    
+    def remove_song(self, index):
+        """
+        Remove a song from the queue by index.
+        
+        Args:
+            index (int): Index of song to remove
+            
+        Returns:
+            bool: True if song was removed, False if index was invalid
+        """
+        if 0 <= index < len(self.songs):
+            removed_song = self.songs.pop(index)
+            
+            # Adjust current index if needed
+            if index < self.current_index:
+                self.current_index -= 1
+            elif index == self.current_index and self.current_index >= len(self.songs):
+                self.current_index = max(0, len(self.songs) - 1)
+                
+            self._update_play_order()
+            print(f"Removed song from queue: {removed_song.get('title', 'Unknown')}")
+            return True
+        return False
+    
+    def clear_queue(self):
+        """Clear all songs from the queue."""
+        self.songs.clear()
+        self.current_index = 0
+        self._update_play_order()
+        print("Queue cleared")
 
 def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0, conn=None):
     """

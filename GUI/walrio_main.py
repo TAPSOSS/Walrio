@@ -489,6 +489,55 @@ class WalrioMusicPlayer(QMainWindow):
         self.setup_ui()
         self.setup_timer()
     
+    def _update_queue_manager(self):
+        """
+        Create or update the queue manager with current queue state.
+        Creates QueueManager only once, then updates it.
+        """
+        current_songs = self.queue_songs if self.queue_songs else []
+        
+        # If no queue songs, create single-song queue for current file
+        if not current_songs and self.current_file:
+            current_songs = [{
+                'url': self.current_file,
+                'title': Path(self.current_file).stem,
+                'artist': 'Unknown Artist',
+                'album': 'Unknown Album'
+            }]
+        
+        # Create QueueManager only if it doesn't exist
+        if not self.queue_manager:
+            print(f"Creating initial QueueManager with {len(current_songs)} songs")
+            self.queue_manager = QueueManager(current_songs)
+            self.queue_manager.set_current_index(self.current_queue_index)
+        else:
+            # Update the current index
+            self.queue_manager.set_current_index(self.current_queue_index)
+    
+    def _queue_songs_changed(self, new_songs):
+        """
+        Check if the queue songs have actually changed.
+        
+        Args:
+            new_songs (list): New list of songs to compare
+            
+        Returns:
+            bool: True if songs have changed, False otherwise
+        """
+        if not hasattr(self, '_last_queue_songs'):
+            return True
+            
+        # Compare lengths first (quick check)
+        if len(new_songs) != len(self._last_queue_songs):
+            return True
+            
+        # Compare song URLs (the key identifier)
+        for new_song, old_song in zip(new_songs, self._last_queue_songs):
+            if new_song.get('url') != old_song.get('url'):
+                return True
+                
+        return False
+    
     def setup_ui(self):
         """Setup the user interface."""
         self.setWindowTitle("Walrio")
@@ -655,6 +704,12 @@ class WalrioMusicPlayer(QMainWindow):
         """Handle when a file has been processed by the queue worker."""
         self.queue_songs.append(song)
         self.update_queue_display()
+        
+        # Add song to existing queue manager (create if needed)
+        if not self.queue_manager:
+            self._update_queue_manager()
+        else:
+            self.queue_manager.add_song(song)
         
         # Enable navigation buttons if we have multiple songs
         if len(self.queue_songs) > 1:
@@ -1004,21 +1059,12 @@ class WalrioMusicPlayer(QMainWindow):
             self.player_worker.wait(1000)  # Wait up to 1 second
             self.player_worker = None
         
-        # Create queue manager with current queue
-        if self.queue_songs:
-            self.queue_manager = QueueManager(self.queue_songs)
-            self.queue_manager.set_current_index(self.current_queue_index)
-        else:
-            # Fallback to single song
-            song = {
-                'url': self.current_file,
-                'title': Path(self.current_file).stem,
-                'artist': 'Unknown Artist',
-                'album': 'Unknown Album'
-            }
-            self.queue_manager = QueueManager([song])
+        # Update queue manager with current queue (create if needed)
+        self._update_queue_manager()
         
-        self.queue_manager.set_repeat_mode(self.loop_mode)
+        # Ensure queue manager has correct repeat mode
+        if self.queue_manager:
+            self.queue_manager.set_repeat_mode(self.loop_mode)
         
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
@@ -1218,51 +1264,30 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for loop decisions."""
-        print(f"Playback finished. Current queue index: {self.current_queue_index}, Queue length: {len(self.queue_songs) if self.queue_songs else 0}")
-        
         if self.queue_manager:
-            print(f"Queue manager current index before next_track: {self.queue_manager.current_index}")
-            print(f"Queue manager repeat mode: {self.queue_manager.repeat_mode.value}")
-            
             # Use queue's next_track logic for repeat handling
-            should_continue = self.queue_manager.next_track()
-            print(f"Queue next_track returned: {should_continue}")
-            print(f"Queue manager current index after next_track: {self.queue_manager.current_index}")
-            
-            if should_continue:
+            if self.queue_manager.next_track():
                 # Queue wants to continue (either repeat track or move to next)
                 current_song = self.queue_manager.current_song()
                 if current_song:
-                    print(f"Queue decision: Continue playback - {self.queue_manager.repeat_mode.value}")
-                    
                     # Update current queue index to match queue manager
                     if self.queue_songs and hasattr(self.queue_manager, 'current_index'):
-                        old_index = self.current_queue_index
                         self.current_queue_index = self.queue_manager.current_index
-                        print(f"Updated queue index from {old_index} to {self.current_queue_index}")
                     
                     # For track repeat, use lightweight restart instead of full restart
                     if self.queue_manager.repeat_mode.value == "track":
-                        print("Using track repeat - restarting current track")
                         self.restart_current_track()
                     else:
                         # Load next song from queue and play
                         if self.queue_songs and self.current_queue_index < len(self.queue_songs):
-                            print(f"Loading next song at index {self.current_queue_index}")
                             self.load_song_from_queue(self.current_queue_index)
                             self.start_playback()
                         else:
-                            print("Queue index out of bounds, using fallback restart")
                             # Fallback to full restart
                             self.start_playback()
                     return
-            else:
-                print("Queue decision: End playback (no more songs or repeat off)")
-        else:
-            print("No queue manager found")
         
         # No queue or queue says stop - end playback
-        print("Stopping playback")
         self.stop_playback()
     
     def restart_current_track(self):
