@@ -785,11 +785,11 @@ class AudioPlayer:
             str: Response message indicating success or failure.
         """
         try:
-            parts = command.strip().lower().split()
+            parts = command.strip().split()
             if not parts:
                 return "ERROR: Empty command"
             
-            cmd = parts[0]
+            cmd = parts[0].lower()  # Only lowercase the command, not the arguments
             
             if cmd in ['play', 'p']:
                 if self.is_paused:
