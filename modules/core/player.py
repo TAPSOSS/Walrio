@@ -91,6 +91,9 @@ class AudioPlayer:
         self.should_quit = True
         if self.loop.is_running():
             self.loop.quit()
+        # Clean up daemon resources on signal
+        if hasattr(self, '_cleanup_daemon'):
+            self._cleanup_daemon()
     
     def _create_pipeline(self):
         """Create and configure the GStreamer pipeline."""

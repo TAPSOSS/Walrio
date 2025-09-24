@@ -188,8 +188,8 @@ class PlayerWorker(QThread):
             # Start the audio process
             self._start_audio_process()
             
-            # Connect to daemon for events
-            self._connect_to_daemon_events()
+            # Connect to daemon for events (with retry for timing)
+            self._connect_to_daemon_events_with_retry()
             
             # Main monitoring loop
             event_check_counter = 0
@@ -450,6 +450,18 @@ class PlayerWorker(QThread):
         success, response = self._send_socket_command(command)
         return success
     
+    def _connect_to_daemon_events_with_retry(self):
+        """Connect to daemon events with retry logic for timing issues."""
+        import time
+        max_retries = 10
+        for attempt in range(max_retries):
+            if self._connect_to_daemon_events():
+                return
+            if attempt < max_retries - 1:
+                print(f"PlayerWorker: Daemon socket not ready, retrying in 0.2s (attempt {attempt + 1})")
+                time.sleep(0.2)
+        print("PlayerWorker: Failed to connect to daemon events after all retries")
+
     def _connect_to_daemon_events(self):
         """Connect to the daemon for event notifications."""
         try:
@@ -465,10 +477,24 @@ class PlayerWorker(QThread):
                 if filename.startswith("walrio_player_") and filename.endswith(".sock"):
                     socket_path = os.path.join(temp_dir, filename)
                     if os.path.exists(socket_path):
-                        socket_files.append((socket_path, os.path.getmtime(socket_path)))
+                        # Test if socket is alive by trying to connect
+                        try:
+                            test_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                            test_socket.settimeout(0.1)
+                            test_socket.connect(socket_path)
+                            test_socket.close()
+                            # Socket is alive, add it to the list
+                            socket_files.append((socket_path, os.path.getmtime(socket_path)))
+                        except:
+                            # Socket is dead, clean it up
+                            print(f"PlayerWorker: Removing stale socket file: {socket_path}")
+                            try:
+                                os.unlink(socket_path)
+                            except:
+                                pass
             
             if socket_files:
-                # Use the most recent socket
+                # Use the most recent live socket
                 socket_path = max(socket_files, key=lambda x: x[1])[0]
                 print(f"PlayerWorker: Connecting to daemon socket: {socket_path}")
                 
@@ -484,15 +510,18 @@ class PlayerWorker(QThread):
                     print("PlayerWorker: Successfully subscribed to daemon events")
                     # Set socket to non-blocking mode for event checking
                     self.event_socket.settimeout(0.1)
+                    return True
                 else:
                     print(f"PlayerWorker: Event subscription failed: {response}")
                     self.event_socket = None
+                    return False
             else:
-                print("PlayerWorker: No daemon socket found")
+                return False  # No live socket found, will retry
                     
         except Exception as e:
             print(f"PlayerWorker: Failed to connect to daemon events: {e}")
             self.event_socket = None
+            return False
     
     def _check_daemon_events(self):
         """Check for events from the daemon."""
@@ -1423,8 +1452,8 @@ class WalrioMusicPlayer(QMainWindow):
         should_continue, next_song = self.queue_manager.handle_song_finished()
         
         if should_continue and next_song:
-            # Update the current file reference
-            self.current_file = next_song['filepath']
+            # Update the current file reference - use 'url' key which contains the filepath
+            self.current_file = next_song.get('url') or next_song.get('filepath')
             
             # Update the queue display to reflect current position
             self.update_queue_display()
