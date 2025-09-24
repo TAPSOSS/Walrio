@@ -194,23 +194,15 @@ class PlayerWorker(QThread):
             # Start the audio process
             self._start_audio_process()
             
-            # Connect to daemon for events (with retry for timing)
-            self._connect_to_daemon_events_with_retry()
+            # Start dedicated event listener thread instead of inline event checking
+            self._start_event_listener_thread()
             
-            # Main monitoring loop
-            event_check_counter = 0
+            # Main monitoring loop (position updates only, no event checking)
             while not self.should_stop and self.process.poll() is None:
-                # Check for daemon events every iteration to catch song_finished events quickly
-                event_check_counter += 1
-                self._check_daemon_events()  # Check every iteration to catch song_finished events
                 
                 if not self.pause_start and not self.should_stop:
                     # Query actual position from the audio daemon every 0.1 seconds for smooth seekbar
                     actual_position = self.get_position()
-                    
-                    # Debug: Print position info frequently for 3-second songs
-                    if event_check_counter % 10 == 0:  # Every 1 second for debug output
-                        print(f"PlayerWorker: Position query returned: {actual_position}")
                     
                     if actual_position >= 0:  # Emit position updates for all valid positions including 0
                         # Use the actual audio position
@@ -218,13 +210,6 @@ class PlayerWorker(QThread):
                         if not self.should_stop:
                             # Emit position update every 0.1 seconds for smooth seekbar
                             self.position_updated.emit(actual_position)
-                            # Debug: Print when position is emitted (less frequently to avoid spam)
-                            if event_check_counter % 10 == 0:
-                                print(f"PlayerWorker: Emitted position: {actual_position}")
-                    else:
-                        # Debug: Only show when position query actually failed (negative/error)
-                        if event_check_counter % 10 == 0:
-                            print(f"PlayerWorker: Position query failed: {actual_position}")
                 
                 # Short sleep to avoid busy waiting
                 time.sleep(0.1)
@@ -604,6 +589,34 @@ class PlayerWorker(QThread):
             except:
                 pass
             self.event_socket = None
+
+    def _start_event_listener_thread(self):
+        """Start a dedicated thread for listening to daemon events."""
+        import threading
+        self.event_thread = threading.Thread(target=self._event_listener_loop, daemon=True)
+        self.event_thread.start()
+    
+    def _event_listener_loop(self):
+        """Dedicated event listener loop running in separate thread."""
+        while not self.should_stop:
+            try:
+                # Connect to daemon if not connected
+                if not self.event_socket:
+                    self._connect_to_daemon_events_with_retry()
+                    if not self.event_socket:
+                        # Connection failed, wait before retrying
+                        import time
+                        time.sleep(1.0)
+                        continue
+                
+                # Check for events (this blocks for up to 1 second)
+                self._check_daemon_events()
+                
+            except Exception as e:
+                print(f"EventListener: Error in event loop: {e}")
+                self.event_socket = None
+                import time
+                time.sleep(0.5)  # Brief pause before retry
     
     def play_new_song(self, filepath, duration=0):
         """

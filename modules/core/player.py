@@ -291,11 +291,8 @@ class AudioPlayer:
         
         # Start GLib main loop in separate thread if not running
         if not self.loop_thread or not self.loop_thread.is_alive():
-            print("DEBUG: Creating and starting GLib main loop thread")
             self.loop_thread = threading.Thread(target=self._run_loop, daemon=True)
             self.loop_thread.start()
-        else:
-            print("DEBUG: GLib main loop thread already running")
         
         # Set volume
         self.volume.set_property("volume", self.volume_value)
@@ -332,9 +329,7 @@ class AudioPlayer:
     
     def _run_loop(self):
         """Run the GLib main loop."""
-        print("DEBUG: Starting GLib main loop")
         self.loop.run()
-        print("DEBUG: GLib main loop ended")
     
     def pause(self):
         """
@@ -504,20 +499,7 @@ class AudioPlayer:
                 if success:
                     # Convert from nanoseconds to seconds
                     self.position = position / Gst.SECOND
-                    # Debug: Print position info occasionally
-                    import time
-                    current_time = time.time()
-                    if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
-                        print(f"DEBUG: Position query success - {self.position:.3f}s")
-                        self._last_position_debug = current_time
                     return self.position
-                else:
-                    # Debug: Position query failed
-                    import time
-                    current_time = time.time()
-                    if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
-                        print(f"DEBUG: Position query failed")
-                        self._last_position_debug = current_time
             except Exception as e:
                 # Debug: Exception in position query
                 print(f"DEBUG: Position query exception: {e}")
@@ -762,27 +744,28 @@ class AudioPlayer:
     
     def _handle_connection(self, conn):
         """Handle a single client connection."""
+        is_event_subscription = False
         try:
             while not self.should_quit:
                 # Receive command
                 data = conn.recv(1024).decode('utf-8').strip()
                 if not data:
                     break
-                
+
                 # Check for event subscription
                 if data.lower() == 'subscribe':
                     # Add to event listeners
+                    is_event_subscription = True
                     self.event_listeners.append(conn)
                     conn.send(b"OK: Subscribed to events\n")
-                    # Keep connection open for events - don't break here
-                    # The connection will be kept alive until it's closed
+                    # Keep connection alive for events
                     while not self.should_quit:
                         try:
-                            # Just keep the connection alive for events
+                            # Keep connection alive for events
                             time.sleep(0.1)
                         except Exception:
                             break
-                    break
+                    break  # Exit loop, but connection cleanup depends on subscription status
                 
                 # Process regular command
                 response = self._process_daemon_command(data)
@@ -797,14 +780,16 @@ class AudioPlayer:
             if not self.should_quit:
                 print(f"Error handling connection: {e}")
         finally:
-            # Remove from event listeners if it was subscribed
-            if conn in self.event_listeners:
-                self.event_listeners.remove(conn)
-            try:
-                conn.close()
-            except:
-                pass
-    
+            # Only clean up if NOT an event subscription
+            if not is_event_subscription:
+                # Remove from event listeners if it was subscribed
+                if conn in self.event_listeners:
+                    self.event_listeners.remove(conn)
+                try:
+                    conn.close()
+                except:
+                    pass
+
     def _process_daemon_command(self, command):
         """
         Process a daemon command and return response.
@@ -950,11 +935,14 @@ class AudioPlayer:
         }) + "\n"
         
         # Send to all connected listeners
+        print(f"DEBUG: Sending event '{event_type}' to {len(self.event_listeners)} listeners")
         dead_listeners = []
         for listener in self.event_listeners:
             try:
                 listener.send(event_message.encode('utf-8'))
-            except Exception:
+                print(f"DEBUG: Successfully sent event '{event_type}' to listener")
+            except Exception as e:
+                print(f"DEBUG: Failed to send event '{event_type}' to listener: {e}")
                 # Mark dead connections for removal
                 dead_listeners.append(listener)
         
