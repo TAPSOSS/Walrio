@@ -740,8 +740,15 @@ class AudioPlayer:
                     # Add to event listeners
                     self.event_listeners.append(conn)
                     conn.send(b"OK: Subscribed to events\n")
-                    # Keep connection open for events
-                    continue
+                    # Keep connection open for events - don't break here
+                    # The connection will be kept alive until it's closed
+                    while not self.should_quit:
+                        try:
+                            # Just keep the connection alive for events
+                            time.sleep(0.1)
+                        except Exception:
+                            break
+                    break
                 
                 # Process regular command
                 response = self._process_daemon_command(data)
@@ -832,6 +839,10 @@ class AudioPlayer:
             elif cmd == 'loop' and len(parts) > 1:
                 result = self.set_loop_mode(parts[1])
                 return f"OK: Loop mode set to {parts[1]}" if result else "ERROR: Failed to set loop mode"
+                
+            elif cmd == 'subscribe':
+                # This command is handled in _handle_connection, but we need to handle it here too
+                return "OK: Subscribed to events"
                     
             else:
                 return f"ERROR: Unknown command '{cmd}'"

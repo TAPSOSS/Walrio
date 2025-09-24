@@ -156,11 +156,12 @@ class QueueWorker(QThread):
 
 
 class PlayerWorker(QThread):
-    """Worker thread for running audio playback."""
+    """Worker thread for handling audio playback operations with event-based communication."""
     
     position_updated = Signal(float)
     playback_finished = Signal()
-    error = Signal(str)  # Added missing error signal
+    song_starting = Signal(dict)  # New signal for when songs start
+    error = Signal(str)
     
     def __init__(self, filepath, duration=0):
         """
@@ -168,64 +169,60 @@ class PlayerWorker(QThread):
         
         Args:
             filepath (str): Path to the audio file to play.
-            duration (float): Duration of the audio file in seconds.
+            duration (float): Expected duration of the audio file in seconds.
         """
         super().__init__()
         self.filepath = filepath
         self.duration = duration
         self.should_stop = False
         self.start_time = None
-        self.process = None
         self.paused_duration = 0
         self.pause_start = None
         self.last_known_position = 0
+        self.process = None
+        self.event_socket = None  # Socket for receiving daemon events
     
     def run(self):
-        """Run the audio player in daemon mode."""
+        """Run the audio player with event-based communication."""
         try:
             # Start the audio process
             self._start_audio_process()
             
-            # Monitor process and emit position updates
+            # Connect to daemon for events
+            self._connect_to_daemon_events()
+            
+            # Main monitoring loop
+            event_check_counter = 0
             while not self.should_stop and self.process.poll() is None:
-                # Check should_stop more frequently within the loop
-                if self.should_stop:
-                    break
-                    
+                # Check for daemon events less frequently to avoid timeout errors
+                event_check_counter += 1
+                if event_check_counter % 5 == 0:  # Check every 5 iterations (0.5 seconds)
+                    self._check_daemon_events()
+                
                 if not self.pause_start and not self.should_stop:
                     # Query actual position from the audio daemon
                     actual_position = self.get_position()
                     
                     if actual_position > 0:
-                        # Use the actual audio position - much more accurate!
+                        # Use the actual audio position
                         self.last_known_position = actual_position
                         if not self.should_stop:
                             self.position_updated.emit(actual_position)
-                    else:
-                        # Fallback to elapsed time calculation if daemon query fails
-                        if self.start_time:
-                            elapsed = time.time() - self.start_time - self.paused_duration
-                            safe_position = max(0, elapsed)
-                            if self.duration <= 0 or safe_position <= self.duration:
-                                if not self.should_stop:
-                                    self.position_updated.emit(safe_position)
                 
-                # Use shorter sleep intervals to check should_stop more frequently
-                for _ in range(10):  # Check should_stop 10 times during 0.1 second
-                    if self.should_stop:
-                        break
-                    time.sleep(0.01)  # 0.01 * 10 = 0.1 second total
+                # Short sleep to avoid busy waiting
+                time.sleep(0.1)
             
-            # Wait for completion
-            self.process.wait()
-            
+            # Process ended - this should be rare now with event-based system
             if not self.should_stop:
+                print("PlayerWorker: Process ended unexpectedly")
                 self.playback_finished.emit()
                 
         except Exception as e:
             error_msg = f"Error in player worker: {e}"
             print(error_msg)
             self.error.emit(error_msg)
+        finally:
+            self._cleanup_event_socket()
     
     def _send_socket_command(self, command):
         """Send a command to the player daemon via socket.
@@ -439,6 +436,123 @@ class PlayerWorker(QThread):
             except (ValueError, IndexError):
                 pass
         return 0.0
+    
+    def send_command(self, command):
+        """
+        Send a command to the daemon.
+        
+        Args:
+            command (str): Command to send to the daemon
+            
+        Returns:
+            bool: True if command was sent successfully, False otherwise
+        """
+        success, response = self._send_socket_command(command)
+        return success
+    
+    def _connect_to_daemon_events(self):
+        """Connect to the daemon for event notifications."""
+        try:
+            import tempfile
+            import socket
+            import os
+            
+            # Find the daemon socket
+            temp_dir = tempfile.gettempdir()
+            socket_files = []
+            
+            for filename in os.listdir(temp_dir):
+                if filename.startswith("walrio_player_") and filename.endswith(".sock"):
+                    socket_path = os.path.join(temp_dir, filename)
+                    if os.path.exists(socket_path):
+                        socket_files.append((socket_path, os.path.getmtime(socket_path)))
+            
+            if socket_files:
+                # Use the most recent socket
+                socket_path = max(socket_files, key=lambda x: x[1])[0]
+                print(f"PlayerWorker: Connecting to daemon socket: {socket_path}")
+                
+                # Create event socket
+                self.event_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.event_socket.connect(socket_path)
+                self.event_socket.settimeout(1.0)  # Longer timeout for more reliable connection
+                
+                # Subscribe to events
+                self.event_socket.send(b"subscribe")
+                response = self.event_socket.recv(1024).decode('utf-8')
+                if "OK: Subscribed" in response:
+                    print("PlayerWorker: Successfully subscribed to daemon events")
+                    # Set socket to non-blocking mode for event checking
+                    self.event_socket.settimeout(0.1)
+                else:
+                    print(f"PlayerWorker: Event subscription failed: {response}")
+                    self.event_socket = None
+            else:
+                print("PlayerWorker: No daemon socket found")
+                    
+        except Exception as e:
+            print(f"PlayerWorker: Failed to connect to daemon events: {e}")
+            self.event_socket = None
+    
+    def _check_daemon_events(self):
+        """Check for events from the daemon."""
+        if not self.event_socket:
+            return
+        
+        try:
+            data = self.event_socket.recv(1024).decode('utf-8')
+            if data:
+                print(f"PlayerWorker: Received daemon data: {repr(data)}")
+                for line in data.strip().split('\n'):
+                    if line.strip():
+                        self._process_daemon_event(line.strip())
+        except Exception as e:
+            # Handle different types of exceptions
+            error_str = str(e).lower()
+            if "timeout" in error_str or "would block" in error_str:
+                # Normal timeout - no events available
+                pass
+            elif "connection" in error_str or "broken pipe" in error_str:
+                # Connection lost
+                print(f"PlayerWorker: Lost connection to daemon: {e}")
+                self.event_socket = None
+            else:
+                print(f"PlayerWorker: Error checking daemon events: {e}")
+                self.event_socket = None
+    
+    def _process_daemon_event(self, event_data):
+        """Process a daemon event."""
+        try:
+            import json
+            event = json.loads(event_data)
+            
+            if event.get("type") == "event":
+                event_name = event.get("event")
+                data = event.get("data", {})
+                
+                print(f"PlayerWorker: Received event {event_name}: {data}")
+                
+                if event_name == "song_finished":
+                    print("PlayerWorker: Song finished event - emitting playback_finished")
+                    self.playback_finished.emit()
+                elif event_name == "song_starting":
+                    print(f"PlayerWorker: Song starting event - {data.get('file')}")
+                    self.song_starting.emit(data)
+                elif event_name == "playback_complete":
+                    print("PlayerWorker: Playback complete event - emitting playback_finished")
+                    self.playback_finished.emit()
+                    
+        except Exception as e:
+            print(f"PlayerWorker: Error processing daemon event: {e}")
+    
+    def _cleanup_event_socket(self):
+        """Clean up the event socket connection."""
+        if self.event_socket:
+            try:
+                self.event_socket.close()
+            except:
+                pass
+            self.event_socket = None
     
     def play_new_song(self, filepath, duration=0):
         """
@@ -1093,9 +1207,23 @@ class WalrioMusicPlayer(QMainWindow):
         if self.queue_manager:
             self.queue_manager.set_repeat_mode(self.loop_mode)
         
+        # Ensure daemon loop mode is set to 'none' for queue-controlled progression
+        if self.player_worker:
+            # Give daemon a moment to initialize before sending command
+            QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none"))
+        
         self.is_playing = True
         self.btn_play_pause.setText("⏸ Pause")
         self.btn_stop.setEnabled(True)
+    
+    def _set_daemon_loop_mode(self):
+        """Set the daemon's loop mode to 'none' for queue-controlled progression."""
+        if self.player_worker:
+            success = self.player_worker.send_command("loop none")
+            if success:
+                print("Set daemon loop mode to 'none'")
+            else:
+                print("Failed to set daemon loop mode - daemon may not be ready yet")
     
     def pause_playback(self):
         """Pause audio playback using CLI command."""
@@ -1283,77 +1411,33 @@ class WalrioMusicPlayer(QMainWindow):
         return f"{minutes:02d}:{seconds:02d}"
     
     def on_playback_finished(self):
-        """Handle when playback finishes - use queue system for loop decisions."""
-        # Log song ending
-        current_title = Path(self.current_file).stem if self.current_file else "Unknown"
-        print(f"Song ended: {current_title}")
+        """Handle when playback finishes - use queue system for completion logic."""
+        print("on_playback_finished called - song has ended")
         
-        if self.queue_manager:
-            # Use queue's next_track logic for repeat handling
-            if self.queue_manager.next_track():
-                # Queue wants to continue (either repeat track or move to next)
-                current_song = self.queue_manager.current_song()
-                if current_song:
-                    # Update current queue index to match queue manager
-                    if self.queue_songs and hasattr(self.queue_manager, 'current_index'):
-                        self.current_queue_index = self.queue_manager.current_index
-                    
-                    # For track repeat, use lightweight restart instead of full restart
-                    if self.queue_manager.repeat_mode.value == "track":
-                        print(f"Repeating track: {current_title}")
-                        self.restart_current_track()
-                    else:
-                        # Load next song from queue and play
-                        if self.queue_songs and self.current_queue_index < len(self.queue_songs):
-                            next_song = self.queue_songs[self.current_queue_index]
-                            next_title = next_song.get('title', 'Unknown')
-                            print(f"Moving to next song: {next_title} (#{self.current_queue_index + 1}/{len(self.queue_songs)})")
-                            self.load_song_from_queue(self.current_queue_index)
-                            self.start_playback()
-                        else:
-                            print("Queue index out of bounds, using fallback restart")
-                            # Fallback to full restart
-                            self.start_playback()
-                    return
-            else:
-                print("Queue finished - no more songs to play")
-        
-        # No queue or queue says stop - end playback
-        print("Stopping playback")
-        self.stop_playback()
-    
-    def restart_current_track(self):
-        """Quickly restart the current track by seeking to the beginning."""
-        if not self.player_worker or not self.current_file:
-            # Fallback to full restart if no worker exists
-            self.start_playback()
+        if not self.queue_manager:
+            print("No queue manager - stopping playback")
+            self.stop_playback()
             return
         
-        # Try to seek to the beginning using socket method (same as GUI seeking)
-        try:
-            if self.player_worker.process and self.player_worker.process.poll() is None:
-                success = self.player_worker.seek(0)
-                
-                if success:
-                    # Reset UI position
-                    self.position = 0
-                    self.progress_slider.setValue(0)
-                    self.time_current.setText("00:00")
-                    
-                    print("Track restarted via seek")
-                    return
-                else:
-                    print("Socket seek to 0 failed")
-        except Exception as e:
-            print(f"Seek restart failed: {e}")
+        # Use the new handle_song_finished method from QueueManager
+        should_continue, next_song = self.queue_manager.handle_song_finished()
         
-        # Fallback to process restart if seek fails
-        print("Falling back to process restart")
-        self.start_playback()
-    
+        if should_continue and next_song:
+            # Update the current file reference
+            self.current_file = next_song['filepath']
+            
+            # Update the queue display to reflect current position
+            self.update_queue_display()
+            
+            # Start playing the next/repeated song
+            self.start_playback()
+        else:
+            # Queue is finished or no next song
+            print("Playback completed - no more songs")
+            self.stop_playback()
     def next_track(self):
         """Skip to the next track in the queue."""
-        if not self.queue_songs or len(self.queue_songs) <= 1:
+        if not self.queue_manager or not self.queue_manager.has_songs():
             return
         
         was_playing = self.is_playing
@@ -1362,17 +1446,20 @@ class WalrioMusicPlayer(QMainWindow):
         if self.is_playing:
             self.stop_playback()
         
-        # Move to next track
-        self.current_queue_index = (self.current_queue_index + 1) % len(self.queue_songs)
-        self.load_song_from_queue(self.current_queue_index)
-        
-        # Resume playback if we were playing
-        if was_playing:
-            self.start_playback()
+        # Use queue manager to move to next track
+        if self.queue_manager.next_track():
+            next_song = self.queue_manager.current_song()
+            if next_song:
+                self.current_file = next_song['filepath']
+                self.update_queue_display()
+                
+                # Resume playback if we were playing
+                if was_playing:
+                    self.start_playback()
     
     def previous_track(self):
         """Skip to the previous track in the queue."""
-        if not self.queue_songs or len(self.queue_songs) <= 1:
+        if not self.queue_manager or not self.queue_manager.has_songs():
             return
         
         was_playing = self.is_playing
@@ -1381,13 +1468,16 @@ class WalrioMusicPlayer(QMainWindow):
         if self.is_playing:
             self.stop_playback()
         
-        # Move to previous track
-        self.current_queue_index = (self.current_queue_index - 1) % len(self.queue_songs)
-        self.load_song_from_queue(self.current_queue_index)
-        
-        # Resume playback if we were playing
-        if was_playing:
-            self.start_playback()
+        # Use queue manager to move to previous track
+        if self.queue_manager.previous_track():
+            prev_song = self.queue_manager.current_song()
+            if prev_song:
+                self.current_file = prev_song['filepath']
+                self.update_queue_display()
+                
+                # Resume playback if we were playing
+                if was_playing:
+                    self.start_playback()
     
     def on_playback_error(self, error):
         """
