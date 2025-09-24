@@ -566,9 +566,11 @@ class PlayerWorker(QThread):
                 
                 if event_name == "song_finished":
                     print("PlayerWorker: Song finished event - stopping position updates and emitting playback_finished")
+                    print(f"PlayerWorker: Emitting playback_finished signal now...")
                     # Stop position updates to prevent repeating final position
                     self.should_stop = True
                     self.playback_finished.emit()
+                    print(f"PlayerWorker: playback_finished signal emitted successfully")
                 elif event_name == "song_starting":
                     print(f"PlayerWorker: Song starting event - resuming position updates - {data.get('file')}")
                     # Resume position updates for new song
@@ -1502,6 +1504,8 @@ class WalrioMusicPlayer(QMainWindow):
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for completion logic."""
         print("on_playback_finished called - song has ended")
+        print(f"DEBUG: Queue manager exists: {self.queue_manager is not None}")
+        print(f"DEBUG: Processing finish flag: {getattr(self, '_processing_finish', 'not set')}")
         
         # Prevent multiple calls for the same song completion
         if hasattr(self, '_processing_finish') and self._processing_finish:
@@ -1521,6 +1525,9 @@ class WalrioMusicPlayer(QMainWindow):
         if should_continue and next_song:
             # Update the current file reference - use 'url' key which contains the filepath
             self.current_file = next_song.get('url') or next_song.get('filepath')
+            
+            # Sync GUI current_queue_index with queue manager's current_index
+            self.current_queue_index = self.queue_manager.current_index
             
             # Update the queue display to reflect current position
             self.update_queue_display()
