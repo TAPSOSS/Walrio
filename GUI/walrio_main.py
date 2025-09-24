@@ -589,12 +589,21 @@ class WalrioMusicPlayer(QMainWindow):
         """Handle double-clicking on a queue item to immediately play it."""
         row = self.queue_list.row(item)
         if 0 <= row < len(self.queue_songs):
-            # Stop current playback if playing
-            if self.is_playing:
-                self.stop_playback()
+            was_playing = self.is_playing
             
-            # Load and immediately start playing the selected song
+            # If something is already playing, stop it first
+            if was_playing and self.player_worker:
+                # Stop the current player worker
+                self.player_worker.stop()
+                if not self.player_worker.wait(1000):  # Wait up to 1 second
+                    self.player_worker.terminate()
+                    self.player_worker.wait()
+                self.player_worker = None
+            
+            # Load the selected song
             self.load_song_from_queue(row)
+            
+            # Start playing the new song
             self.start_playback()
     
     def load_song_from_queue(self, index):
