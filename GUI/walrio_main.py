@@ -1218,9 +1218,18 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_playback_finished(self):
         """Handle when playback finishes - use queue system for loop decisions."""
+        print(f"Playback finished. Current queue index: {self.current_queue_index}, Queue length: {len(self.queue_songs) if self.queue_songs else 0}")
+        
         if self.queue_manager:
+            print(f"Queue manager current index before next_track: {self.queue_manager.current_index}")
+            print(f"Queue manager repeat mode: {self.queue_manager.repeat_mode.value}")
+            
             # Use queue's next_track logic for repeat handling
-            if self.queue_manager.next_track():
+            should_continue = self.queue_manager.next_track()
+            print(f"Queue next_track returned: {should_continue}")
+            print(f"Queue manager current index after next_track: {self.queue_manager.current_index}")
+            
+            if should_continue:
                 # Queue wants to continue (either repeat track or move to next)
                 current_song = self.queue_manager.current_song()
                 if current_song:
@@ -1228,24 +1237,32 @@ class WalrioMusicPlayer(QMainWindow):
                     
                     # Update current queue index to match queue manager
                     if self.queue_songs and hasattr(self.queue_manager, 'current_index'):
+                        old_index = self.current_queue_index
                         self.current_queue_index = self.queue_manager.current_index
+                        print(f"Updated queue index from {old_index} to {self.current_queue_index}")
                     
                     # For track repeat, use lightweight restart instead of full restart
                     if self.queue_manager.repeat_mode.value == "track":
+                        print("Using track repeat - restarting current track")
                         self.restart_current_track()
                     else:
                         # Load next song from queue and play
                         if self.queue_songs and self.current_queue_index < len(self.queue_songs):
+                            print(f"Loading next song at index {self.current_queue_index}")
                             self.load_song_from_queue(self.current_queue_index)
                             self.start_playback()
                         else:
+                            print("Queue index out of bounds, using fallback restart")
                             # Fallback to full restart
                             self.start_playback()
                     return
             else:
-                print("Queue decision: End playback")
+                print("Queue decision: End playback (no more songs or repeat off)")
+        else:
+            print("No queue manager found")
         
         # No queue or queue says stop - end playback
+        print("Stopping playback")
         self.stop_playback()
     
     def restart_current_track(self):
