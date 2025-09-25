@@ -788,23 +788,33 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_table.setColumnCount(5)
         self.queue_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year'])
         
-        # Enable resizable columns
+        # Enable resizable columns (optimized for better performance)
         header = self.queue_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.Stretch)  # Title column stretches
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Album
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Album Artist
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Artist
-        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Year
+        header.setSectionResizeMode(1, QHeaderView.Interactive)  # Album - manual resize
+        header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
+        header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
+        header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
+        
+        # Set reasonable default column widths
+        self.queue_table.setColumnWidth(1, 120)  # Album
+        self.queue_table.setColumnWidth(2, 120)  # Album Artist  
+        self.queue_table.setColumnWidth(3, 100)  # Artist
+        self.queue_table.setColumnWidth(4, 50)   # Year
         
         # Allow manual column resizing
         header.setSectionsMovable(False)  # Don't allow column reordering
         header.setStretchLastSection(False)
         
-        # Enable drag and drop for reordering rows
+        # Enable drag and drop for reordering rows (optimized for performance)
         self.queue_table.setDragDropMode(QTableWidget.InternalMove)
         self.queue_table.setDefaultDropAction(Qt.MoveAction)
         self.queue_table.setDragDropOverwriteMode(False)
         self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
+        
+        # Optimize drag-drop performance
+        self.queue_table.setAutoScroll(True)  # Allow scrolling but don't force it
+        self.queue_table.setVerticalScrollMode(QTableWidget.ScrollPerPixel)  # Smoother scrolling
         
         # Connect events
         self.queue_table.itemClicked.connect(self.on_queue_item_clicked)
@@ -1050,10 +1060,7 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
     def on_queue_reordered(self, parent, start, end, destination, row):
-        """Handle when queue items are reordered via drag and drop."""
-        print(f"DEBUG: Queue reordered - moved from {start}-{end} to {row}")
-        
-        # For table widget, we need to reorder our internal queue based on the row changes
+        """Handle when queue items are reordered via drag and drop (optimized for performance)."""
         # Use row (destination) instead of destination parameter
         dest_row = int(row)
         start_row = int(start)
@@ -1072,15 +1079,14 @@ class WalrioMusicPlayer(QMainWindow):
                         self.current_queue_index = i
                         break
             
-            # Update queue manager if it exists
+            # Update queue manager if it exists (lightweight update)
             if self.queue_manager:
                 self.queue_manager.songs = self.queue_songs
                 self.queue_manager.current_index = self.current_queue_index
-                self.queue_manager._update_play_order()
+                # Skip the expensive _update_play_order() during drag operations
             
-            print(f"DEBUG: Queue reordered successfully, current index: {self.current_queue_index}")
-        else:
-            print("ERROR: Failed to reorder queue - size mismatch")
+            # Use lightweight highlighting update instead of full rebuild
+            self.update_queue_highlighting()
     
     def on_queue_item_clicked(self, item):
         """Handle clicking on a queue item to select it (single-click only selects, does not play)."""
@@ -1233,32 +1239,83 @@ class WalrioMusicPlayer(QMainWindow):
         }
     
     def update_queue_display(self):
-        """Update the queue table widget display."""
-        self.queue_table.setRowCount(len(self.queue_songs))
+        """Update the queue table widget display (optimized for performance)."""
+        # Temporarily disable sorting and updates for better performance
+        self.queue_table.setSortingEnabled(False)
+        self.queue_table.setUpdatesEnabled(False)
         
-        for i, song in enumerate(self.queue_songs):
-            # Create table items for each column
-            title_item = QTableWidgetItem(song.get('title', 'Unknown Title'))
-            album_item = QTableWidgetItem(song.get('album', 'Unknown Album'))
-            album_artist_item = QTableWidgetItem(song.get('albumartist', song.get('artist', 'Unknown Artist')))
-            artist_item = QTableWidgetItem(song.get('artist', 'Unknown Artist'))
-            year_item = QTableWidgetItem(str(song.get('year', '')))
+        try:
+            self.queue_table.setRowCount(len(self.queue_songs))
             
-            # Set items in the table
-            self.queue_table.setItem(i, 0, title_item)
-            self.queue_table.setItem(i, 1, album_item)
-            self.queue_table.setItem(i, 2, album_artist_item)
-            self.queue_table.setItem(i, 3, artist_item)
-            self.queue_table.setItem(i, 4, year_item)
+            for i, song in enumerate(self.queue_songs):
+                # Create or update table items for each column
+                title_text = song.get('title', 'Unknown Title')
+                album_text = song.get('album', 'Unknown Album') 
+                album_artist_text = song.get('albumartist', song.get('artist', 'Unknown Artist'))
+                artist_text = song.get('artist', 'Unknown Artist')
+                year_text = str(song.get('year', ''))
+                
+                # Update existing items or create new ones
+                title_item = self.queue_table.item(i, 0)
+                if title_item is None:
+                    title_item = QTableWidgetItem(title_text)
+                    self.queue_table.setItem(i, 0, title_item)
+                else:
+                    title_item.setText(title_text)
+                
+                album_item = self.queue_table.item(i, 1)
+                if album_item is None:
+                    album_item = QTableWidgetItem(album_text)
+                    self.queue_table.setItem(i, 1, album_item)
+                else:
+                    album_item.setText(album_text)
+                
+                album_artist_item = self.queue_table.item(i, 2)
+                if album_artist_item is None:
+                    album_artist_item = QTableWidgetItem(album_artist_text)
+                    self.queue_table.setItem(i, 2, album_artist_item)
+                else:
+                    album_artist_item.setText(album_artist_text)
+                
+                artist_item = self.queue_table.item(i, 3)
+                if artist_item is None:
+                    artist_item = QTableWidgetItem(artist_text)
+                    self.queue_table.setItem(i, 3, artist_item)
+                else:
+                    artist_item.setText(artist_text)
+                
+                year_item = self.queue_table.item(i, 4)
+                if year_item is None:
+                    year_item = QTableWidgetItem(year_text)
+                    self.queue_table.setItem(i, 4, year_item)
+                else:
+                    year_item.setText(year_text)
             
-            # Highlight currently playing song
-            if i == self.current_queue_index and self.current_file:
-                for col in range(5):
-                    item = self.queue_table.item(i, col)
-                    if item:
+            # Update highlighting separately for better performance
+            self.update_queue_highlighting()
+            
+        finally:
+            # Re-enable updates and refresh
+            self.queue_table.setUpdatesEnabled(True)
+            self.queue_table.setSortingEnabled(False)  # Keep sorting disabled for drag-drop
+    
+    def update_queue_highlighting(self):
+        """Update only the highlighting of the currently playing song (lightweight update)."""
+        for row in range(self.queue_table.rowCount()):
+            is_current = (row == self.current_queue_index and self.current_file)
+            for col in range(5):
+                item = self.queue_table.item(row, col)
+                if item:
+                    if is_current:
                         item.setBackground(QColor(200, 255, 200))  # Light green background
                         font = item.font()
                         font.setBold(True)
+                        item.setFont(font)
+                    else:
+                        # Clear the background to use default system colors
+                        item.setData(Qt.BackgroundRole, None)
+                        font = item.font()
+                        font.setBold(False)
                         item.setFont(font)
     
     def open_file(self):
