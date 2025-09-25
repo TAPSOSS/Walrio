@@ -196,7 +196,8 @@ class MetadataEditor:
             return metadata
             
         # Handle different file formats
-        if isinstance(audio_file, MP3):
+        # Check for ID3 tags first (can be in MP3, WAV, or other formats)
+        if hasattr(audio_file, 'tags') and audio_file.tags and isinstance(audio_file.tags, ID3):
             metadata = self._extract_id3_metadata(audio_file)
         elif isinstance(audio_file, FLAC):
             metadata = self._extract_vorbis_metadata(audio_file)
