@@ -37,11 +37,6 @@ try:
     from mutagen.oggvorbis import OggVorbis
     from mutagen.oggopus import OggOpus
     from mutagen.mp4 import MP4
-    from mutagen.apev2 import APEv2
-    from mutagen.trueaudio import TrueAudio
-    from mutagen.wavpack import WavPack
-    from mutagen.asf import ASF
-    from mutagen._util import total_ordering
     MUTAGEN_AVAILABLE = True
 except ImportError:
     MUTAGEN_AVAILABLE = False
@@ -412,8 +407,6 @@ class MetadataEditor:
                           
         except Exception:
             return False
-    
-        return self.supported_formats.get(ext, 'Unknown')
     
     def set_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
         """

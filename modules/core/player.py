@@ -228,11 +228,6 @@ class AudioPlayer:
             if self.interactive_mode:
                 print("player> ", end="", flush=True)
     
-    def _handle_looping(self):
-        """Handle looping functionality - now handled by EOS message."""
-        # This method is kept for compatibility but functionality moved to _handle_eos
-        pass
-    
     def load_file(self, filepath):
         """
         Load an audio file for playback.
