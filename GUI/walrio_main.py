@@ -1663,6 +1663,14 @@ class WalrioMusicPlayer(QMainWindow):
             # Sync GUI current_queue_index with queue manager's current_index
             self.current_queue_index = self.queue_manager.current_index
             
+            # Update the track label to show the new song
+            self.track_label.setText(f"{next_song.get('artist', 'Unknown Artist')} - {next_song.get('title', 'Unknown Title')}")
+            
+            # Reset position display for new song
+            self.position = 0
+            self.progress_slider.setValue(0)
+            self.time_current.setText("00:00")
+            
             # Update the queue display to reflect current position
             self.update_queue_display()
             
