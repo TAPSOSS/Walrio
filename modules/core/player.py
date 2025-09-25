@@ -746,7 +746,11 @@ class AudioPlayer:
                 break
     
     def _handle_connection(self, conn):
-        """Handle a single client connection."""
+        """Handle a single client connection.
+        
+        Args:
+            conn: Socket connection object for communicating with the client
+        """
         is_event_subscription = False
         try:
             while not self.should_quit:
