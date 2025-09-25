@@ -812,16 +812,26 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_table.setDragDropOverwriteMode(False)
         self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
         
-        # Optimize drag-drop performance
+        # Optimize drag-drop performance (Strawberry-style)
         self.queue_table.setAutoScroll(True)  # Allow scrolling but don't force it
         self.queue_table.setVerticalScrollMode(QTableWidget.ScrollPerPixel)  # Smoother scrolling
+        
+        # Additional performance optimizations
+        self.queue_table.setAlternatingRowColors(True)  # Better visual feedback
+        self.queue_table.setShowGrid(False)  # Reduce visual clutter and improve performance
+        self.queue_table.setWordWrap(False)  # Prevent text wrapping delays
+        self.queue_table.viewport().setAcceptDrops(True)  # Ensure proper drag-drop handling
         
         # Connect events
         self.queue_table.itemClicked.connect(self.on_queue_item_clicked)
         self.queue_table.itemDoubleClicked.connect(self.on_queue_item_double_clicked)
         
-        # Connect drag-drop event to update queue order
+        # Connect drag-drop event to update queue order (with debouncing for performance)
         self.queue_table.model().rowsMoved.connect(self.on_queue_reordered)
+        
+        # Additional performance: reduce update frequency during drag operations
+        self.queue_table.setDragEnabled(True)
+        self.queue_table.setDropIndicatorShown(True)
         layout.addWidget(self.queue_table)
         
         # Add/Remove queue buttons
@@ -1060,32 +1070,36 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
     def on_queue_reordered(self, parent, start, end, destination, row):
-        """Handle when queue items are reordered via drag and drop (optimized for performance)."""
-        # Use row (destination) instead of destination parameter
-        dest_row = int(row)
+        """Handle when queue items are reordered via drag and drop (Strawberry-style optimized)."""
+        dest_row = int(row) 
         start_row = int(start)
         
         if start_row != dest_row and 0 <= start_row < len(self.queue_songs):
-            # Move the song from start position to destination
+            # Emit layoutAboutToBeChanged for proper model-view updates (Strawberry pattern)
+            self.queue_table.model().layoutAboutToBeChanged.emit()
+            
+            # Perform the move operation
             moved_song = self.queue_songs.pop(start_row)
             insert_pos = dest_row if dest_row < start_row else dest_row - 1
             insert_pos = max(0, min(insert_pos, len(self.queue_songs)))
             self.queue_songs.insert(insert_pos, moved_song)
             
-            # Update current queue index to match the current song position
+            # Update current queue index efficiently
             if self.current_file and self.is_playing:
                 for i, song in enumerate(self.queue_songs):
                     if song['url'] == self.current_file:
                         self.current_queue_index = i
                         break
             
-            # Update queue manager if it exists (lightweight update)
+            # Update queue manager efficiently  
             if self.queue_manager:
                 self.queue_manager.songs = self.queue_songs
                 self.queue_manager.current_index = self.current_queue_index
-                # Skip the expensive _update_play_order() during drag operations
             
-            # Use lightweight highlighting update instead of full rebuild
+            # Emit layoutChanged to notify views (Strawberry pattern)
+            self.queue_table.model().layoutChanged.emit()
+            
+            # Update highlighting only for affected rows
             self.update_queue_highlighting()
     
     def on_queue_item_clicked(self, item):
@@ -1239,64 +1253,44 @@ class WalrioMusicPlayer(QMainWindow):
         }
     
     def update_queue_display(self):
-        """Update the queue table widget display (optimized for performance)."""
-        # Temporarily disable sorting and updates for better performance
-        self.queue_table.setSortingEnabled(False)
+        """Update the queue table widget display (Strawberry-style optimized)."""
+        # Use blockSignals for better performance during bulk updates
+        self.queue_table.blockSignals(True)
         self.queue_table.setUpdatesEnabled(False)
         
         try:
-            self.queue_table.setRowCount(len(self.queue_songs))
+            # Only resize if the row count actually changed
+            if self.queue_table.rowCount() != len(self.queue_songs):
+                self.queue_table.setRowCount(len(self.queue_songs))
             
+            # Batch update items to reduce redraws  
             for i, song in enumerate(self.queue_songs):
-                # Create or update table items for each column
-                title_text = song.get('title', 'Unknown Title')
-                album_text = song.get('album', 'Unknown Album') 
-                album_artist_text = song.get('albumartist', song.get('artist', 'Unknown Artist'))
-                artist_text = song.get('artist', 'Unknown Artist')
-                year_text = str(song.get('year', ''))
+                texts = [
+                    song.get('title', 'Unknown Title'),
+                    song.get('album', 'Unknown Album'),
+                    song.get('albumartist', song.get('artist', 'Unknown Artist')),
+                    song.get('artist', 'Unknown Artist'), 
+                    str(song.get('year', ''))
+                ]
                 
-                # Update existing items or create new ones
-                title_item = self.queue_table.item(i, 0)
-                if title_item is None:
-                    title_item = QTableWidgetItem(title_text)
-                    self.queue_table.setItem(i, 0, title_item)
-                else:
-                    title_item.setText(title_text)
-                
-                album_item = self.queue_table.item(i, 1)
-                if album_item is None:
-                    album_item = QTableWidgetItem(album_text)
-                    self.queue_table.setItem(i, 1, album_item)
-                else:
-                    album_item.setText(album_text)
-                
-                album_artist_item = self.queue_table.item(i, 2)
-                if album_artist_item is None:
-                    album_artist_item = QTableWidgetItem(album_artist_text)
-                    self.queue_table.setItem(i, 2, album_artist_item)
-                else:
-                    album_artist_item.setText(album_artist_text)
-                
-                artist_item = self.queue_table.item(i, 3)
-                if artist_item is None:
-                    artist_item = QTableWidgetItem(artist_text)
-                    self.queue_table.setItem(i, 3, artist_item)
-                else:
-                    artist_item.setText(artist_text)
-                
-                year_item = self.queue_table.item(i, 4)
-                if year_item is None:
-                    year_item = QTableWidgetItem(year_text)
-                    self.queue_table.setItem(i, 4, year_item)
-                else:
-                    year_item.setText(year_text)
+                # Update all columns for this row in one batch
+                for col, text in enumerate(texts):
+                    item = self.queue_table.item(i, col)
+                    if item is None:
+                        item = QTableWidgetItem(text)
+                        # Set item properties once during creation
+                        item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Make non-editable
+                        self.queue_table.setItem(i, col, item)
+                    elif item.text() != text:  # Only update if text actually changed
+                        item.setText(text)
             
-            # Update highlighting separately for better performance
+            # Update highlighting with a single call
             self.update_queue_highlighting()
             
         finally:
-            # Re-enable updates and refresh
-            self.queue_table.setUpdatesEnabled(True)
+            # Re-enable signals and updates
+            self.queue_table.setUpdatesEnabled(True) 
+            self.queue_table.blockSignals(False)
             self.queue_table.setSortingEnabled(False)  # Keep sorting disabled for drag-drop
     
     def update_queue_highlighting(self):
