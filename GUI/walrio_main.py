@@ -882,7 +882,6 @@ class WalrioMusicPlayer(QMainWindow):
         # Control buttons
         controls_layout = QHBoxLayout()
         
-        self.btn_open = QPushButton("Open File")
         self.btn_previous = QPushButton("⏮ Previous")
         self.btn_play_pause = QPushButton("▶ Play")
         self.btn_stop = QPushButton("⏹ Stop")
@@ -897,7 +896,6 @@ class WalrioMusicPlayer(QMainWindow):
                 min-width: 100px;
             }
         """
-        self.btn_open.setStyleSheet(button_style)
         self.btn_previous.setStyleSheet(button_style)
         self.btn_play_pause.setStyleSheet(button_style)
         self.btn_stop.setStyleSheet(button_style)
@@ -905,7 +903,6 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_loop.setStyleSheet(button_style)
         
         # Connect buttons
-        self.btn_open.clicked.connect(self.open_file)
         self.btn_previous.clicked.connect(self.previous_track)
         self.btn_play_pause.clicked.connect(self.toggle_play_pause)
         self.btn_stop.clicked.connect(self.stop_playback)
@@ -913,7 +910,6 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_loop.clicked.connect(self.toggle_loop)
         
         controls_layout.addStretch()
-        controls_layout.addWidget(self.btn_open)
         controls_layout.addWidget(self.btn_previous)
         controls_layout.addWidget(self.btn_play_pause)
         controls_layout.addWidget(self.btn_stop)
@@ -1317,29 +1313,6 @@ class WalrioMusicPlayer(QMainWindow):
                         font = item.font()
                         font.setBold(False)
                         item.setFont(font)
-    
-    def open_file(self):
-        """Open an audio file (legacy single file method)."""
-        filepath, _ = QFileDialog.getOpenFileName(
-            self, "Open Audio File", "",
-            "Audio Files (*.mp3 *.flac *.ogg *.wav *.m4a *.aac *.opus)"
-        )
-        
-        if filepath:
-            # Get metadata for the file
-            metadata = self.get_file_metadata(filepath)
-            song = {
-                'url': filepath,
-                'title': metadata['title'],
-                'artist': metadata['artist'],
-                'album': metadata['album'],
-                'duration': metadata['duration']
-            }
-            
-            # Add to beginning of queue
-            self.queue_songs.insert(0, song)
-            self.current_queue_index = 0
-            self.load_song_from_queue(0)
     
     def toggle_play_pause(self):
         """Toggle between play, pause, and resume."""
