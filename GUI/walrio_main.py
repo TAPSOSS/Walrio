@@ -76,6 +76,8 @@ class QueueWorker(QThread):
                     'title': metadata['title'],
                     'artist': metadata['artist'],
                     'album': metadata['album'],
+                    'albumartist': metadata['albumartist'],
+                    'year': metadata['year'],
                     'duration': metadata['duration']
                 }
                 
@@ -112,23 +114,30 @@ class QueueWorker(QThread):
                 for line in result.stdout.strip().split('\n'):
                     if ':' in line and not line.startswith('='):
                         key, value = line.split(':', 1)
-                        key = key.strip().lower().replace(' ', '_')
+                        key = key.strip().lower().replace(' ', '_').replace('/', '_')
                         value = value.strip()
                         metadata[key] = value
+                
+                # Debug: Show what we extracted for year and album artist
+                print(f"DEBUG {Path(filepath).name}: date_year='{metadata.get('date_year')}', album_artist='{metadata.get('album_artist')}'")
                 
                 # Return structured metadata with fallbacks
                 return {
                     'title': metadata.get('title', Path(filepath).stem),
-                    'artist': metadata.get('artist', 'Unknown Artist'),
-                    'album': metadata.get('album', 'Unknown Album'),
+                    'artist': metadata.get('artist', ''),
+                    'album': metadata.get('album', ''),
+                    'albumartist': metadata.get('album_artist', metadata.get('artist', '')),
+                    'year': metadata.get('date_year', metadata.get('year', metadata.get('date', ''))),
                     'duration': self._parse_duration(metadata.get('duration', '0:00'))
                 }
             else:
-                # Fallback if metadata extraction fails
+                # Fallback if metadata extraction fails (error reading metadata)
                 return {
                     'title': Path(filepath).stem,
-                    'artist': 'Unknown Artist',
-                    'album': 'Unknown Album',
+                    'artist': 'Unknown',
+                    'album': 'Unknown',
+                    'albumartist': 'Unknown',
+                    'year': 'Unknown',
                     'duration': 0
                 }
                 
@@ -136,8 +145,10 @@ class QueueWorker(QThread):
             print(f"Error getting metadata for {filepath}: {e}")
             return {
                 'title': Path(filepath).stem,
-                'artist': 'Unknown Artist', 
-                'album': 'Unknown Album',
+                'artist': 'Unknown', 
+                'album': 'Unknown',
+                'albumartist': 'Unknown',
+                'year': 'Unknown',
                 'duration': 0
             }
     
