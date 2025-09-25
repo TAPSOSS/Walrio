@@ -55,6 +55,12 @@ class QueueWorker(QThread):
     error = Signal(str)  # Emitted on error
     
     def __init__(self, filepaths):
+        """
+        Initialize the QueueWorker thread.
+        
+        Args:
+            filepaths (list): List of file paths to process for metadata extraction.
+        """
         super().__init__()
         self.filepaths = filepaths
         self.should_stop = False
@@ -95,7 +101,15 @@ class QueueWorker(QThread):
             self.error.emit(f"Error processing files: {str(e)}")
     
     def _get_file_metadata(self, filepath):
-        """Get metadata for an audio file including artist, title, album, and duration."""
+        """
+        Get metadata for an audio file including artist, title, album, and duration.
+        
+        Args:
+            filepath (str): Path to the audio file to extract metadata from.
+            
+        Returns:
+            dict: Dictionary containing song metadata with keys like 'title', 'artist', 'album', 'albumartist', 'year', 'duration'.
+        """
         try:
             modules_dir = Path(__file__).parent.parent / "modules"
             
@@ -153,7 +167,15 @@ class QueueWorker(QThread):
             }
     
     def _parse_duration(self, duration_str):
-        """Parse duration string like '3:45 (225.6 seconds)' and return seconds."""
+        """
+        Parse duration string like '3:45 (225.6 seconds)' and return seconds.
+        
+        Args:
+            duration_str (str): Duration string in format like '3:45 (225.6 seconds)'.
+            
+        Returns:
+            float: Duration in seconds, or 0 if parsing fails.
+        """
         try:
             if '(' in duration_str and 'seconds)' in duration_str:
                 # Extract seconds from parentheses
@@ -482,7 +504,12 @@ class PlayerWorker(QThread):
         print("PlayerWorker: Failed to connect to daemon events after all retries")
 
     def _connect_to_daemon_events(self):
-        """Connect to the daemon for event notifications."""
+        """
+        Connect to the daemon for event notifications.
+        
+        Returns:
+            bool: True if connection successful, False otherwise.
+        """
         try:
             import tempfile
             import socket
@@ -570,7 +597,12 @@ class PlayerWorker(QThread):
                 self.event_socket = None
     
     def _process_daemon_event(self, event_data):
-        """Process a daemon event."""
+        """
+        Process a daemon event.
+        
+        Args:
+            event_data (str): JSON string containing event data from the daemon.
+        """
         try:
             import json
             event = json.loads(event_data)
@@ -980,7 +1012,12 @@ class WalrioMusicPlayer(QMainWindow):
             self.queue_worker.start()
     
     def on_file_processed(self, song):
-        """Handle when a file has been processed by the queue worker."""
+        """
+        Handle when a file has been processed by the queue worker.
+        
+        Args:
+            song (dict): Dictionary containing song metadata including title, artist, album, etc.
+        """
         self.queue_songs.append(song)
         self.update_queue_display()
         
@@ -1018,7 +1055,12 @@ class WalrioMusicPlayer(QMainWindow):
             del self.queue_worker
     
     def on_queue_error(self, error_message):
-        """Handle queue processing errors."""
+        """
+        Handle queue processing errors.
+        
+        Args:
+            error_message (str): Error message describing what went wrong during queue processing.
+        """
         QMessageBox.warning(self, "Queue Error", f"Error processing files: {error_message}")
         
         # Re-enable the add button
@@ -1079,7 +1121,16 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
     def on_queue_reordered(self, parent, start, end, destination, row):
-        """Handle when queue items are reordered via drag and drop (sync fix for content)."""
+        """
+        Handle when queue items are reordered via drag and drop (sync fix for content).
+        
+        Args:
+            parent: Parent model index (unused).
+            start (int): Starting row index of moved items.
+            end (int): Ending row index of moved items.
+            destination: Destination parent model index (unused).
+            row (int): Destination row index.
+        """
         dest_row = int(row) 
         start_row = int(start)
         
