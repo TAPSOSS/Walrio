@@ -780,8 +780,17 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_list = QListWidget()
         self.queue_list.setMaximumHeight(150)
         self.queue_list.setAlternatingRowColors(True)
+        
+        # Enable drag and drop for reordering
+        self.queue_list.setDragDropMode(QListWidget.InternalMove)
+        self.queue_list.setDefaultDropAction(Qt.MoveAction)
+        
+        # Connect events
         self.queue_list.itemClicked.connect(self.on_queue_item_clicked)
         self.queue_list.itemDoubleClicked.connect(self.on_queue_item_double_clicked)
+        
+        # Connect drag-drop event to update queue order
+        self.queue_list.model().rowsMoved.connect(self.on_queue_reordered)
         layout.addWidget(self.queue_list)
         
         # Add/Remove queue buttons
@@ -1019,13 +1028,52 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_previous.setEnabled(len(self.queue_songs) > 1)
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
+    def on_queue_reordered(self, parent, start, end, destination, row):
+        """Handle when queue items are reordered via drag and drop."""
+        print(f"DEBUG: Queue reordered - moved from {start}-{end} to {row}")
+        
+        # Reconstruct queue_songs list based on the new order in the list widget
+        new_queue_songs = []
+        for i in range(self.queue_list.count()):
+            item = self.queue_list.item(i)
+            if item:
+                # Find the original song by matching the display text
+                item_text = item.text()
+                for song in self.queue_songs:
+                    display_name = f"{song['artist']} - {song['title']}"
+                    if display_name in item_text:
+                        new_queue_songs.append(song)
+                        break
+        
+        # Update the queue songs list
+        if len(new_queue_songs) == len(self.queue_songs):
+            self.queue_songs = new_queue_songs
+            
+            # Update current queue index to match the current song position
+            if self.current_file and self.is_playing:
+                for i, song in enumerate(self.queue_songs):
+                    if song['url'] == self.current_file:
+                        self.current_queue_index = i
+                        break
+            
+            # Update queue manager if it exists
+            if self.queue_manager:
+                self.queue_manager.songs = self.queue_songs
+                self.queue_manager.current_index = self.current_queue_index
+                self.queue_manager._update_play_order()
+            
+            print(f"DEBUG: Queue reordered successfully, current index: {self.current_queue_index}")
+        else:
+            print("ERROR: Failed to reorder queue - size mismatch")
+    
     def on_queue_item_clicked(self, item):
-        """Handle clicking on a queue item to select it."""
+        """Handle clicking on a queue item to select it (single-click only selects, does not play)."""
         row = self.queue_list.row(item)
         if 0 <= row < len(self.queue_songs):
-            # Just select the item, don't automatically play
-            # Playing is now handled by double-click
-            pass
+            # Single-click only selects the item for potential removal or other operations
+            # To play a song, user must double-click
+            print(f"Selected queue item #{row + 1}: {self.queue_songs[row]['title']}")
+            # Update selection visual feedback is handled automatically by QListWidget
     
     def on_queue_item_double_clicked(self, item):
         """Handle double-clicking on a queue item to immediately play it."""
