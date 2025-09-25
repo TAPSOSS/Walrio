@@ -1169,7 +1169,11 @@ class WalrioMusicPlayer(QMainWindow):
             self.update_queue_display()
     
     def on_queue_item_clicked(self, item):
-        """Handle clicking on a queue item to select it (single-click only selects, does not play)."""
+        """Handle clicking on a queue item to select it (single-click only selects, does not play).
+        
+        Args:
+            item: The QTableWidgetItem that was clicked.
+        """
         row = item.row()
         if 0 <= row < len(self.queue_songs):
             # Single-click only selects the item for potential removal or other operations
@@ -1178,7 +1182,11 @@ class WalrioMusicPlayer(QMainWindow):
             # Update selection visual feedback is handled automatically by QTableWidget
     
     def on_queue_item_double_clicked(self, item):
-        """Handle double-clicking on a queue item to immediately play it."""
+        """Handle double-clicking on a queue item to immediately play it.
+        
+        Args:
+            item: The QTableWidgetItem that was double-clicked.
+        """
         row = item.row()
         if 0 <= row < len(self.queue_songs):
             was_playing = self.is_playing
@@ -1199,7 +1207,11 @@ class WalrioMusicPlayer(QMainWindow):
             self.start_playback()
     
     def load_song_from_queue(self, index):
-        """Load a song from the queue by index."""
+        """Load a song from the queue by index.
+        
+        Args:
+            index (int): The index of the song in the queue to load.
+        """
         if 0 <= index < len(self.queue_songs):
             song = self.queue_songs[index]
             self.current_queue_index = index
@@ -1240,7 +1252,14 @@ class WalrioMusicPlayer(QMainWindow):
             self.update_queue_display()
     
     def get_file_duration(self, filepath):
-        """Get the duration of an audio file."""
+        """Get the duration of an audio file.
+        
+        Args:
+            filepath (str): Path to the audio file.
+            
+        Returns:
+            float: Duration in seconds, or 0.0 if unable to determine.
+        """
         try:
             modules_dir = Path(__file__).parent.parent / "modules"
             result = subprocess.run(
@@ -1257,7 +1276,15 @@ class WalrioMusicPlayer(QMainWindow):
         return 0
     
     def get_file_metadata(self, filepath):
-        """Get metadata for an audio file including artist, title, album, and duration."""
+        """Get metadata for an audio file including artist, title, album, and duration.
+        
+        Args:
+            filepath (str): Path to the audio file.
+            
+        Returns:
+            dict: Dictionary containing file metadata with keys 'title', 'artist', 'album', 
+                 'albumartist', 'year', 'url', and 'duration'.
+        """
         try:
             modules_dir = Path(__file__).parent.parent / "modules"
             
@@ -1379,7 +1406,11 @@ class WalrioMusicPlayer(QMainWindow):
                         item.setFont(font)
     
     def show_column_context_menu(self, position):
-        """Show context menu for column visibility on header right-click."""
+        """Show context menu for column visibility on header right-click.
+        
+        Args:
+            position: The position where the context menu was requested.
+        """
         header = self.queue_table.horizontalHeader()
         column_names = ["Title", "Album", "Album Artist", "Artist", "Year"]
         
@@ -1397,7 +1428,12 @@ class WalrioMusicPlayer(QMainWindow):
         menu.exec_(header.mapToGlobal(position))
     
     def toggle_column_visibility(self, column, visible):
-        """Toggle the visibility of a table column."""
+        """Toggle the visibility of a table column.
+        
+        Args:
+            column (int): The column index to toggle.
+            visible (bool): Whether to show (True) or hide (False) the column.
+        """
         header = self.queue_table.horizontalHeader()
         if visible:
             header.showSection(column)
