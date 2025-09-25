@@ -806,10 +806,10 @@ class WalrioMusicPlayer(QMainWindow):
         header.setSectionsMovable(False)  # Don't allow column reordering
         header.setStretchLastSection(False)
         
-        # Enable drag and drop for reordering rows (optimized for performance)
+        # Enable drag and drop for reordering rows (manual control for better sync)
         self.queue_table.setDragDropMode(QTableWidget.InternalMove)
         self.queue_table.setDefaultDropAction(Qt.MoveAction)
-        self.queue_table.setDragDropOverwriteMode(False)
+        self.queue_table.setDragDropOverwriteMode(False)  # Prevent automatic overwrites
         self.queue_table.setSelectionBehavior(QTableWidget.SelectRows)
         
         # Optimize drag-drop performance (Strawberry-style)
@@ -1070,19 +1070,23 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_next.setEnabled(len(self.queue_songs) > 1)
     
     def on_queue_reordered(self, parent, start, end, destination, row):
-        """Handle when queue items are reordered via drag and drop (Strawberry-style optimized)."""
+        """Handle when queue items are reordered via drag and drop (sync fix for content)."""
         dest_row = int(row) 
         start_row = int(start)
+        
+        print(f"Drag-drop: Moving row {start_row} to {dest_row}")
         
         if start_row != dest_row and 0 <= start_row < len(self.queue_songs):
             # Emit layoutAboutToBeChanged for proper model-view updates (Strawberry pattern)
             self.queue_table.model().layoutAboutToBeChanged.emit()
             
-            # Perform the move operation
+            # Perform the move operation on our data
             moved_song = self.queue_songs.pop(start_row)
             insert_pos = dest_row if dest_row < start_row else dest_row - 1
             insert_pos = max(0, min(insert_pos, len(self.queue_songs)))
             self.queue_songs.insert(insert_pos, moved_song)
+            
+            print(f"Moved '{moved_song.get('title', 'Unknown')}' from {start_row} to {insert_pos}")
             
             # Update current queue index efficiently
             if self.current_file and self.is_playing:
@@ -1099,8 +1103,10 @@ class WalrioMusicPlayer(QMainWindow):
             # Emit layoutChanged to notify views (Strawberry pattern)
             self.queue_table.model().layoutChanged.emit()
             
-            # Update highlighting only for affected rows
-            self.update_queue_highlighting()
+            # CRITICAL: Rebuild table content to sync with reordered queue_songs
+            # The table widget moved rows visually but content is now out of sync
+            print("Rebuilding table content after drag-drop...")
+            self.update_queue_display()
     
     def on_queue_item_clicked(self, item):
         """Handle clicking on a queue item to select it (single-click only selects, does not play)."""
