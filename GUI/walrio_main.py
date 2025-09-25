@@ -903,12 +903,12 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_next = QPushButton("⏭ Next")
         self.btn_loop = QPushButton("🔁 Repeat: Off")
         
-        # Style buttons
+        # Style buttons (smaller for better layout with volume slider)
         button_style = """
             QPushButton {
-                font-size: 14px;
-                padding: 10px;
-                min-width: 100px;
+                font-size: 12px;
+                padding: 6px 8px;
+                min-width: 70px;
             }
         """
         self.btn_previous.setStyleSheet(button_style)
@@ -924,7 +924,22 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_next.clicked.connect(self.next_track)
         self.btn_loop.clicked.connect(self.toggle_loop)
         
+        # Volume control (add to controls layout)
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setValue(70)
+        self.volume_slider.setMinimumWidth(200)  # Make it bigger for easier dragging
+        self.volume_slider.setMaximumWidth(300)
+        self.volume_slider.valueChanged.connect(self.on_volume_change)
+        self.volume_label = QLabel("70%")
+        self.volume_label.setMinimumWidth(40)
+
         controls_layout.addStretch()
+        controls_layout.addWidget(QLabel("Volume:"))
+        controls_layout.addWidget(self.volume_slider)
+        controls_layout.addWidget(self.volume_label)
+        controls_layout.addSpacing(15)  # Add some spacing between volume and previous button
         controls_layout.addWidget(self.btn_previous)
         controls_layout.addWidget(self.btn_play_pause)
         controls_layout.addWidget(self.btn_stop)
@@ -932,23 +947,6 @@ class WalrioMusicPlayer(QMainWindow):
         controls_layout.addWidget(self.btn_loop)
         controls_layout.addStretch()
         layout.addLayout(controls_layout)
-        
-        # Volume control
-        volume_layout = QHBoxLayout()
-        volume_layout.addWidget(QLabel("Volume:"))
-        self.volume_slider = QSlider(Qt.Horizontal)
-        self.volume_slider.setMinimum(0)
-        self.volume_slider.setMaximum(100)
-        self.volume_slider.setValue(70)
-        self.volume_slider.setMaximumWidth(200)
-        self.volume_slider.valueChanged.connect(self.on_volume_change)
-        self.volume_label = QLabel("70%")
-        self.volume_label.setMinimumWidth(40)
-        
-        volume_layout.addWidget(self.volume_slider)
-        volume_layout.addWidget(self.volume_label)
-        volume_layout.addStretch()
-        layout.addLayout(volume_layout)
         
         # Initially disable play/stop buttons
         self.btn_play_pause.setEnabled(False)
