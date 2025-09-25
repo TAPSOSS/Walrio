@@ -30,20 +30,20 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
-    from PySide6.QtGui import QFont, QColor
+    from PySide6.QtGui import QFont, QColor, QAction
 except ImportError:
     print("PySide6 not found. Installing...")
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
-    from PySide6.QtGui import QFont, QColor
+    from PySide6.QtGui import QFont, QColor, QAction
 
 
 class QueueWorker(QThread):
@@ -796,6 +796,10 @@ class WalrioMusicPlayer(QMainWindow):
         header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
         header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
         
+        # Enable right-click context menu on header for column visibility
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self.show_column_context_menu)
+        
         # Set reasonable default column widths
         self.queue_table.setColumnWidth(1, 120)  # Album
         self.queue_table.setColumnWidth(2, 120)  # Album Artist  
@@ -1313,6 +1317,32 @@ class WalrioMusicPlayer(QMainWindow):
                         font = item.font()
                         font.setBold(False)
                         item.setFont(font)
+    
+    def show_column_context_menu(self, position):
+        """Show context menu for column visibility on header right-click."""
+        header = self.queue_table.horizontalHeader()
+        column_names = ["Title", "Album", "Album Artist", "Artist", "Year"]
+        
+        # Create the context menu
+        menu = QMenu(self)
+        
+        # Add actions for each column
+        for col, name in enumerate(column_names):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(not header.isSectionHidden(col))
+            action.triggered.connect(lambda checked, column=col: self.toggle_column_visibility(column, checked))
+        
+        # Show the menu at the cursor position
+        menu.exec_(header.mapToGlobal(position))
+    
+    def toggle_column_visibility(self, column, visible):
+        """Toggle the visibility of a table column."""
+        header = self.queue_table.horizontalHeader()
+        if visible:
+            header.showSection(column)
+        else:
+            header.hideSection(column)
     
     def toggle_play_pause(self):
         """Toggle between play, pause, and resume."""
