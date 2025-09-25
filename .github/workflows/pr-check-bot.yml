@@ -226,17 +226,8 @@ jobs:
           echo "blocked=true" >> $GITHUB_OUTPUT
           echo "passed=false" >> $GITHUB_OUTPUT
           
-          # Create detailed error message
-          ERROR_MSG="❌ **CONTRIBUTING.md Modified**: Changes to CONTRIBUTING.md require administrator review and approval before merging.
-
-          🛑 **This merge is blocked because:**
-          - CONTRIBUTING.md contains critical project guidelines and requirements
-          - Changes to contribution guidelines affect all future contributors
-          - Administrative oversight ensures consistency and quality standards
-
-          📖 **Modified file**: \`CONTRIBUTING.md\`
-          
-          **🚫 This PR is blocked and requires administrator approval to proceed.**"
+          # Create detailed error message (single line to avoid syntax issues)
+          ERROR_MSG="CONTRIBUTING.md was modified - requires administrator review and approval before merging. This PR is blocked until admin approves."
           
           echo "error_message<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR_MSG" >> $GITHUB_OUTPUT
@@ -290,19 +281,7 @@ jobs:
             echo "❌ Style check failed with exit code $STYLE_EXIT_CODE"
             echo "passed=false" >> $GITHUB_OUTPUT
             
-            ERROR_MSG="❌ **Style Check Failed**: Some of your Python files don't meet our styling requirements.
-
-            ### 🚨 Issues Found:
-            \`\`\`
-            $OUTPUT
-            \`\`\`
-
-            ### Quick fixes:
-            - **Missing BSD header**: Add the required copyright header to the top of your Python files
-            - **Missing docstrings**: Add docstrings to functions and classes  
-            - **Incomplete docstrings**: Add \`Args:\` and \`Returns:\` sections where needed
-
-            📖 **Full style guide**: [CONTRIBUTING.md](https://github.com/TAPSOSS/Walrio/blob/main/CONTRIBUTING.md#styling-requirements)"
+            ERROR_MSG="Style Check Failed: Python files don't meet styling requirements. Check for missing BSD headers, docstrings, or incomplete documentation. See CONTRIBUTING.md for full style guide."
             
             echo "error_message<<EOF" >> $GITHUB_OUTPUT
             echo "$ERROR_MSG" >> $GITHUB_OUTPUT
@@ -407,12 +386,7 @@ jobs:
           echo "❌ Some documentation builds failed"
           echo "passed=false" >> $GITHUB_OUTPUT
           
-          ERROR_MSG="❌ **Documentation Build Failed**: Some documentation generation steps failed.
-
-          ### 🚨 Issues Found:
-          $ERROR_DETAILS
-
-          Please check the documentation source files and ensure all dependencies are properly configured."
+          ERROR_MSG="Documentation Build Failed: Some documentation generation steps failed. Please check documentation source files and dependencies."
           
           echo "error_message<<EOF" >> $GITHUB_OUTPUT
           echo "$ERROR_MSG" >> $GITHUB_OUTPUT
@@ -430,6 +404,10 @@ jobs:
     # FINAL RESULTS
     - name: Generate final results
       uses: actions/github-script@v7
+      env:
+        CONTRIBUTING_ERROR: ${{ steps.contributing-check.outputs.error_message }}
+        STYLE_ERROR: ${{ steps.style-check.outputs.error_message }}
+        DOCS_ERROR: ${{ steps.docs-check.outputs.error_message }}
       with:
         script: |
           const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
@@ -439,7 +417,7 @@ jobs:
           const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
           const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
-          // Collect results from all checks (using simple boolean/string outputs)
+          // Collect results from all checks (using environment variables for error messages)
           const checks = [
             {
               name: 'PR Requirements',
@@ -451,17 +429,17 @@ jobs:
             {
               name: 'CONTRIBUTING.md Check',
               passed: '${{ steps.contributing-check.outputs.passed }}' === 'true',
-              errorMessage: `${{ steps.contributing-check.outputs.error_message }}`
+              errorMessage: process.env.CONTRIBUTING_ERROR || ''
             },
             {
               name: 'Style Check',
               passed: ('${{ steps.style-check.outputs.passed }}' === 'true' || '${{ steps.style-check-skipped.outputs.passed }}' === 'true'),
-              errorMessage: `${{ steps.style-check.outputs.error_message }}`
+              errorMessage: process.env.STYLE_ERROR || ''
             },
             {
               name: 'Documentation Build',
               passed: ('${{ steps.docs-check.outputs.passed }}' === 'true' || '${{ steps.docs-check-skipped.outputs.passed }}' === 'true'),
-              errorMessage: `${{ steps.docs-check.outputs.error_message }}`
+              errorMessage: process.env.DOCS_ERROR || ''
             }
           ];
           

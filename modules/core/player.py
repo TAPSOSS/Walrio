@@ -64,6 +64,9 @@ class AudioPlayer:
         self.repeat_count = 0
         self.interactive_mode = False  # Track if we're in interactive mode
         
+        # Event notification system for daemon mode
+        self.event_listeners = []  # List of sockets to send events to
+        
         # GLib main loop for handling messages
         self.loop = GLib.MainLoop()
         self.loop_thread = None
@@ -88,6 +91,9 @@ class AudioPlayer:
         self.should_quit = True
         if self.loop.is_running():
             self.loop.quit()
+        # Clean up daemon resources on signal
+        if hasattr(self, '_cleanup_daemon'):
+            self._cleanup_daemon()
     
     def _create_pipeline(self):
         """Create and configure the GStreamer pipeline."""
@@ -116,8 +122,8 @@ class AudioPlayer:
         
         # Link static elements
         self.source.link(self.decodebin)
-        self.volume.link(self.audioconvert)
-        self.audioconvert.link(self.audioresample)
+        self.audioconvert.link(self.volume)
+        self.volume.link(self.audioresample)
         self.audioresample.link(self.audiosink)
         
         # Connect dynamic pad for decodebin
@@ -140,9 +146,17 @@ class AudioPlayer:
         structure = caps.get_structure(0)
         
         if structure and structure.get_name().startswith("audio/"):
-            sink_pad = self.volume.get_static_pad("sink")
+            # Link to audioconvert first for format conversion, then to volume
+            sink_pad = self.audioconvert.get_static_pad("sink")
             if not sink_pad.is_linked():
-                pad.link(sink_pad)
+                try:
+                    result = pad.link(sink_pad)
+                    if result != Gst.PadLinkReturn.OK:
+                        print(f"DEBUG: Pad linking failed with result: {result}")
+                    else:
+                        print("DEBUG: Successfully linked decodebin pad to audioconvert")
+                except Exception as e:
+                    print(f"DEBUG: Exception during pad linking: {e}")
     
     def _on_bus_message(self, bus, message):
         """
@@ -152,8 +166,10 @@ class AudioPlayer:
             bus: The GStreamer bus that sent the message.
             message: The GStreamer message to process.
         """
+        print(f"DEBUG: Bus message received: {message.type}")
         if message.type == Gst.MessageType.EOS:
             # End of stream - handle looping
+            print("DEBUG: EOS message received - calling _handle_eos()")
             self._handle_eos()
         elif message.type == Gst.MessageType.ERROR:
             error, debug = message.parse_error()
@@ -170,8 +186,18 @@ class AudioPlayer:
     
     def _handle_eos(self):
         """Handle end of stream for looping."""
+        print("DEBUG: _handle_eos() called")
         if self.should_quit:
+            print("DEBUG: should_quit is True, returning early")
             return
+        
+        # Send song finished event to listeners
+        print("DEBUG: Sending song_finished event to listeners")
+        self._send_event("song_finished", {
+            "file": self.current_file,
+            "repeat_count": self.repeat_count,
+            "loop_mode": self.loop_mode
+        })
             
         should_loop = False
         if self.loop_mode == 'infinite':
@@ -183,10 +209,21 @@ class AudioPlayer:
         if should_loop:
             self.repeat_count += 1
             print(f"Looping song (repeat #{self.repeat_count})")
+            # Send song starting event for repeat
+            self._send_event("song_starting", {
+                "file": self.current_file,
+                "repeat_count": self.repeat_count,
+                "is_repeat": True
+            })
             # Seek back to beginning with explicit 0.0 to ensure it's a proper float
             self.seek(0.0)
         else:
             print(f"Finished looping after {self.repeat_count} repeats")
+            # Send playback complete event
+            self._send_event("playback_complete", {
+                "file": self.current_file,
+                "total_repeats": self.repeat_count
+            })
             self.stop()
             if self.interactive_mode:
                 print("player> ", end="", flush=True)
@@ -283,6 +320,14 @@ class AudioPlayer:
         # Reset repeat count for new playback
         if seek_position is None or seek_position == 0:
             self.repeat_count = 0
+        
+        # Send song starting event
+        self._send_event("song_starting", {
+            "file": self.current_file,
+            "duration": self.duration,
+            "seek_position": seek_position or 0,
+            "is_repeat": False
+        })
         
         # Start position tracking
         self._start_position_tracking()
@@ -463,8 +508,16 @@ class AudioPlayer:
                     # Convert from nanoseconds to seconds
                     self.position = position / Gst.SECOND
                     return self.position
-            except Exception:
-                pass
+            except Exception as e:
+                # Debug: Exception in position query
+                print(f"DEBUG: Position query exception: {e}")
+        else:
+            # Debug: No pipeline or not playing
+            import time
+            current_time = time.time()
+            if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
+                print(f"DEBUG: No position - pipeline={bool(self.pipeline)}, is_playing={self.is_playing}")
+                self._last_position_debug = current_time
         
         return self.position
     
@@ -689,23 +742,62 @@ class AudioPlayer:
                 except socket.timeout:
                     continue
                 
-                with conn:
-                    # Receive command
-                    data = conn.recv(1024).decode('utf-8').strip()
-                    if not data:
-                        continue
-                    
-                    # Process command
-                    response = self._process_daemon_command(data)
-                    
-                    # Send response
-                    conn.send(response.encode('utf-8'))
+                # Handle connection in a separate thread to support persistent event listeners
+                threading.Thread(target=self._handle_connection, args=(conn,), daemon=True).start()
                     
             except Exception as e:
                 if not self.should_quit:
                     print(f"Error in command server: {e}")
                 break
     
+    def _handle_connection(self, conn):
+        """Handle a single client connection."""
+        is_event_subscription = False
+        try:
+            while not self.should_quit:
+                # Receive command
+                data = conn.recv(1024).decode('utf-8').strip()
+                if not data:
+                    break
+
+                # Check for event subscription
+                if data.lower() == 'subscribe':
+                    # Add to event listeners
+                    is_event_subscription = True
+                    self.event_listeners.append(conn)
+                    conn.send(b"OK: Subscribed to events\n")
+                    # Keep connection alive for events
+                    while not self.should_quit:
+                        try:
+                            # Keep connection alive for events
+                            time.sleep(0.1)
+                        except Exception:
+                            break
+                    break  # Exit loop, but connection cleanup depends on subscription status
+                
+                # Process regular command
+                response = self._process_daemon_command(data)
+                
+                # Send response
+                conn.send(response.encode('utf-8'))
+                
+                # Close connection for regular commands
+                break
+                
+        except Exception as e:
+            if not self.should_quit:
+                print(f"Error handling connection: {e}")
+        finally:
+            # Only clean up if NOT an event subscription
+            if not is_event_subscription:
+                # Remove from event listeners if it was subscribed
+                if conn in self.event_listeners:
+                    self.event_listeners.remove(conn)
+                try:
+                    conn.close()
+                except:
+                    pass
+
     def _process_daemon_command(self, command):
         """
         Process a daemon command and return response.
@@ -717,11 +809,11 @@ class AudioPlayer:
             str: Response message indicating success or failure.
         """
         try:
-            parts = command.strip().lower().split()
+            parts = command.strip().split()
             if not parts:
                 return "ERROR: Empty command"
             
-            cmd = parts[0]
+            cmd = parts[0].lower()  # Only lowercase the command, not the arguments
             
             if cmd in ['play', 'p']:
                 if self.is_paused:
@@ -767,6 +859,34 @@ class AudioPlayer:
                 except ValueError:
                     return "ERROR: Invalid seek position"
                     
+            elif cmd in ['position', 'pos']:
+                position = self.get_position()
+                return f"OK: {position:.3f}"
+                
+            elif cmd == 'loop' and len(parts) > 1:
+                result = self.set_loop_mode(parts[1])
+                return f"OK: Loop mode set to {parts[1]}" if result else "ERROR: Failed to set loop mode"
+                
+            elif cmd == 'load' and len(parts) > 1:
+                # Load a new file for playback
+                filepath = ' '.join(parts[1:])  # Handle paths with spaces
+                try:
+                    # Stop current playback first
+                    self.stop()
+                    # Load the new file
+                    result = self.load_file(filepath)
+                    if result:
+                        self._send_event("song_loaded", {"file": filepath})
+                        return f"OK: Loaded {filepath}"
+                    else:
+                        return f"ERROR: Failed to load {filepath}"
+                except Exception as e:
+                    return f"ERROR: Failed to load file: {str(e)}"
+                    
+            elif cmd == 'subscribe':
+                # This command is handled in _handle_connection, but we need to handle it here too
+                return "OK: Subscribed to events"
+                    
             else:
                 return f"ERROR: Unknown command '{cmd}'"
                 
@@ -803,6 +923,45 @@ class AudioPlayer:
         """Stop position tracking."""
         if self.position_thread:
             self.position_thread = None
+    
+    def _send_event(self, event_type, data):
+        """
+        Send an event to all registered listeners.
+        
+        Args:
+            event_type (str): Type of event (e.g., 'song_finished', 'song_starting')
+            data (dict): Event data
+        """
+        if not hasattr(self, 'event_listeners'):
+            return
+            
+        event_message = json.dumps({
+            "type": "event",
+            "event": event_type,
+            "data": data,
+            "timestamp": time.time()
+        }) + "\n"
+        
+        # Send to all connected listeners
+        print(f"DEBUG: Sending event '{event_type}' to {len(self.event_listeners)} listeners")
+        dead_listeners = []
+        for listener in self.event_listeners:
+            try:
+                listener.send(event_message.encode('utf-8'))
+                print(f"DEBUG: Successfully sent event '{event_type}' to listener")
+            except Exception as e:
+                print(f"DEBUG: Failed to send event '{event_type}' to listener: {e}")
+                # Mark dead connections for removal
+                dead_listeners.append(listener)
+        
+        # Remove dead connections
+        for dead in dead_listeners:
+            if dead in self.event_listeners:
+                self.event_listeners.remove(dead)
+                try:
+                    dead.close()
+                except:
+                    pass
 
     def _get_file_duration(self, filepath):
         """

@@ -109,6 +109,15 @@ class QueueManager:
         
         return self.songs[song_index]
     
+    def has_songs(self):
+        """
+        Check if the queue has any songs.
+        
+        Returns:
+            bool: True if there are songs in the queue, False otherwise.
+        """
+        return len(self.songs) > 0
+    
     def next_track(self):
         """
         Move to next track based on repeat mode.
@@ -163,6 +172,88 @@ class QueueManager:
             self.current_index = index
             return True
         return False
+    
+    def add_song(self, song):
+        """
+        Add a song to the queue.
+        
+        Args:
+            song (dict): Song dictionary to add to the queue
+        """
+        self.songs.append(song)
+        self._update_play_order()
+        print(f"Added song to queue: {song.get('title', 'Unknown')}")
+    
+    def add_songs(self, songs):
+        """
+        Add multiple songs to the queue.
+        
+        Args:
+            songs (list): List of song dictionaries to add to the queue
+        """
+        self.songs.extend(songs)
+        self._update_play_order()
+        print(f"Added {len(songs)} songs to queue")
+    
+    def remove_song(self, index):
+        """
+        Remove a song from the queue by index.
+        
+        Args:
+            index (int): Index of song to remove
+            
+        Returns:
+            bool: True if song was removed, False if index was invalid
+        """
+        if 0 <= index < len(self.songs):
+            removed_song = self.songs.pop(index)
+            
+            # Adjust current index if needed
+            if index < self.current_index:
+                self.current_index -= 1
+            elif index == self.current_index and self.current_index >= len(self.songs):
+                self.current_index = max(0, len(self.songs) - 1)
+                
+            self._update_play_order()
+            print(f"Removed song from queue: {removed_song.get('title', 'Unknown')}")
+            return True
+        return False
+    
+    def clear_queue(self):
+        """Clear all songs from the queue."""
+        self.songs.clear()
+        self.current_index = 0
+        self._update_play_order()
+        print("Queue cleared")
+    
+    def handle_song_finished(self):
+        """
+        Handle when current song finishes playing.
+        
+        Returns:
+            tuple: (should_continue: bool, next_song: dict or None)
+                  should_continue: True if playback should continue
+                  next_song: The next song to play, or None if should stop
+        """
+        current_song = self.current_song()
+        if current_song:
+            print(f"Song finished: {current_song.get('title', 'Unknown')}")
+        
+        # Use next_track logic to determine what to do next
+        if self.next_track():
+            next_song = self.current_song()
+            if next_song:
+                next_title = next_song.get('title', 'Unknown')
+                if self.repeat_mode == RepeatMode.TRACK:
+                    print(f"Repeating track: {next_title}")
+                elif self.repeat_mode == RepeatMode.QUEUE:
+                    print(f"Moving to next song: {next_title} (#{self.current_index + 1}/{len(self.songs)})")
+                else:
+                    print(f"Moving to next song: {next_title} (#{self.current_index + 1}/{len(self.songs)})")
+                return True, next_song
+        
+        print("Queue finished - no more songs to play")
+        return False, None
 
 def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0, conn=None):
     """

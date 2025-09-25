@@ -196,7 +196,8 @@ class MetadataEditor:
             return metadata
             
         # Handle different file formats
-        if isinstance(audio_file, MP3):
+        # Check for ID3 tags first (can be in MP3, WAV, or other formats)
+        if hasattr(audio_file, 'tags') and audio_file.tags and isinstance(audio_file.tags, ID3):
             metadata = self._extract_id3_metadata(audio_file)
         elif isinstance(audio_file, FLAC):
             metadata = self._extract_vorbis_metadata(audio_file)
@@ -1238,15 +1239,15 @@ class MetadataEditor:
         print(f"\nMetadata for: {os.path.basename(filepath)}")
         print("=" * 50)
         print(f"Format: {metadata.get('format', 'Unknown')}")
-        print(f"Title: {metadata.get('title', 'Unknown')}")
-        print(f"Artist: {metadata.get('artist', 'Unknown')}")
-        print(f"Album: {metadata.get('album', 'Unknown')}")
-        print(f"Album Artist: {metadata.get('albumartist', 'Unknown')}")
-        print(f"Date/Year: {metadata.get('date', metadata.get('year', 'Unknown'))}")
-        print(f"Genre: {metadata.get('genre', 'Unknown')}")
-        print(f"Track: {metadata.get('track', 'Unknown')}")
-        print(f"Disc: {metadata.get('disc', 'Unknown')}")
-        print(f"Comment: {metadata.get('comment', 'None')}")
+        print(f"Title: {metadata.get('title', '')}")
+        print(f"Artist: {metadata.get('artist', '')}")
+        print(f"Album: {metadata.get('album', '')}")
+        print(f"Album Artist: {metadata.get('albumartist', '')}")
+        print(f"Date/Year: {metadata.get('date', metadata.get('year', ''))}")
+        print(f"Genre: {metadata.get('genre', '')}")
+        print(f"Track: {metadata.get('track', '')}")
+        print(f"Disc: {metadata.get('disc', '')}")
+        print(f"Comment: {metadata.get('comment', '')}")
         print(f"Album Art: {'Yes' if metadata.get('has_album_art') else 'No'}")
         
         # Display audio properties
