@@ -228,11 +228,6 @@ class AudioPlayer:
             if self.interactive_mode:
                 print("player> ", end="", flush=True)
     
-    def _handle_looping(self):
-        """Handle looping functionality - now handled by EOS message."""
-        # This method is kept for compatibility but functionality moved to _handle_eos
-        pass
-    
     def load_file(self, filepath):
         """
         Load an audio file for playback.
@@ -751,7 +746,11 @@ class AudioPlayer:
                 break
     
     def _handle_connection(self, conn):
-        """Handle a single client connection."""
+        """Handle a single client connection.
+        
+        Args:
+            conn: Socket connection object for communicating with the client
+        """
         is_event_subscription = False
         try:
             while not self.should_quit:

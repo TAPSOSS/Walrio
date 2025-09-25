@@ -21,10 +21,13 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
+          const { owner, repo } = github.context.repo;
+          const { comment } = github.context.payload;
+          
           await github.rest.reactions.createForIssueComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            comment_id: context.payload.comment.id,
+            owner,
+            repo,
+            comment_id: comment.id,
             content: 'rocket'
           });
 
@@ -33,10 +36,13 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
+          const { owner, repo } = github.context.repo;
+          const issueNumber = github.context.issue.number;
+          
           const { data: pr } = await github.rest.pulls.get({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: context.issue.number
+            owner,
+            repo,
+            pull_number: issueNumber
           });
           
           console.log(`PR #${pr.number}: ${pr.title}`);
@@ -66,10 +72,13 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
+          const { owner, repo } = github.context.repo;
+          const issueNumber = github.context.issue.number;
+          
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
           const runId = '${{ github.run_id }}';
-          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const repoUrl = `https://github.com/${owner}/${repo}`;
           const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
           const message = `## 🤖 PR Check Bot Started
@@ -87,9 +96,9 @@ jobs:
           🔗 **[Watch all checks run live](${actionUrl})** - View real-time progress, full error details, and complete logs`;
           
           const { data: comment } = await github.rest.issues.createComment({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            issue_number: context.issue.number,
+            owner,
+            repo,
+            issue_number: issueNumber,
             body: message
           });
           
@@ -103,10 +112,13 @@ jobs:
         script: |
           console.log('🔍 Starting PR Requirements Check...');
           
+          const { owner, repo } = github.context.repo;
+          const issueNumber = github.context.issue.number;
+          
           const { data: pr } = await github.rest.pulls.get({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            pull_number: context.issue.number
+            owner,
+            repo,
+            pull_number: issueNumber
           });
 
           const title = pr.title;
@@ -410,11 +422,13 @@ jobs:
         DOCS_ERROR: ${{ steps.docs-check.outputs.error_message }}
       with:
         script: |
+          const { owner, repo } = github.context.repo;
+          
           const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
           const runId = '${{ github.run_id }}';
-          const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+          const repoUrl = `https://github.com/${owner}/${repo}`;
           const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
           // Collect results from all checks (using environment variables for error messages)

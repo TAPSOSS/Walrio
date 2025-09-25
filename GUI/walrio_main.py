@@ -14,11 +14,6 @@ import os
 import subprocess
 import threading
 import time
-import sys
-import os
-import subprocess
-import threading
-import time
 from pathlib import Path
 
 # Add the parent directory to the Python path so we can import modules

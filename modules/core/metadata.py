@@ -37,11 +37,6 @@ try:
     from mutagen.oggvorbis import OggVorbis
     from mutagen.oggopus import OggOpus
     from mutagen.mp4 import MP4
-    from mutagen.apev2 import APEv2
-    from mutagen.trueaudio import TrueAudio
-    from mutagen.wavpack import WavPack
-    from mutagen.asf import ASF
-    from mutagen._util import total_ordering
     MUTAGEN_AVAILABLE = True
 except ImportError:
     MUTAGEN_AVAILABLE = False
@@ -52,22 +47,6 @@ try:
     PILLOW_AVAILABLE = True
 except ImportError:
     PILLOW_AVAILABLE = False
-    # Logger will be available here since it's defined above
-
-# Import Pillow for image processing
-try:
-    from PIL import Image
-    PILLOW_AVAILABLE = True
-except ImportError:
-    PILLOW_AVAILABLE = False
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger('MetadataEditor')
 
 class MetadataEditor:
     """
@@ -428,8 +407,6 @@ class MetadataEditor:
                           
         except Exception:
             return False
-    
-        return self.supported_formats.get(ext, 'Unknown')
     
     def set_metadata(self, filepath: str, metadata: Dict[str, Any]) -> bool:
         """
