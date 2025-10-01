@@ -20,12 +20,13 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from modules.core.queue import QueueManager, RepeatMode  # Import queue system
+from modules.core import playlist  # Import playlist module
 
 try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -35,7 +36,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -769,6 +770,7 @@ class WalrioMusicPlayer(QMainWindow):
         self.pending_position = 0  # Position to apply when user stops seeking
         self.queue_songs = []  # List of songs in the queue
         self.current_queue_index = 0  # Current song index in queue
+        self.loaded_playlists = {}  # Dictionary to store loaded playlists {name: [songs]}
         
         self.setup_ui()
         self.setup_timer()
@@ -798,15 +800,82 @@ class WalrioMusicPlayer(QMainWindow):
             # Update the current index
             self.queue_manager.set_current_index(self.current_queue_index)
     
+    def setup_playlist_sidebar(self, splitter):
+        """Setup the playlist sidebar on the left side of the UI.
+        
+        Args:
+            splitter: QSplitter widget to add the playlist sidebar to
+        """
+        # Create playlist sidebar widget
+        playlist_widget = QWidget()
+        playlist_layout = QVBoxLayout(playlist_widget)
+        playlist_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Playlist header
+        playlist_header = QLabel("Playlists")
+        playlist_header.setAlignment(Qt.AlignCenter)
+        header_font = QFont()
+        header_font.setPointSize(12)
+        header_font.setBold(True)
+        playlist_header.setFont(header_font)
+        playlist_layout.addWidget(playlist_header)
+        
+        # Playlist list widget
+        self.playlist_list = QListWidget()
+        self.playlist_list.setMaximumWidth(250)
+        self.playlist_list.setMinimumWidth(200)
+        
+        # Enable context menu for playlist operations
+        self.playlist_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.playlist_list.customContextMenuRequested.connect(self.show_playlist_context_menu)
+        
+        # Connect click events
+        self.playlist_list.itemClicked.connect(self.on_playlist_clicked)
+        
+        playlist_layout.addWidget(self.playlist_list)
+        
+        # Playlist management buttons
+        playlist_buttons_layout = QVBoxLayout()
+        
+        self.btn_load_playlist = QPushButton("Load Playlist")
+        self.btn_refresh_playlists = QPushButton("Refresh")
+        
+        self.btn_load_playlist.clicked.connect(self.load_playlist_file)
+        self.btn_refresh_playlists.clicked.connect(self.refresh_playlist_display)
+        
+        playlist_buttons_layout.addWidget(self.btn_load_playlist)
+        playlist_buttons_layout.addWidget(self.btn_refresh_playlists)
+        
+        playlist_layout.addLayout(playlist_buttons_layout)
+        
+        # Add to splitter
+        splitter.addWidget(playlist_widget)
+    
     def setup_ui(self):
         """Setup the user interface."""
         self.setWindowTitle("Walrio")
-        self.setGeometry(300, 300, 800, 500)
+        self.setGeometry(300, 300, 1000, 500)  # Made wider for playlist sidebar
         
-        # Central widget
+        # Central widget with horizontal splitter
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
+        main_layout = QHBoxLayout(central_widget)
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Create splitter to separate playlist sidebar from main content
+        splitter = QSplitter(Qt.Horizontal)
+        main_layout.addWidget(splitter)
+        
+        # Left side - Playlist sidebar
+        self.setup_playlist_sidebar(splitter)
+        
+        # Right side - Main content (existing UI)
+        main_content_widget = QWidget()
+        layout = QVBoxLayout(main_content_widget)
+        splitter.addWidget(main_content_widget)
+        
+        # Set splitter proportions (playlist sidebar takes 1/4, main content takes 3/4)
+        splitter.setSizes([250, 750])
         
         # Queue List Widget
         queue_label = QLabel("Queue")
@@ -986,6 +1055,141 @@ class WalrioMusicPlayer(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_ui)
         self.timer.start(100)  # Update UI every 100ms for smooth updates
+    
+    def load_playlist_file(self):
+        """Load M3U playlist file using file dialog."""
+        playlist_path, _ = QFileDialog.getOpenFileName(
+            self, "Load Playlist", "",
+            "Playlist Files (*.m3u *.m3u8)"
+        )
+        
+        if playlist_path:
+            self.add_playlist_to_sidebar(playlist_path)
+    
+    def add_playlist_to_sidebar(self, playlist_path):
+        """
+        Add a playlist to the sidebar list.
+        
+        Args:
+            playlist_path (str): Path to the M3U playlist file to add
+        """
+        playlist_name = Path(playlist_path).stem
+        
+        # Check if playlist already exists
+        for i in range(self.playlist_list.count()):
+            item = self.playlist_list.item(i)
+            if item.data(Qt.UserRole) == playlist_path:
+                QMessageBox.information(self, "Playlist Already Loaded", 
+                                      f"Playlist '{playlist_name}' is already in the list.")
+                return
+        
+        # Load playlist using playlist module
+        try:
+            songs = playlist.load_m3u_playlist(playlist_path)
+            if songs:
+                # Store songs in loaded_playlists
+                self.loaded_playlists[playlist_name] = songs
+                
+                # Add to playlist list widget
+                item = QListWidgetItem(f"{playlist_name} ({len(songs)} tracks)")
+                item.setData(Qt.UserRole, playlist_path)
+                item.setToolTip(f"Path: {playlist_path}\nTracks: {len(songs)}")
+                self.playlist_list.addItem(item)
+                
+                print(f"Loaded playlist '{playlist_name}' with {len(songs)} tracks")
+            else:
+                QMessageBox.warning(self, "Load Error", 
+                                  f"Could not load playlist from '{playlist_path}'.")
+        except Exception as e:
+            QMessageBox.critical(self, "Load Error", 
+                               f"Error loading playlist: {str(e)}")
+    
+    def on_playlist_clicked(self, item):
+        """
+        Handle playlist item click - load playlist songs into queue.
+        
+        Args:
+            item (QListWidgetItem): The clicked playlist item
+        """
+        playlist_path = item.data(Qt.UserRole)
+        playlist_name = Path(playlist_path).stem
+        
+        if playlist_name in self.loaded_playlists:
+            songs = self.loaded_playlists[playlist_name]
+            
+            # Clear current queue
+            self.clear_queue()
+            
+            # Add playlist songs to queue
+            self.queue_songs = songs.copy()
+            self.current_queue_index = 0
+            
+            # Update queue display
+            self.update_queue_display()
+            
+            # Update queue manager
+            self._update_queue_manager()
+            
+            # Enable navigation buttons
+            if self.queue_songs:
+                self.btn_previous.setEnabled(True)
+                self.btn_next.setEnabled(True)
+            
+            print(f"Loaded playlist '{playlist_name}' into queue ({len(songs)} tracks)")
+            
+    def show_playlist_context_menu(self, position):
+        """
+        Show context menu for playlist operations.
+        
+        Args:
+            position (QPoint): Position where the context menu was requested
+        """
+        item = self.playlist_list.itemAt(position)
+        if not item:
+            return
+            
+        menu = QMenu(self)
+        
+        # Load into queue action
+        load_action = QAction("Load into Queue", self)
+        load_action.triggered.connect(lambda: self.on_playlist_clicked(item))
+        menu.addAction(load_action)
+        
+        menu.addSeparator()
+        
+        # Remove from list action
+        remove_action = QAction("Remove from List", self)
+        remove_action.triggered.connect(lambda: self.remove_playlist_from_sidebar(item))
+        menu.addAction(remove_action)
+        
+        # Show menu
+        menu.exec(self.playlist_list.mapToGlobal(position))
+    
+    def remove_playlist_from_sidebar(self, item):
+        """
+        Remove playlist from sidebar list.
+        
+        Args:
+            item (QListWidgetItem): The playlist item to remove
+        """
+        playlist_path = item.data(Qt.UserRole)
+        playlist_name = Path(playlist_path).stem
+        
+        # Remove from loaded playlists
+        if playlist_name in self.loaded_playlists:
+            del self.loaded_playlists[playlist_name]
+        
+        # Remove from list widget
+        row = self.playlist_list.row(item)
+        self.playlist_list.takeItem(row)
+        
+        print(f"Removed playlist '{playlist_name}' from sidebar")
+    
+    def refresh_playlist_display(self):
+        """Refresh the playlist display (placeholder for future functionality)."""
+        # For now, this just clears and reloads if needed
+        # Could be extended to scan a default playlists directory
+        print("Playlist display refreshed")
     
     def add_files_to_queue(self):
         """Add files to the queue using background thread."""
