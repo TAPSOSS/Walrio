@@ -90,15 +90,28 @@ class MainWindow(QMainWindow):
         self.splitter.insertWidget(0, sidebar_widget)
     
     def add_tab(self, widget, title):
-        """Add a tab to the tab widget."""
+        """Add a tab to the tab widget.
+        
+        Args:
+            widget: The widget to add as a tab.
+            title: The title for the new tab.
+        """
         self.tab_widget.addTab(widget, title)
     
     def set_current_tab(self, index):
-        """Set the current tab by index."""
+        """Set the current tab by index.
+        
+        Args:
+            index: The index of the tab to make current.
+        """
         self.tab_widget.setCurrentIndex(index)
     
     def add_controls(self, controls_widget):
-        """Add the controls widget to the bottom of the layout."""
+        """Add the controls widget to the bottom of the layout.
+        
+        Args:
+            controls_widget: The controls widget to add to the layout.
+        """
         self.tabs_layout.addWidget(controls_widget)
     
     def set_track_info(self, text):
@@ -110,6 +123,10 @@ class MainWindow(QMainWindow):
         self.track_label.setText(text)
     
     def closeEvent(self, event):
-        """Handle window close event."""
+        """Handle window close event.
+        
+        Args:
+            event: The close event from Qt.
+        """
         self.window_closing.emit()
         event.accept()

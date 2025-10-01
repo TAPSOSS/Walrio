@@ -79,11 +79,19 @@ class Song:
         )
     
     def __str__(self):
-        """Return human-readable string representation of the song."""
+        """Return human-readable string representation of the song.
+        
+        Returns:
+            str: Formatted string in 'Artist - Title' format
+        """
         return f"{self.artist} - {self.title}"
     
     def __repr__(self):
-        """Return detailed string representation for debugging."""
+        """Return detailed string representation for debugging.
+        
+        Returns:
+            str: Detailed string representation showing Song constructor format
+        """
         return f"Song(url='{self.url}', title='{self.title}', artist='{self.artist}')"
 
 
@@ -140,14 +148,27 @@ class Playlist:
         return None
     
     def __len__(self):
-        """Return the number of songs in the playlist."""
+        """Return the number of songs in the playlist.
+        
+        Returns:
+            int: Number of songs in the playlist
+        """
         return len(self.songs)
     
     def __iter__(self):
-        """Return an iterator over the songs in the playlist."""
+        """Return an iterator over the songs in the playlist.
+        
+        Returns:
+            iterator: Iterator over the songs list
+        """
         return iter(self.songs)
     
     def __str__(self):
+        """Return human-readable string representation of the playlist.
+        
+        Returns:
+            str: Formatted string showing playlist name and track count
+        """
         return f"{self.name} ({len(self.songs)} tracks)"
 
 

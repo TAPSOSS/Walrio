@@ -187,7 +187,11 @@ class ControlsView(BaseView):
         self.volume_changed.emit(value)
     
     def _slider_mouse_press_event(self, event):
-        """Handle mouse press events on the slider for click-to-position."""
+        """Handle mouse press events on the slider for click-to-position.
+        
+        Args:
+            event (QMouseEvent): The mouse press event to handle
+        """
         if event.button() == Qt.LeftButton:
             # Calculate the position where the user clicked
             slider_min = self.progress_slider.minimum()
@@ -227,20 +231,36 @@ class ControlsView(BaseView):
         self.btn_play_pause.setEnabled(enabled)
     
     def set_stop_enabled(self, enabled):
-        """Enable or disable the stop button."""
+        """Enable or disable the stop button.
+        
+        Args:
+            enabled (bool): True to enable the button, False to disable
+        """
         self.btn_stop.setEnabled(enabled)
     
     def set_navigation_enabled(self, enabled):
-        """Enable or disable the previous/next buttons."""
+        """Enable or disable the previous/next buttons.
+        
+        Args:
+            enabled (bool): True to enable the buttons, False to disable
+        """
         self.btn_previous.setEnabled(enabled)
         self.btn_next.setEnabled(enabled)
     
     def set_loop_text(self, text):
-        """Set the loop button text."""
+        """Set the loop button text.
+        
+        Args:
+            text (str): Text to display on the loop button
+        """
         self.btn_loop.setText(text)
     
     def set_loop_style(self, is_active):
-        """Set the loop button style based on active state."""
+        """Set the loop button style based on active state.
+        
+        Args:
+            is_active (bool): True for active/enabled style, False for inactive style
+        """
         if is_active:
             self.btn_loop.setStyleSheet("""
                 QPushButton {
@@ -261,34 +281,62 @@ class ControlsView(BaseView):
             """)
     
     def set_position(self, position):
-        """Set the current position on the progress slider."""
+        """Set the current position on the progress slider.
+        
+        Args:
+            position: The position value to set on the slider.
+        """
         if not self.is_seeking:
             self.progress_slider.setValue(int(position))
     
     def set_duration(self, duration):
-        """Set the maximum duration on the progress slider."""
+        """Set the maximum duration on the progress slider.
+        
+        Args:
+            duration: The maximum duration value for the slider.
+        """
         if duration > 0:
             self.progress_slider.setMaximum(int(duration))
         else:
             self.progress_slider.setMaximum(100)
     
     def set_time_current(self, time_str):
-        """Set the current time display."""
+        """Set the current time display.
+        
+        Args:
+            time_str: The formatted time string to display.
+        """
         self.time_current.setText(time_str)
     
     def set_time_total(self, time_str):
-        """Set the total time display."""
+        """Set the total time display.
+        
+        Args:
+            time_str: The formatted time string to display.
+        """
         self.time_total.setText(time_str)
     
     def get_volume(self):
-        """Get the current volume value."""
+        """Get the current volume value.
+        
+        Returns:
+            int: The current volume slider value.
+        """
         return self.volume_slider.value()
     
     def set_volume(self, volume):
-        """Set the volume slider value."""
+        """Set the volume slider value.
+        
+        Args:
+            volume: The volume value to set (0-100).
+        """
         self.volume_slider.setValue(volume)
         self.volume_label.setText(f"{volume}%")
     
     def is_slider_pressed(self):
-        """Check if the progress slider is currently being pressed."""
+        """Check if the progress slider is currently being pressed.
+        
+        Returns:
+            bool: True if the progress slider is currently pressed, False otherwise.
+        """
         return self.progress_slider.isSliderDown()
