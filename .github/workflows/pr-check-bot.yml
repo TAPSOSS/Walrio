@@ -21,8 +21,8 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const { owner, repo } = github.context.repo;
-          const { comment } = github.context.payload;
+          const { owner, repo } = context.repo;
+          const { comment } = context.payload;
           
           await github.rest.reactions.createForIssueComment({
             owner,
@@ -36,8 +36,8 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const { owner, repo } = github.context.repo;
-          const issueNumber = github.context.issue.number;
+          const { owner, repo } = context.repo;
+          const issueNumber = context.issue.number;
           
           const { data: pr } = await github.rest.pulls.get({
             owner,
@@ -72,8 +72,8 @@ jobs:
       uses: actions/github-script@v7
       with:
         script: |
-          const { owner, repo } = github.context.repo;
-          const issueNumber = github.context.issue.number;
+          const { owner, repo } = context.repo;
+          const issueNumber = context.issue.number;
           
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
           const author = '${{ steps.pr-info.outputs.pr_author }}';
@@ -112,8 +112,8 @@ jobs:
         script: |
           console.log('🔍 Starting PR Requirements Check...');
           
-          const { owner, repo } = github.context.repo;
-          const issueNumber = github.context.issue.number;
+          const { owner, repo } = context.repo;
+          const issueNumber = context.issue.number;
           
           const { data: pr } = await github.rest.pulls.get({
             owner,
@@ -422,7 +422,7 @@ jobs:
         DOCS_ERROR: ${{ steps.docs-check.outputs.error_message }}
       with:
         script: |
-          const { owner, repo } = github.context.repo;
+          const { owner, repo } = context.repo;
           
           const commentId = '${{ steps.initial-comment.outputs.comment_id }}';
           const prNumber = '${{ steps.pr-info.outputs.pr_number }}';
