@@ -833,6 +833,7 @@ class WalrioMusicPlayer(QMainWindow):
         
         # Connect click events
         self.playlist_list.itemClicked.connect(self.on_playlist_clicked)
+        self.playlist_list.itemSelectionChanged.connect(self.on_playlist_selection_changed)
         
         playlist_layout.addWidget(self.playlist_list)
         
@@ -840,12 +841,18 @@ class WalrioMusicPlayer(QMainWindow):
         playlist_buttons_layout = QVBoxLayout()
         
         self.btn_load_playlist = QPushButton("Load Playlist")
+        self.btn_delete_playlist = QPushButton("Delete Selected")
         self.btn_refresh_playlists = QPushButton("Refresh")
         
         self.btn_load_playlist.clicked.connect(self.load_playlist_file)
+        self.btn_delete_playlist.clicked.connect(self.delete_selected_playlist)
         self.btn_refresh_playlists.clicked.connect(self.refresh_playlist_display)
         
+        # Initially disable delete button until a playlist is selected
+        self.btn_delete_playlist.setEnabled(False)
+        
         playlist_buttons_layout.addWidget(self.btn_load_playlist)
+        playlist_buttons_layout.addWidget(self.btn_delete_playlist)
         playlist_buttons_layout.addWidget(self.btn_refresh_playlists)
         
         playlist_layout.addLayout(playlist_buttons_layout)
@@ -1236,10 +1243,10 @@ class WalrioMusicPlayer(QMainWindow):
         
         menu.addSeparator()
         
-        # Remove from list action
-        remove_action = QAction("Remove from List", self)
-        remove_action.triggered.connect(lambda: self.remove_playlist_from_sidebar(item))
-        menu.addAction(remove_action)
+        # Delete from list action
+        delete_action = QAction("Delete from List", self)
+        delete_action.triggered.connect(lambda: self.delete_playlist_by_item(item))
+        menu.addAction(delete_action)
         
         # Show menu
         menu.exec(self.playlist_list.mapToGlobal(position))
@@ -1264,11 +1271,75 @@ class WalrioMusicPlayer(QMainWindow):
         
         print(f"Removed playlist '{playlist_name}' from sidebar")
     
+    def delete_playlist_by_item(self, item):
+        """
+        Delete playlist by item (used by context menu).
+        
+        Args:
+            item (QListWidgetItem): The playlist item to delete
+        """
+        # Select the item first to match the button behavior
+        self.playlist_list.setCurrentItem(item)
+        # Then call the delete method
+        self.delete_selected_playlist()
+    
     def refresh_playlist_display(self):
         """Refresh the playlist display (placeholder for future functionality)."""
         # For now, this just clears and reloads if needed
         # Could be extended to scan a default playlists directory
         print("Playlist display refreshed")
+    
+    def on_playlist_selection_changed(self):
+        """Handle playlist selection changes to enable/disable delete button."""
+        selected_items = self.playlist_list.selectedItems()
+        self.btn_delete_playlist.setEnabled(len(selected_items) > 0)
+    
+    def delete_selected_playlist(self):
+        """Delete the selected playlist from the loaded list."""
+        current_item = self.playlist_list.currentItem()
+        if not current_item:
+            QMessageBox.information(self, "No Selection", "Please select a playlist to delete.")
+            return
+        
+        playlist_path = current_item.data(Qt.UserRole)
+        playlist_name = Path(playlist_path).stem
+        
+        # Confirm deletion
+        reply = QMessageBox.question(
+            self, "Delete Playlist", 
+            f"Are you sure you want to remove '{playlist_name}' from the loaded playlists?\n\n"
+            f"This will only remove it from the list, not delete the actual file.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Remove from loaded playlists dictionary
+            if playlist_name in self.loaded_playlists:
+                del self.loaded_playlists[playlist_name]
+            
+            # Remove from list widget
+            row = self.playlist_list.row(current_item)
+            self.playlist_list.takeItem(row)
+            
+            # Clear playlist content if this was the selected playlist
+            if self.selected_playlist_name == playlist_name:
+                self.selected_playlist_name = None
+                self.selected_playlist_songs = []
+                self.current_playlist_label.setText("No playlist selected")
+                self.playlist_content_table.setRowCount(0)
+                
+                # Disable playlist-to-queue buttons
+                self.btn_add_to_queue.setEnabled(False)
+                self.btn_replace_queue.setEnabled(False)
+            
+            # Disable delete button if no playlists remain
+            if self.playlist_list.count() == 0:
+                self.btn_delete_playlist.setEnabled(False)
+            
+            print(f"Removed playlist '{playlist_name}' from loaded list")
+            QMessageBox.information(self, "Playlist Removed", 
+                                  f"'{playlist_name}' has been removed from the loaded playlists.")
     
     def update_playlist_content_display(self, playlist_name, songs):
         """
