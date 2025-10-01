@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Main entry point for Walrio GUI MVC application
+Main entry point for Walrio GUI application
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-Entry point for running the Walrio MVC GUI application.
+Entry point for running the Walrio GUI application.
 """
 
 import sys
@@ -22,7 +22,7 @@ from .controllers.main_controller import MainController
 
 
 def main():
-    """Main entry point for Walrio MVC GUI."""
+    """Main entry point for Walrio GUI."""
     app = QApplication(sys.argv)
     app.setApplicationName("Walrio")
     

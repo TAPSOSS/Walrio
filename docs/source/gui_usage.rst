@@ -6,27 +6,159 @@ Walrio includes several graphical user interface applications that provide easy-
 Overview
 --------
 
+The GUI system follows a clear organizational pattern:
+
+* **GUI Runners**: Any ``.py`` file in the ``GUI/`` directory is a launcher for a specific user interface
+* **Structured Architecture**: Complex GUIs use organized component architecture in subdirectories
+* **Purpose-Built**: Each GUI serves a specific use case (simple playback, full management, etc.)
+* **Extensible**: New GUIs can be added by creating new runner files
+
 The GUI applications are designed to be:
 
 * **User-friendly**: Intuitive interfaces suitable for all user levels
 * **Modular**: Each GUI serves a specific purpose or workflow  
 * **Integrated**: Built on top of Walrio's core modules and CLI tools
 * **Cross-platform**: Compatible with Windows, macOS, and Linux
+* **Architecturally Sound**: Following established patterns for maintainability
 
 **Available GUI Applications:**
 
 * **Walrio Lite - Simple Music Player**: Walrio Lite - Simple Music Player
-* **Walrio Main GUI**: Walrio Music Player GUI
+* **Walrio GUI - Standalone launcher**: Primary GUI interface with full feature set
+* **WalrioMainGUI (Structured Architecture)**: Full-featured music player with organized component architecture
 
 Detailed Documentation
 ---------------------
+
+WalrioMainGUI - Structured GUI Architecture
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**Location**: ``GUI/WalrioMainGUI/``
+
+The WalrioMainGUI application follows a structured component architecture, providing a clean separation of concerns for maintainable and scalable code.
+
+**Component Structure**:
+
+.. code-block:: text
+
+    WalrioMainGUI/
+    ├── main.py                  # Main application entry point
+    ├── __main__.py              # Module entry point
+    ├── models/                  # Data models and business logic
+    │   ├── data_models.py
+    │   ├── workers.py
+    ├── views/                   # UI components
+    │   ├── base_view.py
+    │   ├── controls_view.py
+    │   ├── main_window.py
+    │   ├── playlist_content_view.py
+    │   ├── playlist_sidebar.py
+    │   ├── queue_view.py
+    └── controllers/             # Business logic coordinators
+        ├── main_controller.py
+        ├── playback_controller.py
+        ├── playlist_controller.py
+        ├── queue_controller.py
+
+**Models**:
+
+Data models and business logic components:
+
+* **data_models.py**: Data models for Walrio GUI
+
+* **workers.py**: Worker classes for background tasks in Walrio GUI
+  
+  * ``QueueWorker`` - Worker thread for queue operations like metadata extraction.
+    (2 public methods, 3 signals)
+  
+  * ``PlayerWorker`` - Worker thread for handling audio playback operations with event-based communication.
+    (9 public methods, 4 signals)
+
+**Views**:
+
+User interface components:
+
+* **base_view.py**: Base view class for Walrio GUI components
+  
+  * ``BaseView`` - Base class for all view components.
+    (3 public methods)
+
+* **controls_view.py**: Control view for Walrio GUI
+  
+  * ``ControlsView`` - Playback controls widget.
+    (15 public methods, 9 signals)
+
+* **main_window.py**: Main window view for Walrio GUI
+  
+  * ``MainWindow`` - Main window for the Walrio music player.
+    (7 public methods, 1 signals)
+
+* **playlist_content_view.py**: Playlist content view for Walrio GUI
+  
+  * ``PlaylistContentView`` - Playlist content tab widget for viewing selected playlist contents.
+    (5 public methods, 2 signals)
+
+* **playlist_sidebar.py**: Playlist sidebar view for Walrio GUI
+  
+  * ``PlaylistSidebarView`` - Playlist sidebar widget for managing playlists.
+    (6 public methods, 4 signals)
+
+* **queue_view.py**: Queue view for Walrio GUI
+  
+  * ``QueueView`` - Queue tab widget for managing the playback queue.
+    (7 public methods, 6 signals)
+
+**Controllers**:
+
+Business logic coordinators:
+
+* **main_controller.py**: Main controller for Walrio GUI
+  
+  * ``MainController`` - Main controller that coordinates all components of the Walrio GUI.
+    (2 public methods)
+
+* **playback_controller.py**: Playback controller for Walrio GUI
+  
+  * ``PlaybackController`` - Controller for playback management.
+    (3 public methods, 3 signals)
+
+* **playlist_controller.py**: Playlist controller for Walrio GUI
+  
+  * ``PlaylistController`` - Controller for playlist management.
+
+* **queue_controller.py**: Queue controller for Walrio GUI
+  
+  * ``QueueController`` - Controller for queue management.
+    (2 public methods, 3 signals)
+
+**Usage**:
+
+.. code-block:: bash
+
+    # Run the MVC application
+    python GUI/walrio_main.py
+    
+    # Or as a module
+    python -m GUI.WalrioMainGUI
+
+**Structured Architecture Benefits**:
+
+* **Separation of Concerns**: UI, business logic, and data are clearly separated
+* **Maintainability**: Each component has a single responsibility
+* **Testability**: Controllers can be tested independently of UI
+* **Reusability**: Views and models can be reused in different contexts
+* **Scalability**: New features can be added without affecting existing code
+
 
 Walrio Lite - Simple Music Player
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Location**: ``GUI/walrio_lite.py``
 
-Walrio Lite - Simple Music Player
+**Purpose**: Walrio Lite - Simple Music Player
+
+.. note::
+   This is a GUI runner file. All ``.py`` files in the GUI directory are launchers for specific user interfaces.
 
 **Dependencies**:
 
@@ -130,104 +262,19 @@ Walrio Lite - Simple Music Player
    This is a graphical application. Ensure you have a display environment available and the required GUI dependencies installed.
 
 
-Walrio Main GUI
-~~~~~~~~~~~~~~~
+Walrio GUI - Standalone launcher
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Location**: ``GUI/walrio_main.py``
 
-Walrio Music Player GUI
+**Purpose**: Primary GUI interface with full feature set
+
+.. note::
+   This is a GUI runner file. All ``.py`` files in the GUI directory are launchers for specific user interfaces.
 
 **Dependencies**:
 
 * ``PySide6``
-
-**Classes and Methods**:
-
-**PlayerWorker**
-
-   Worker thread for running audio playback.
-
-   **Signals**:
-
-   * ``position_updated``
-   * ``playback_finished``
-   * ``error``
-
-   **Key Methods**:
-
-   * ``run()``
-     Run the audio player in daemon mode.
-
-   * ``pause()``
-     Pause the playback using daemon command.
-
-   * ``resume()``
-     Resume the playback using daemon command.
-
-   * ``stop()``
-     Stop the playback using daemon command.
-
-   * ``set_volume()``
-     Set the playback volume using daemon socket command.
-
-
-**WalrioMusicPlayer**
-
-   Walrio music player with full playback controls.
-
-   **Key Methods**:
-
-   * ``setup_ui()``
-     Setup the user interface.
-
-   * ``setup_timer()``
-     Setup timer for updating UI (reduced frequency since position comes from worker).
-
-   * ``open_file()``
-     Open an audio file.
-
-   * ``toggle_play_pause()``
-     Toggle between play, pause, and resume.
-
-   * ``start_playback()``
-     Start audio playback.
-
-   * ``pause_playback()``
-     Pause audio playback using CLI command.
-
-   * ``resume_playback()``
-     Resume audio playback using CLI command.
-
-   * ``stop_playback()``
-     Stop audio playback.
-
-   * ``on_volume_change()``
-
-   * ``on_seek_start()``
-     Handle when user starts seeking.
-
-   * ``on_seek_end()``
-     Handle when user finishes seeking.
-
-   * ``on_position_updated()``
-
-   * ``update_ui()``
-     Update UI elements (called by timer).
-
-   * ``format_time()``
-
-   * ``on_playback_finished()``
-     Handle when playback finishes naturally.
-
-   * ``on_playback_error()``
-
-   * ``show_message()``
-
-   * ``closeEvent()``
-
-   * ``main()``
-     Main entry point for Walrio.
-
 
 **Usage**:
 

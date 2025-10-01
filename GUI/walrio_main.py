@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Walrio MVC GUI - Standalone launcher
+Walrio GUI - Standalone launcher
 Copyright (c) 2025 TAPS OSS  
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-Standalone launcher for the Walrio MVC GUI application.
-Run this script to start the new MVC version of Walrio GUI.
+The main Walrio GUI.
+It will contain as much functionality as possible while maintaining a nice GUI to use.
 """
 
 import sys
@@ -23,7 +23,7 @@ from WalrioMainGUI.controllers.main_controller import MainController
 
 
 def main():
-    """Main entry point for Walrio MVC GUI."""
+    """Main entry point for Walrio GUI."""
     app = QApplication(sys.argv)
     app.setApplicationName("Walrio")
     

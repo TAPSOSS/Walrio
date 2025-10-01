@@ -15,25 +15,83 @@ import re
 from pathlib import Path
 from typing import List, Dict, Optional
 
-def find_gui_applications(gui_dir: str) -> List[str]:
+def find_gui_applications(gui_dir: str) -> Dict:
     """
-    Find all GUI applications in the GUI directory.
+    Find all GUI applications and MVC structure in the GUI directory.
     
     Args:
         gui_dir (str): Path to the GUI directory
         
     Returns:
-        list: List of GUI application file paths
+        dict: Dictionary with 'standalone' apps and 'mvc' structure
     """
-    gui_apps = []
+    result = {
+        'standalone': [],
+        'mvc': None
+    }
+    
     gui_path = Path(gui_dir)
     
     if gui_path.exists():
+        # Find standalone GUI applications
         for py_file in gui_path.glob('*.py'):
             if not py_file.name.startswith('__'):
-                gui_apps.append(str(py_file))
+                result['standalone'].append(str(py_file))
+        
+        # Check for MVC structure (WalrioMainGUI directory)
+        mvc_dir = gui_path / 'WalrioMainGUI'
+        if mvc_dir.exists() and mvc_dir.is_dir():
+            result['mvc'] = discover_mvc_structure(str(mvc_dir))
     
-    return gui_apps
+    return result
+
+def discover_mvc_structure(mvc_root_dir: str) -> Dict:
+    """
+    Discover the MVC architecture structure automatically.
+    
+    Args:
+        mvc_root_dir (str): Path to the MVC root directory
+        
+    Returns:
+        dict: MVC structure with models, views, controllers
+    """
+    mvc_root = Path(mvc_root_dir)
+    structure = {
+        'root_dir': mvc_root_dir,
+        'models': [],
+        'views': [],
+        'controllers': [],
+        'main_files': []
+    }
+    
+    # Find main entry point files
+    for main_file in ['main.py', '__main__.py', '__init__.py']:
+        main_path = mvc_root / main_file
+        if main_path.exists():
+            structure['main_files'].append(str(main_path))
+    
+    # Discover models
+    models_dir = mvc_root / 'models'
+    if models_dir.exists():
+        for py_file in models_dir.glob('*.py'):
+            if not py_file.name.startswith('__'):
+                structure['models'].append(str(py_file))
+    
+    # Discover views
+    views_dir = mvc_root / 'views'
+    if views_dir.exists():
+        for py_file in views_dir.glob('*.py'):
+            if not py_file.name.startswith('__'):
+                structure['views'].append(str(py_file))
+    
+    # Discover controllers
+    controllers_dir = mvc_root / 'controllers'
+    if controllers_dir.exists():
+        for py_file in controllers_dir.glob('*.py'):
+            if not py_file.name.startswith('__'):
+                structure['controllers'].append(str(py_file))
+    
+    return structure
 
 def extract_gui_module_info(file_path: str) -> Dict:
     """
@@ -142,26 +200,111 @@ def extract_gui_module_info(file_path: str) -> Dict:
             'imports': []
         }
 
-def get_gui_title(module_name: str) -> str:
+def get_gui_title(module_name: str, module_info: Dict = None) -> str:
     """
     Convert a GUI module filename to a human-readable title.
     
     Args:
         module_name (str): The module filename (without .py extension)
+        module_info (dict): Optional module info for better title detection
         
     Returns:
         str: Human-readable title for the GUI module
     """
-    special_cases = {
+    # Try to extract title from module docstring first
+    if module_info and module_info.get('main_description'):
+        desc = module_info['main_description']
+        # If it looks like a title, use it
+        if len(desc) < 100 and not desc.startswith('Copyright'):
+            return desc
+    
+    # Fallback patterns for common GUI naming conventions
+    gui_patterns = {
         'walrio_main': 'Walrio Main GUI',
-        'walrio_lite': 'Walrio Lite - Simple Music Player'
+        'walrio_lite': 'Walrio Lite GUI', 
+        'walrio_minimal': 'Walrio Minimal GUI',
+        'walrio_advanced': 'Walrio Advanced GUI',
+        'walrio_studio': 'Walrio Studio GUI'
     }
     
-    if module_name in special_cases:
-        return special_cases[module_name]
+    if module_name in gui_patterns:
+        return gui_patterns[module_name]
     
-    # Default: capitalize first letter and replace underscores with spaces
-    return module_name.replace('_', ' ').title()
+    # General pattern: Any .py file in GUI/ is a runner for a specific interface
+    # Convert snake_case to Title Case and add "GUI" suffix
+    title = module_name.replace('_', ' ').title()
+    if not title.endswith('GUI') and not title.endswith('gui'):
+        title += ' GUI'
+    
+    return title
+
+def get_gui_description(module_name: str, module_info: Dict) -> str:
+    """
+    Generate a description for a GUI runner file.
+    
+    Args:
+        module_name (str): The module filename
+        module_info (dict): Module information
+        
+    Returns:
+        str: Description of what this GUI provides
+    """
+    # Try to extract a better description from the full docstring
+    if module_info.get('module_docstring'):
+        docstring = module_info['module_docstring']
+        lines = docstring.split('\n')
+        
+        # Look for descriptive content after the title line
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if (line and 
+                not line.startswith('Copyright') and 
+                not line.startswith('Project:') and
+                not line.startswith('Licensed') and
+                not line.startswith('#!/') and
+                not line.endswith('launcher')):  # Skip generic "launcher" lines
+                
+                # Check if this looks like a substantial description
+                if len(line) > 20 and len(line) < 200:
+                    # Also check the next line to get complete sentences
+                    if i + 1 < len(lines):
+                        next_line = lines[i + 1].strip()
+                        if next_line and len(next_line) > 10 and not next_line.startswith('Copyright'):
+                            return f"{line} {next_line}"
+                    return line
+    
+    # Fallback to main_description if no better description found
+    if module_info.get('main_description'):
+        desc = module_info['main_description']
+        if (not desc.startswith('Copyright') and 
+            len(desc) < 200 and 
+            not desc.endswith('launcher')):
+            return desc
+    
+    # Generate description based on classes found
+    if module_info.get('classes'):
+        class_names = [cls['name'] for cls in module_info['classes']]
+        
+        # Detect common GUI patterns
+        if any('Player' in name for name in class_names):
+            return f"Music player interface with {len(class_names)} component(s)"
+        elif any('Manager' in name for name in class_names):
+            return f"Management interface with {len(class_names)} component(s)"
+        elif any('Editor' in name for name in class_names):
+            return f"Editing interface with {len(class_names)} component(s)"
+        else:
+            return f"GUI application with {len(class_names)} component(s)"
+    
+    # Special cases for known patterns
+    if 'main' in module_name:
+        return "Primary GUI interface with full feature set"
+    elif 'lite' in module_name:
+        return "Lightweight GUI interface for basic operations"
+    elif 'minimal' in module_name:
+        return "Minimal GUI interface for essential functions"
+    
+    # Default fallback
+    return "Walrio GUI application launcher"
 
 def generate_gui_rst_section(gui_info: Dict) -> str:
     """
@@ -174,12 +317,12 @@ def generate_gui_rst_section(gui_info: Dict) -> str:
         str: RST formatted documentation section
     """
     name = gui_info['name']
-    description = gui_info['main_description']
     dependencies = gui_info['dependencies']
     classes = gui_info['classes']
     
-    # Create a clean title
-    title = get_gui_title(name)
+    # Create a clean title and description using the enhanced functions
+    title = get_gui_title(name, gui_info)
+    description = get_gui_description(name, gui_info)
     
     rst = f"\n{title}\n"
     rst += "~" * len(title) + "\n\n"
@@ -188,9 +331,12 @@ def generate_gui_rst_section(gui_info: Dict) -> str:
     relative_path = gui_info['path'].replace('/mnt/Xtra/GitHub/Walrio/', '')
     rst += f"**Location**: ``{relative_path}``\n\n"
     
-    # Add description
-    if description:
-        rst += f"{description}\n\n"
+    # Add description and purpose
+    rst += f"**Purpose**: {description}\n\n"
+    
+    # Add note about GUI runner files
+    rst += f".. note::\n"
+    rst += f"   This is a GUI runner file. All ``.py`` files in the GUI directory are launchers for specific user interfaces.\n\n"
     
     # Add dependencies
     if dependencies:
@@ -244,9 +390,130 @@ def generate_gui_rst_section(gui_info: Dict) -> str:
     
     return rst
 
+def generate_mvc_documentation(mvc_structure: Dict) -> str:
+    """
+    Generate comprehensive MVC architecture documentation.
+    
+    Args:
+        mvc_structure (dict): MVC structure with models, views, controllers
+        
+    Returns:
+        str: RST formatted MVC documentation
+    """
+    mvc_root = Path(mvc_structure['root_dir'])
+    project_root = mvc_root.parent.parent
+    
+    rst = "\nWalrioMainGUI - Structured GUI Architecture\n"
+    rst += "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n"
+    
+    rst += "**Location**: ``GUI/WalrioMainGUI/``\n\n"
+    rst += "The WalrioMainGUI application follows a structured component architecture, "
+    rst += "providing a clean separation of concerns for maintainable and scalable code.\n\n"
+    
+    # Add structure overview
+    rst += "**Component Structure**:\n\n"
+    rst += ".. code-block:: text\n\n"
+    rst += "    WalrioMainGUI/\n"
+    rst += "    ├── main.py                  # Main application entry point\n"
+    rst += "    ├── __main__.py              # Module entry point\n"
+    rst += "    ├── models/                  # Data models and business logic\n"
+    
+    for model_file in sorted(mvc_structure['models']):
+        model_name = Path(model_file).stem
+        rst += f"    │   ├── {model_name}.py\n"
+    
+    rst += "    ├── views/                   # UI components\n"
+    for view_file in sorted(mvc_structure['views']):
+        view_name = Path(view_file).stem
+        rst += f"    │   ├── {view_name}.py\n"
+    
+    rst += "    └── controllers/             # Business logic coordinators\n"
+    for controller_file in sorted(mvc_structure['controllers']):
+        controller_name = Path(controller_file).stem
+        rst += f"        ├── {controller_name}.py\n"
+    rst += "\n"
+    
+    # Document each MVC component type
+    rst += generate_mvc_component_docs("Models", mvc_structure['models'], "Data models and business logic components")
+    rst += generate_mvc_component_docs("Views", mvc_structure['views'], "User interface components")
+    rst += generate_mvc_component_docs("Controllers", mvc_structure['controllers'], "Business logic coordinators")
+    
+    # Add usage section
+    rst += "**Usage**:\n\n"
+    rst += ".. code-block:: bash\n\n"
+    rst += "    # Run the MVC application\n"
+    rst += "    python GUI/walrio_main.py\n"
+    rst += "    \n"
+    rst += "    # Or as a module\n"
+    rst += "    python -m GUI.WalrioMainGUI\n\n"
+    
+    # Add structured architecture benefits
+    rst += "**Structured Architecture Benefits**:\n\n"
+    rst += "* **Separation of Concerns**: UI, business logic, and data are clearly separated\n"
+    rst += "* **Maintainability**: Each component has a single responsibility\n"
+    rst += "* **Testability**: Controllers can be tested independently of UI\n"
+    rst += "* **Reusability**: Views and models can be reused in different contexts\n"
+    rst += "* **Scalability**: New features can be added without affecting existing code\n\n"
+    
+    return rst
+
+def generate_mvc_component_docs(component_type: str, files: List[str], description: str) -> str:
+    """
+    Generate documentation for MVC component type (Models, Views, or Controllers).
+    
+    Args:
+        component_type (str): Type of component (Models, Views, Controllers)
+        files (list): List of file paths for this component type
+        description (str): Description of this component type
+        
+    Returns:
+        str: RST formatted documentation for the component type
+    """
+    if not files:
+        return f"**{component_type}**: No {component_type.lower()} found.\n\n"
+    
+    rst = f"**{component_type}**:\n\n"
+    rst += f"{description}:\n\n"
+    
+    for file_path in sorted(files):
+        file_info = extract_gui_module_info(file_path)
+        component_name = Path(file_path).stem
+        
+        rst += f"* **{component_name}.py**"
+        if file_info['main_description']:
+            rst += f": {file_info['main_description']}"
+        rst += "\n"
+        
+        # Add classes found in this file
+        if file_info['classes']:
+            for class_info in file_info['classes']:
+                rst += f"  \n"
+                rst += f"  * ``{class_info['name']}``"
+                if class_info['docstring']:
+                    # Get first meaningful line from docstring
+                    docstring_lines = class_info['docstring'].split('\n')
+                    for line in docstring_lines:
+                        line = line.strip()
+                        if line and not line.startswith('Copyright'):
+                            rst += f" - {line}"
+                            break
+                rst += "\n"
+                
+                # Add key methods count
+                method_count = len([m for m in class_info['methods'] if not m['name'].startswith('_')])
+                if method_count > 0:
+                    rst += f"    ({method_count} public methods"
+                    if class_info['signals']:
+                        rst += f", {len(class_info['signals'])} signals"
+                    rst += ")\n"
+        
+        rst += "\n"
+    
+    return rst
+
 def generate_gui_documentation(gui_dir: str, output_file: str):
     """
-    Generate complete GUI documentation.
+    Generate complete GUI documentation including MVC architecture.
     
     Args:
         gui_dir (str): Path to GUI directory
@@ -254,14 +521,15 @@ def generate_gui_documentation(gui_dir: str, output_file: str):
     """
     print("🖥️  Scanning for GUI applications...")
     
-    # Find all GUI applications
-    gui_files = find_gui_applications(gui_dir)
-    gui_apps = []
+    # Find all GUI applications and MVC structure
+    gui_structure = find_gui_applications(gui_dir)
+    standalone_apps = []
     
-    for file_path in gui_files:
-        print(f"  🖼️  Found GUI app: {Path(file_path).name}")
+    # Process standalone applications
+    for file_path in gui_structure['standalone']:
+        print(f"  🖼️  Found standalone GUI app: {Path(file_path).name}")
         gui_info = extract_gui_module_info(file_path)
-        gui_apps.append(gui_info)
+        standalone_apps.append(gui_info)
         print(f"    ✅ Extracted GUI information")
         
         # Show classes found
@@ -269,8 +537,18 @@ def generate_gui_documentation(gui_dir: str, output_file: str):
             for class_info in gui_info['classes']:
                 print(f"      📋 Class: {class_info['name']} ({len(class_info['methods'])} methods)")
     
+    # Process MVC structure
+    mvc_structure = gui_structure['mvc']
+    if mvc_structure:
+        total_mvc_files = len(mvc_structure['models']) + len(mvc_structure['views']) + len(mvc_structure['controllers'])
+        print(f"  🏗️  Found GUI architecture: {total_mvc_files} components")
+        print(f"    📊 Models: {len(mvc_structure['models'])}")
+        print(f"    🖼️  Views: {len(mvc_structure['views'])}")
+        print(f"    🎮 Controllers: {len(mvc_structure['controllers'])}")
+    
     # Generate RST documentation
-    print(f"\n📝 Generating documentation for {len(gui_apps)} GUI applications...")
+    total_apps = len(standalone_apps) + (1 if mvc_structure else 0)
+    print(f"\n📝 Generating documentation for {total_apps} GUI applications...")
     
     rst_content = """GUI Applications
 ================
@@ -280,28 +558,44 @@ Walrio includes several graphical user interface applications that provide easy-
 Overview
 --------
 
+The GUI system follows a clear organizational pattern:
+
+* **GUI Runners**: Any ``.py`` file in the ``GUI/`` directory is a launcher for a specific user interface
+* **Structured Architecture**: Complex GUIs use organized component architecture in subdirectories
+* **Purpose-Built**: Each GUI serves a specific use case (simple playback, full management, etc.)
+* **Extensible**: New GUIs can be added by creating new runner files
+
 The GUI applications are designed to be:
 
 * **User-friendly**: Intuitive interfaces suitable for all user levels
 * **Modular**: Each GUI serves a specific purpose or workflow  
 * **Integrated**: Built on top of Walrio's core modules and CLI tools
 * **Cross-platform**: Compatible with Windows, macOS, and Linux
+* **Architecturally Sound**: Following established patterns for maintainability
 
 **Available GUI Applications:**
 
 """
     
-    # Add summary list
-    for gui_app in sorted(gui_apps, key=lambda x: x['name']):
-        title = get_gui_title(gui_app['name'])
-        description = gui_app['main_description'] or "GUI Application"
+    # Add summary list for standalone apps
+    for gui_app in sorted(standalone_apps, key=lambda x: x['name']):
+        title = get_gui_title(gui_app['name'], gui_app)
+        description = get_gui_description(gui_app['name'], gui_app)
         rst_content += f"* **{title}**: {description}\n"
+    
+    # Add structured GUI application to summary
+    if mvc_structure:
+        rst_content += f"* **WalrioMainGUI (Structured Architecture)**: Full-featured music player with organized component architecture\n"
     
     rst_content += "\nDetailed Documentation\n"
     rst_content += "---------------------\n"
     
-    # Add detailed documentation for each GUI app
-    for gui_app in sorted(gui_apps, key=lambda x: x['name']):
+    # Add MVC documentation first (since it's the main application)
+    if mvc_structure:
+        rst_content += generate_mvc_documentation(mvc_structure)
+    
+    # Add detailed documentation for each standalone GUI app
+    for gui_app in sorted(standalone_apps, key=lambda x: x['name']):
         rst_content += generate_gui_rst_section(gui_app)
     
     # Add installation and requirements section
@@ -392,15 +686,22 @@ def main():
     gui_dir = project_root / 'GUI'
     output_file = script_dir / 'source' / 'gui_usage.rst'
     
-    print("🚀 Generating GUI Documentation...")
+    print("🚀 Generating Comprehensive GUI Documentation...")
     print(f"📁 GUI directory: {gui_dir}")
     print(f"📄 Output file: {output_file}")
     
     try:
         generate_gui_documentation(str(gui_dir), str(output_file))
         print("\n🎉 GUI documentation generation complete!")
+        print("   📖 Documentation includes:")
+        print("      • Standalone GUI applications")
+        print("      • GUI architecture components")  
+        print("      • Automatic component discovery")
+        print("      • Class and method documentation")
     except Exception as e:
         print(f"\n❌ Error generating documentation: {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 if __name__ == "__main__":
