@@ -126,7 +126,12 @@ class PlaylistSidebarView(BaseView):
     def _on_playlist_clicked(self, item):
         """Handle playlist item click."""
         playlist_path = item.data(Qt.UserRole)
-        playlist_name = item.text().split(' (')[0]  # Remove track count from display
+        display_text = item.text().split(' (')[0]  # Remove track count from display
+        
+        # Extract the base name without extension to match how playlists are stored
+        from pathlib import Path
+        playlist_name = Path(display_text).stem  # Remove extension from display name
+        
         self.playlist_selected.emit(playlist_name, playlist_path)
     
     def _on_selection_changed(self):
@@ -179,7 +184,11 @@ class PlaylistSidebarView(BaseView):
             self.show_message("No Selection", "Please select a playlist to remove.")
             return
         
-        playlist_name = current_item.text().split(' (')[0]  # Remove track count
+        display_text = current_item.text().split(' (')[0]  # Remove track count
+        
+        # Extract the base name without extension to match how playlists are stored
+        from pathlib import Path
+        playlist_name = Path(display_text).stem  # Remove extension from display name
         
         if self.show_question("Remove Playlist", 
                             f"Are you sure you want to remove '{playlist_name}' from the loaded playlists?\n\n"
@@ -230,8 +239,13 @@ class PlaylistSidebarView(BaseView):
         """
         for i in range(self.playlist_list.count()):
             item = self.playlist_list.item(i)
-            item_name = item.text().split(' (')[0]  # Remove track count
-            if item_name.startswith(name):
+            display_text = item.text().split(' (')[0]  # Remove track count
+            
+            # Extract the base name without extension to match how playlists are stored
+            from pathlib import Path
+            item_name = Path(display_text).stem  # Remove extension from display name
+            
+            if item_name == name:  # Use exact match instead of startswith
                 self.playlist_list.takeItem(i)
                 break
         
