@@ -239,19 +239,35 @@ def load_m3u_playlist(playlist_path):
                     playlist_dir = Path(playlist_path).parent
                     file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
                 
-                # Create song entry
-                song = {
-                    'url': file_path,
-                    'artist': current_info.get('artist', 'Unknown Artist'),
-                    'title': current_info.get('title', 'Unknown Title'),
-                    'album': 'Unknown Album',
-                    'albumartist': current_info.get('artist', 'Unknown Artist'),
-                    'length': current_info.get('length', 0),
-                    'track': 0,
-                    'disc': 0,
-                    'year': 0,
-                    'genre': 'Unknown'
-                }
+                # Extract full metadata from the audio file
+                metadata_info = extract_metadata(file_path)
+                
+                if metadata_info:
+                    # Use extracted metadata but prefer M3U info for artist/title if available
+                    song = metadata_info.copy()
+                    
+                    # Override with M3U info if available (M3U might have corrected info)
+                    if current_info.get('artist'):
+                        song['artist'] = current_info['artist']
+                    if current_info.get('title'):
+                        song['title'] = current_info['title']
+                    if current_info.get('length'):
+                        song['length'] = current_info['length']
+                else:
+                    # Fallback to basic M3U info if metadata extraction fails
+                    song = {
+                        'url': file_path,
+                        'artist': current_info.get('artist', 'Unknown Artist'),
+                        'title': current_info.get('title', 'Unknown Title'),
+                        'album': 'Unknown Album',
+                        'albumartist': current_info.get('artist', 'Unknown Artist'),
+                        'length': current_info.get('length', 0),
+                        'track': 0,
+                        'disc': 0,
+                        'year': 0,
+                        'genre': 'Unknown'
+                    }
+                
                 songs.append(song)
                 current_info = {}
         
