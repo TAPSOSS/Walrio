@@ -77,6 +77,8 @@ class PlaylistSidebarView(BaseView):
         
         self.progress_label = QLabel("")
         self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setWordWrap(True)  # Allow text to wrap to prevent expansion
+        self.progress_label.setMaximumWidth(230)  # Match button width
         self.progress_label.hide()
         
         self.progress_bar = QProgressBar()
@@ -84,6 +86,8 @@ class PlaylistSidebarView(BaseView):
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(True)
+        self.progress_bar.setMaximumWidth(230)  # Match button width
+        self.progress_bar.setMinimumWidth(200)  # Match playlist list minimum
         self.progress_bar.hide()
         
         progress_layout.addWidget(self.progress_label)
