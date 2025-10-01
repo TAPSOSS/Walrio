@@ -78,12 +78,12 @@ class MainController(QObject):
         # Add the playlist sidebar to the left
         self.main_window.add_playlist_sidebar(self.playlist_sidebar)
         
-        # Add tabs for main content
-        self.main_window.add_tab(self.playlist_content_view, "Playlist")
+        # Add tabs for main content (Queue first since it's the default)
         self.main_window.add_tab(self.queue_view, "Queue")
+        self.main_window.add_tab(self.playlist_content_view, "Playlist")
         
-        # Set default tab
-        self.main_window.set_current_tab(0)  # Start with Playlist tab
+        # Set default tab to Queue (now at index 0)
+        self.main_window.set_current_tab(0)  # Start with Queue tab
         
         # Add controls to the bottom
         self.main_window.add_controls(self.controls_view)
@@ -118,6 +118,9 @@ class MainController(QObject):
         self.playlist_controller.playlist_songs_ready.connect(
             self.queue_controller.handle_playlist_to_queue
         )
+        
+        # When a playlist is selected, switch to the playlist tab to show content
+        self.playlist_sidebar.playlist_selected.connect(self._on_playlist_selected_switch_tab)
         
         self.queue_controller.song_selected.connect(
             self.playback_controller.load_and_play_song
@@ -184,10 +187,15 @@ class MainController(QObject):
     
     def _on_window_closing(self):
         """Handle application shutdown."""
-        # Stop playback
+        # Stop playbook
         if hasattr(self.playback_controller, 'player_worker') and self.playback_controller.player_worker:
             self.playback_controller.player_worker.stop()
             self.playback_controller.player_worker.wait()
+    
+    def _on_playlist_selected_switch_tab(self, playlist_name, playlist_path):
+        """Handle switching to playlist tab when a playlist is selected."""
+        # Switch to the playlist tab (index 1) to show the selected playlist content
+        self.main_window.set_current_tab(1)
     
     def show(self):
         """Show the main window."""
