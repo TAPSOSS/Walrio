@@ -64,7 +64,12 @@ class PlaylistController(QObject):
         self.playlist_content_view.replace_queue_requested.connect(self._on_replace_queue)
     
     def _on_playlist_selected(self, playlist_name, playlist_path):
-        """Handle playlist selection from sidebar."""
+        """Handle playlist selection from sidebar.
+        
+        Args:
+            playlist_name (str): Name of the selected playlist
+            playlist_path (str): File path to the selected playlist
+        """
         print(f"DEBUG: Playlist selection - name: '{playlist_name}', path: '{playlist_path}'")
         print(f"DEBUG: Available playlists: {list(self.app_state.loaded_playlists.keys())}")
         
@@ -109,7 +114,11 @@ class PlaylistController(QObject):
                 )
     
     def _on_add_playlist(self, playlist_path):
-        """Handle adding a new playlist."""
+        """Handle adding a new playlist.
+        
+        Args:
+            playlist_path (str): File path to the playlist to add
+        """
         playlist_path_obj = Path(playlist_path)
         playlist_name = playlist_path_obj.stem
         
@@ -142,7 +151,11 @@ class PlaylistController(QObject):
             )
     
     def _on_remove_playlist(self, playlist_name):
-        """Handle removing a playlist."""
+        """Handle removing a playlist.
+        
+        Args:
+            playlist_name (str): Name of the playlist to remove
+        """
         # Remove from application state
         success = self.app_state.remove_playlist(playlist_name)
         

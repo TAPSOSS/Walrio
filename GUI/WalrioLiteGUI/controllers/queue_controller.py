@@ -64,7 +64,11 @@ class QueueController(QObject):
         self.queue_view.queue_save_requested.connect(self._on_save_queue)
     
     def _on_add_files(self, filepaths):
-        """Handle adding files to queue."""
+        """Handle adding files to queue.
+        
+        Args:
+            filepaths (list): List of file paths to add to the queue
+        """
         if not filepaths:
             return
         
@@ -80,7 +84,11 @@ class QueueController(QObject):
         self.queue_worker.start()
     
     def _on_file_processed(self, song_dict):
-        """Handle when a file has been processed by the queue worker."""
+        """Handle when a file has been processed by the queue worker.
+        
+        Args:
+            song_dict (dict): Dictionary containing processed song metadata
+        """
         # Add song to queue
         self.app_state.queue_songs.append(song_dict)
         
@@ -114,7 +122,11 @@ class QueueController(QObject):
             self.queue_worker = None
     
     def _on_queue_error(self, error_message):
-        """Handle queue processing errors."""
+        """Handle queue processing errors.
+        
+        Args:
+            error_message (str): Description of the error that occurred during processing
+        """
         self.queue_view.show_message("Queue Error", f"Error processing files: {error_message}", "error")
         
         # Re-enable the add button
@@ -138,7 +150,11 @@ class QueueController(QObject):
             self.navigation_state_changed.emit(False)
     
     def _on_remove_song(self, row):
-        """Handle removing a song from the queue."""
+        """Handle removing a song from the queue.
+        
+        Args:
+            row (int): Index of the song to remove from the queue
+        """
         if 0 <= row < len(self.app_state.queue_songs):
             # Remove the song
             self.app_state.queue_songs.pop(row)
@@ -160,13 +176,23 @@ class QueueController(QObject):
                 self.navigation_state_changed.emit(len(self.app_state.queue_songs) > 1)
     
     def _on_song_selected(self, row):
-        """Handle song selection for playback."""
+        """Handle song selection for playback.
+        
+        Args:
+            row (int): Index of the selected song in the queue
+        """
         if 0 <= row < len(self.app_state.queue_songs):
             self._load_song_from_queue(row)
             self.song_selected.emit(row)
     
     def _on_queue_reordered(self, start, end, destination):
-        """Handle queue reordering via drag and drop."""
+        """Handle queue reordering via drag and drop.
+        
+        Args:
+            start (int): Starting row index of the moved item
+            end (int): Ending row index of the moved item
+            destination (int): Destination row index where the item was dropped
+        """
         dest_row = int(destination) 
         start_row = int(start)
         
@@ -244,7 +270,11 @@ class QueueController(QObject):
                 )
     
     def _load_song_from_queue(self, index):
-        """Load a song from the queue by index."""
+        """Load a song from the queue by index.
+        
+        Args:
+            index (int): Index of the song in the queue to load
+        """
         if 0 <= index < len(self.app_state.queue_songs):
             song = self.app_state.queue_songs[index]
             self.app_state.current_queue_index = index
@@ -264,12 +294,21 @@ class QueueController(QObject):
         )
     
     def update_current_position(self, queue_index):
-        """Update the queue display highlighting for the current position."""
+        """Update the queue display highlighting for the current position.
+        
+        Args:
+            queue_index (int): Index of the currently playing song in the queue
+        """
         self.app_state.current_queue_index = queue_index
         self._update_queue_display()
     
     def handle_playlist_to_queue(self, songs, action):
-        """Handle adding or replacing queue with playlist songs."""
+        """Handle adding or replacing queue with playlist songs.
+        
+        Args:
+            songs (list): List of song dictionaries to add to the queue
+            action (str): Action to perform - "add" to append or "replace" to clear and set
+        """
         if action == "replace":
             # Clear current queue
             self.app_state.queue_songs.clear()

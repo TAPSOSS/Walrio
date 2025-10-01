@@ -43,7 +43,11 @@ class Song:
         self.duration = duration or 0
     
     def to_dict(self):
-        """Convert song to dictionary format."""
+        """Convert song to dictionary format.
+        
+        Returns:
+            dict: Dictionary containing song metadata with keys: url, title, artist, album, albumartist, year, duration
+        """
         return {
             'url': self.url,
             'title': self.title,
@@ -56,7 +60,14 @@ class Song:
     
     @classmethod
     def from_dict(cls, data):
-        """Create Song instance from dictionary."""
+        """Create Song instance from dictionary.
+        
+        Args:
+            data (dict): Dictionary containing song metadata
+            
+        Returns:
+            Song: New Song instance created from the dictionary data
+        """
         return cls(
             url=data.get('url', ''),
             title=data.get('title'),
@@ -68,9 +79,11 @@ class Song:
         )
     
     def __str__(self):
+        """Return human-readable string representation of the song."""
         return f"{self.artist} - {self.title}"
     
     def __repr__(self):
+        """Return detailed string representation for debugging."""
         return f"Song(url='{self.url}', title='{self.title}', artist='{self.artist}')"
 
 
@@ -91,27 +104,47 @@ class Playlist:
         self.filepath = filepath
     
     def add_song(self, song):
-        """Add a song to the playlist."""
+        """Add a song to the playlist.
+        
+        Args:
+            song (Song or dict): Song object or dictionary to add to the playlist
+        """
         if isinstance(song, dict):
             song = Song.from_dict(song)
         self.songs.append(song)
     
     def remove_song(self, index):
-        """Remove a song by index."""
+        """Remove a song by index.
+        
+        Args:
+            index (int): Index of the song to remove
+            
+        Returns:
+            Song or None: The removed song object, or None if index is invalid
+        """
         if 0 <= index < len(self.songs):
             return self.songs.pop(index)
         return None
     
     def get_song(self, index):
-        """Get a song by index."""
+        """Get a song by index.
+        
+        Args:
+            index (int): Index of the song to retrieve
+            
+        Returns:
+            Song or None: The song object at the specified index, or None if index is invalid
+        """
         if 0 <= index < len(self.songs):
             return self.songs[index]
         return None
     
     def __len__(self):
+        """Return the number of songs in the playlist."""
         return len(self.songs)
     
     def __iter__(self):
+        """Return an iterator over the songs in the playlist."""
         return iter(self.songs)
     
     def __str__(self):
@@ -153,7 +186,11 @@ class ApplicationState:
         self.pending_position = 0
     
     def set_current_file(self, filepath):
-        """Set the current file and reset related state."""
+        """Set the current file and reset related state.
+        
+        Args:
+            filepath (str): Path to the audio file to set as current
+        """
         self.current_file = filepath
         self.reset_playback_state()
     
@@ -180,7 +217,12 @@ class ApplicationState:
             self.queue_manager.set_current_index(self.current_queue_index)
     
     def add_playlist(self, name, playlist):
-        """Add a playlist to the loaded playlists."""
+        """Add a playlist to the loaded playlists.
+        
+        Args:
+            name (str): Name of the playlist
+            playlist (Playlist or list): Playlist object or list of song dictionaries
+        """
         if isinstance(playlist, list):
             # Convert list of dicts to Playlist object
             playlist_obj = Playlist(name)
@@ -191,11 +233,25 @@ class ApplicationState:
         self.loaded_playlists[name] = playlist
     
     def get_playlist(self, name):
-        """Get a playlist by name."""
+        """Get a playlist by name.
+        
+        Args:
+            name (str): Name of the playlist to retrieve
+            
+        Returns:
+            Playlist or None: The playlist object with the specified name, or None if not found
+        """
         return self.loaded_playlists.get(name)
     
     def remove_playlist(self, name):
-        """Remove a playlist by name."""
+        """Remove a playlist by name.
+        
+        Args:
+            name (str): Name of the playlist to remove
+            
+        Returns:
+            bool: True if the playlist was removed successfully, False if not found
+        """
         if name in self.loaded_playlists:
             del self.loaded_playlists[name]
             return True

@@ -44,7 +44,11 @@ class ControlsView(BaseView):
     volume_changed = Signal(int)  # volume percentage
     
     def __init__(self, parent=None):
-        """Initialize the controls view."""
+        """Initialize the controls view.
+        
+        Args:
+            parent (QWidget, optional): Parent widget for this controls view
+        """
         super().__init__(parent)
         self.is_seeking = False
     
@@ -166,11 +170,19 @@ class ControlsView(BaseView):
         self.seek_ended.emit(seek_position)
     
     def _on_slider_value_changed(self, value):
-        """Handle slider value changes."""
+        """Handle slider value changes.
+        
+        Args:
+            value (int): New slider value (0-100 for progress)
+        """
         self.slider_value_changed.emit(value)
     
     def _on_volume_changed(self, value):
-        """Handle volume slider changes."""
+        """Handle volume slider changes.
+        
+        Args:
+            value (int): New volume level (0-100)
+        """
         self.volume_label.setText(f"{value}%")
         self.volume_changed.emit(value)
     
@@ -199,11 +211,19 @@ class ControlsView(BaseView):
         QSlider.mousePressEvent(self.progress_slider, event)
     
     def set_play_pause_text(self, text):
-        """Set the play/pause button text."""
+        """Set the play/pause button text.
+        
+        Args:
+            text (str): Text to display on the play/pause button
+        """
         self.btn_play_pause.setText(text)
     
     def set_play_pause_enabled(self, enabled):
-        """Enable or disable the play/pause button."""
+        """Enable or disable the play/pause button.
+        
+        Args:
+            enabled (bool): True to enable the button, False to disable
+        """
         self.btn_play_pause.setEnabled(enabled)
     
     def set_stop_enabled(self, enabled):

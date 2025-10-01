@@ -81,7 +81,11 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([300, 900])
     
     def add_playlist_sidebar(self, sidebar_widget):
-        """Add the playlist sidebar widget to the splitter."""
+        """Add the playlist sidebar widget to the splitter.
+        
+        Args:
+            sidebar_widget (QWidget): The playlist sidebar widget to add
+        """
         # Insert at the beginning (left side)
         self.splitter.insertWidget(0, sidebar_widget)
     
@@ -98,7 +102,11 @@ class MainWindow(QMainWindow):
         self.tabs_layout.addWidget(controls_widget)
     
     def set_track_info(self, text):
-        """Set the track information text."""
+        """Set the track information text.
+        
+        Args:
+            text (str): The track information text to display
+        """
         self.track_label.setText(text)
     
     def closeEvent(self, event):

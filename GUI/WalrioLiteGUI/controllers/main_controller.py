@@ -160,7 +160,11 @@ class MainController(QObject):
         pass
     
     def _on_track_changed(self, song_info):
-        """Handle track changes."""
+        """Handle track changes.
+        
+        Args:
+            song_info (dict): Dictionary containing track metadata with 'artist' and 'title' keys
+        """
         if song_info:
             track_text = f"{song_info.get('artist', 'Unknown Artist')} - {song_info.get('title', 'Unknown Title')}"
             self.main_window.set_track_info(track_text)
@@ -198,7 +202,12 @@ class MainController(QObject):
             self.playback_controller.player_worker.wait()
     
     def _on_playlist_selected_switch_tab(self, playlist_name, playlist_path):
-        """Handle switching to playlist tab when a playlist is selected."""
+        """Handle switching to playlist tab when a playlist is selected.
+        
+        Args:
+            playlist_name (str): Name of the selected playlist
+            playlist_path (str): File path to the selected playlist
+        """
         # Switch to the playlist tab (index 1) to show the selected playlist content
         self.main_window.set_current_tab(1)
     

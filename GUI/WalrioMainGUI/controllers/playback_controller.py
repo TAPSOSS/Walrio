@@ -156,7 +156,11 @@ class PlaybackController(QObject):
         self.app_state.is_seeking = True
     
     def _on_seek_end(self, position):
-        """Handle when user finishes seeking."""
+        """Handle when user finishes seeking.
+        
+        Args:
+            position (float): The new position in seconds where the user seeked to
+        """
         self.app_state.is_seeking = False
         self.app_state.position = position
         self.controls_view.set_time_current(self._format_time(position))
@@ -171,7 +175,11 @@ class PlaybackController(QObject):
         self.app_state.pending_position = 0
     
     def _on_volume_changed(self, volume):
-        """Handle volume changes."""
+        """Handle volume changes.
+        
+        Args:
+            volume (float): The new volume level (0.0 to 1.0)
+        """
         self.app_state.volume = volume
         
         # Set volume if player worker exists
@@ -179,7 +187,11 @@ class PlaybackController(QObject):
             self.player_worker.set_volume(volume / 100.0)
     
     def load_and_play_song(self, index):
-        """Load and play a song from the queue by index."""
+        """Load and play a song from the queue by index.
+        
+        Args:
+            index (int): Index of the song in the queue to load and play
+        """
         if 0 <= index < len(self.app_state.queue_songs):
             song = self.app_state.queue_songs[index]
             self.app_state.current_queue_index = index
@@ -311,7 +323,11 @@ class PlaybackController(QObject):
         self.controls_view.set_play_pause_enabled(True)
     
     def _on_position_updated(self, position):
-        """Handle position updates from player worker."""
+        """Handle position updates from player worker.
+        
+        Args:
+            position (float): Current playback position in seconds
+        """
         if not self.app_state.is_playing or not self.player_worker:
             return
             
@@ -346,7 +362,11 @@ class PlaybackController(QObject):
         self.app_state.is_processing_finish = False
     
     def _on_playback_error(self, error):
-        """Handle playback errors."""
+        """Handle playback errors.
+        
+        Args:
+            error (str): Error message describing what went wrong during playback
+        """
         self.controls_view.show_message("Playback Error", error, "error")
         self.stop_playback()
     
@@ -356,7 +376,14 @@ class PlaybackController(QObject):
         self.app_state.update_queue_manager()
     
     def _get_file_metadata(self, filepath):
-        """Get metadata for an audio file."""
+        """Get metadata for an audio file.
+        
+        Args:
+            filepath (str): Path to the audio file to analyze
+            
+        Returns:
+            dict: Dictionary containing metadata (artist, title, album, duration) or empty dict on error
+        """
         try:
             modules_dir = Path(__file__).parent.parent.parent.parent / "modules"
             
@@ -412,7 +439,14 @@ class PlaybackController(QObject):
         }
     
     def _format_time(self, seconds):
-        """Format time in MM:SS format."""
+        """Format time in MM:SS format.
+        
+        Args:
+            seconds (float): Time in seconds to format
+            
+        Returns:
+            str: Formatted time string in MM:SS format
+        """
         minutes = int(seconds // 60)
         seconds = int(seconds % 60)
         return f"{minutes:02d}:{seconds:02d}"
