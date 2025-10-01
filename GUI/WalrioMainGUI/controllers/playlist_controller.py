@@ -65,6 +65,9 @@ class PlaylistController(QObject):
     
     def _on_playlist_selected(self, playlist_name, playlist_path):
         """Handle playlist selection from sidebar."""
+        print(f"DEBUG: Playlist selection - name: '{playlist_name}', path: '{playlist_path}'")
+        print(f"DEBUG: Available playlists: {list(self.app_state.loaded_playlists.keys())}")
+        
         playlist_obj = self.app_state.get_playlist(playlist_name)
         if playlist_obj:
             songs = [song.to_dict() for song in playlist_obj.songs]
@@ -77,6 +80,33 @@ class PlaylistController(QObject):
             self.playlist_content_view.update_playlist_content(playlist_name, songs)
             
             print(f"Selected playlist '{playlist_name}' ({len(songs)} tracks)")
+        else:
+            print(f"DEBUG: Playlist '{playlist_name}' not found in loaded playlists!")
+            # Try to load it directly from the path
+            try:
+                songs = playlist.load_m3u_playlist(playlist_path)
+                if songs:
+                    # Store in application state
+                    self.app_state.add_playlist(playlist_name, songs)
+                    
+                    # Convert to dict format for display
+                    songs_dict = [song if isinstance(song, dict) else song.to_dict() for song in songs]
+                    
+                    # Update the selected playlist for queue operations
+                    self.app_state.selected_playlist_name = playlist_name
+                    self.app_state.selected_playlist_songs = songs_dict
+                    
+                    # Update playlist content display
+                    self.playlist_content_view.update_playlist_content(playlist_name, songs_dict)
+                    
+                    print(f"Loaded and selected playlist '{playlist_name}' ({len(songs_dict)} tracks)")
+            except Exception as e:
+                print(f"DEBUG: Error loading playlist directly: {e}")
+                self.playlist_content_view.show_message(
+                    "Load Error", 
+                    f"Could not load playlist '{playlist_name}': {str(e)}",
+                    "error"
+                )
     
     def _on_add_playlist(self, playlist_path):
         """Handle adding a new playlist."""
