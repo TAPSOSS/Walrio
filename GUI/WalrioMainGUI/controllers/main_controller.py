@@ -138,6 +138,11 @@ class MainController(QObject):
             self._on_playback_finished
         )
         
+        # Update queue highlighting when position changes via next/previous
+        self.playback_controller.queue_position_changed.connect(
+            self.queue_controller.update_current_position
+        )
+        
         # Update navigation buttons based on queue state
         self.queue_controller.navigation_state_changed.connect(
             self.controls_view.set_navigation_enabled

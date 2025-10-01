@@ -34,6 +34,7 @@ class PlaybackController(QObject):
     # Define signals
     track_changed = Signal(dict)  # song info
     playback_finished = Signal()
+    queue_position_changed = Signal(int)  # current queue index
     
     def __init__(self, app_state, controls_view):
         """
@@ -98,6 +99,9 @@ class PlaybackController(QObject):
                 # Emit track changed signal
                 self.track_changed.emit(prev_song)
                 
+                # Emit queue position changed signal
+                self.queue_position_changed.emit(self.app_state.current_queue_index)
+                
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
                     self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
@@ -120,6 +124,9 @@ class PlaybackController(QObject):
                 
                 # Emit track changed signal
                 self.track_changed.emit(next_song)
+                
+                # Emit queue position changed signal
+                self.queue_position_changed.emit(self.app_state.current_queue_index)
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:

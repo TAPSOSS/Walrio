@@ -263,6 +263,11 @@ class QueueController(QObject):
             self.app_state.current_queue_index if self.app_state.current_file else -1
         )
     
+    def update_current_position(self, queue_index):
+        """Update the queue display highlighting for the current position."""
+        self.app_state.current_queue_index = queue_index
+        self._update_queue_display()
+    
     def handle_playlist_to_queue(self, songs, action):
         """Handle adding or replacing queue with playlist songs."""
         if action == "replace":
