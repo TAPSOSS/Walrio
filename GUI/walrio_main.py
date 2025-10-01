@@ -2072,38 +2072,6 @@ class WalrioMusicPlayer(QMainWindow):
         # Re-enable play button (stop button already disabled above)
         self.btn_play_pause.setEnabled(True)
     
-    def _fast_stop_playback(self):
-        """Fast stop for track switching - doesn't wait for graceful shutdown."""
-        # Set state first
-        self.is_playing = False
-        self.btn_play_pause.setText("▶ Play")
-        
-        # Reset position and UI immediately
-        self.position = 0
-        self.progress_slider.setValue(0)
-        self.time_current.setText("00:00")
-        
-        if self.player_worker:
-            # Disconnect all signals first to prevent further updates
-            try:
-                self.player_worker.position_updated.disconnect()
-                self.player_worker.playback_finished.disconnect()
-                self.player_worker.error.disconnect()
-            except:
-                pass  # Signals might already be disconnected
-            
-            # Fast termination for track switching
-            self.player_worker.stop()
-            # Only wait briefly (100ms) instead of 3 seconds
-            if not self.player_worker.wait(100):
-                self.player_worker.terminate()
-                self.player_worker.wait()
-            
-            self.player_worker = None
-        
-        # Re-enable play button
-        self.btn_play_pause.setEnabled(True)
-    
     def on_volume_change(self, value):
         """
         Handle volume slider changes.
