@@ -2257,6 +2257,8 @@ class WalrioMusicPlayer(QMainWindow):
             next_song = self.queue_manager.current_song()
             if next_song:
                 self.current_file = next_song.get('url') or next_song.get('filepath')
+                # Sync GUI current_queue_index with queue manager's current_index
+                self.current_queue_index = self.queue_manager.current_index
                 self.update_queue_display()
                 
                 # Resume playback if we were playing
@@ -2279,6 +2281,8 @@ class WalrioMusicPlayer(QMainWindow):
             prev_song = self.queue_manager.current_song()
             if prev_song:
                 self.current_file = prev_song.get('url') or prev_song.get('filepath')
+                # Sync GUI current_queue_index with queue manager's current_index
+                self.current_queue_index = self.queue_manager.current_index
                 self.update_queue_display()
                 
                 # Resume playback if we were playing
