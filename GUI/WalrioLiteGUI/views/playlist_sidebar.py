@@ -41,7 +41,11 @@ class PlaylistSidebarView(BaseView):
     playlist_refresh_requested = Signal()
     
     def __init__(self, parent=None):
-        """Initialize the playlist sidebar."""
+        """Initialize the playlist sidebar.
+        
+        Args:
+            parent: Parent widget (optional).
+        """
         super().__init__(parent)
     
     def setup_ui(self):
@@ -128,7 +132,11 @@ class PlaylistSidebarView(BaseView):
         self.btn_refresh_playlists.clicked.connect(self._on_refresh_playlists)
     
     def _on_playlist_clicked(self, item):
-        """Handle playlist item click."""
+        """Handle playlist item click.
+        
+        Args:
+            item: The playlist list widget item that was clicked.
+        """
         playlist_path = item.data(Qt.UserRole)
         display_text = item.text().split(' (')[0]  # Remove track count from display
         
@@ -144,7 +152,11 @@ class PlaylistSidebarView(BaseView):
         self.btn_delete_playlist.setEnabled(len(selected_items) > 0)
     
     def _show_context_menu(self, position):
-        """Show context menu for playlist operations."""
+        """Show context menu for playlist operations.
+        
+        Args:
+            position: The position where the context menu was requested.
+        """
         item = self.playlist_list.itemAt(position)
         if not item:
             return
@@ -167,7 +179,11 @@ class PlaylistSidebarView(BaseView):
         menu.exec(self.playlist_list.mapToGlobal(position))
     
     def _remove_playlist_by_item(self, item):
-        """Remove playlist by item (used by context menu)."""
+        """Remove playlist by item (used by context menu).
+        
+        Args:
+            item: The playlist list widget item to remove.
+        """
         self.playlist_list.setCurrentItem(item)
         self._on_remove_playlist()
     
@@ -205,12 +221,15 @@ class PlaylistSidebarView(BaseView):
     
     def add_playlist_to_list(self, name, filepath, track_count):
         """
-        Add a playlist to the sidebar list.
-        
+        Add a playlist to the sidebar list with display formatting.
+
         Args:
-            name (str): Playlist name
-            filepath (str): Path to the playlist file
-            track_count (int): Number of tracks in playlist
+            name (str): The name of the playlist.
+            filepath (str): The full path to the playlist file.
+            track_count (int): The number of tracks in the playlist.
+        
+        Returns:
+            bool: True if playlist was added successfully, False if already exists.
         """
         from pathlib import Path
         
@@ -263,7 +282,11 @@ class PlaylistSidebarView(BaseView):
         self.btn_delete_playlist.setEnabled(False)
     
     def get_selected_playlist_path(self):
-        """Get the filepath of the currently selected playlist."""
+        """Get the filepath of the currently selected playlist.
+        
+        Returns:
+            str or None: The filepath of the selected playlist, or None if no selection.
+        """
         current_item = self.playlist_list.currentItem()
         if current_item:
             return current_item.data(Qt.UserRole)
