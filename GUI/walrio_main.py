@@ -26,7 +26,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget, QGroupBox
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -36,7 +36,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget, QGroupBox
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -822,6 +822,10 @@ class WalrioMusicPlayer(QMainWindow):
         playlist_header.setFont(header_font)
         playlist_layout.addWidget(playlist_header)
         
+        # Create a container for the playlist list and buttons
+        playlist_container = QGroupBox("Playlists")
+        container_layout = QVBoxLayout(playlist_container)
+        
         # Playlist list widget
         self.playlist_list = QListWidget()
         self.playlist_list.setMaximumWidth(250)
@@ -835,7 +839,7 @@ class WalrioMusicPlayer(QMainWindow):
         self.playlist_list.itemClicked.connect(self.on_playlist_clicked)
         self.playlist_list.itemSelectionChanged.connect(self.on_playlist_selection_changed)
         
-        playlist_layout.addWidget(self.playlist_list)
+        container_layout.addWidget(self.playlist_list)
         
         # Playlist management buttons
         playlist_buttons_layout = QVBoxLayout()
@@ -844,8 +848,8 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_delete_playlist = QPushButton("Remove Playlist")
         self.btn_refresh_playlists = QPushButton("Refresh")
         
-        # Set button widths to match playlist list
-        button_width = 250  # Match the playlist list max width
+        # Set button widths to match playlist list width
+        button_width = 230  # Match the playlist list width nicely
         self.btn_load_playlist.setFixedWidth(button_width)
         self.btn_delete_playlist.setFixedWidth(button_width)
         self.btn_refresh_playlists.setFixedWidth(button_width)
@@ -861,7 +865,8 @@ class WalrioMusicPlayer(QMainWindow):
         playlist_buttons_layout.addWidget(self.btn_delete_playlist)
         playlist_buttons_layout.addWidget(self.btn_refresh_playlists)
         
-        playlist_layout.addLayout(playlist_buttons_layout)
+        container_layout.addLayout(playlist_buttons_layout)
+        playlist_layout.addWidget(playlist_container)
         
         # Add to splitter
         splitter.addWidget(playlist_widget)
