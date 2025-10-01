@@ -129,12 +129,8 @@ class PlaylistController(QObject):
             self.playlist_worker.stop()
             self.playlist_worker.wait()
         
-        # Show loading message
-        self.playlist_sidebar.show_message(
-            "Loading Playlist", 
-            f"Loading '{playlist_name}'...\nThis may take a moment for large playlists.",
-            "info"
-        )
+        # Show progress bar
+        self.playlist_sidebar.show_progress(True)
         
         # Create and start the playlist worker
         self.playlist_worker = PlaylistWorker(playlist_path, playlist_name)
@@ -159,13 +155,8 @@ class PlaylistController(QObject):
         progress_percent = int((current / total) * 100) if total > 0 else 0
         print(f"Loading playlist: {current}/{total} ({progress_percent}%) - {current_file}")
         
-        # Update sidebar with progress (you might want to add a progress bar to the UI)
-        if current % 50 == 0 or current == total:  # Update every 50 files or at the end
-            self.playlist_sidebar.show_message(
-                "Loading Playlist", 
-                f"Processing file {current} of {total} ({progress_percent}%)\n{current_file}",
-                "info"
-            )
+        # Update progress bar in sidebar
+        self.playlist_sidebar.update_progress(current, total, current_file)
     
     def _on_playlist_loaded(self, playlist_name, songs):
         """Handle successful playlist loading.
@@ -203,7 +194,8 @@ class PlaylistController(QObject):
                 "error"
             )
         finally:
-            # Clean up worker
+            # Hide progress bar and clean up worker
+            self.playlist_sidebar.show_progress(False)
             self.playlist_worker = None
     
     def _on_playlist_error(self, error_message):
@@ -218,7 +210,8 @@ class PlaylistController(QObject):
             f"Error loading playlist: {error_message}",
             "error"
         )
-        # Clean up worker
+        # Hide progress bar and clean up worker
+        self.playlist_sidebar.show_progress(False)
         self.playlist_worker = None
     
     def _on_remove_playlist(self, playlist_name):

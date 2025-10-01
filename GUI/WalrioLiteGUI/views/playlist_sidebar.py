@@ -14,7 +14,7 @@ import subprocess
 try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-        QPushButton, QGroupBox, QMenu, QFileDialog
+        QPushButton, QGroupBox, QMenu, QFileDialog, QProgressBar
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont, QAction
@@ -23,7 +23,7 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-        QPushButton, QGroupBox, QMenu, QFileDialog
+        QPushButton, QGroupBox, QMenu, QFileDialog, QProgressBar
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont, QAction
@@ -71,6 +71,24 @@ class PlaylistSidebarView(BaseView):
         self.playlist_list.setContextMenuPolicy(Qt.CustomContextMenu)
         
         container_layout.addWidget(self.playlist_list)
+        
+        # Progress bar and label (initially hidden)
+        progress_layout = QVBoxLayout()
+        
+        self.progress_label = QLabel("")
+        self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.hide()
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.hide()
+        
+        progress_layout.addWidget(self.progress_label)
+        progress_layout.addWidget(self.progress_bar)
+        container_layout.addLayout(progress_layout)
         
         # Playlist management buttons
         playlist_buttons_layout = QVBoxLayout()
@@ -232,3 +250,39 @@ class PlaylistSidebarView(BaseView):
         if current_item:
             return current_item.data(Qt.UserRole)
         return None
+    
+    def show_progress(self, visible=True):
+        """Show or hide the progress bar and label.
+        
+        Args:
+            visible (bool): Whether to show the progress elements
+        """
+        if visible:
+            self.progress_label.show()
+            self.progress_bar.show()
+        else:
+            self.progress_label.hide()
+            self.progress_bar.hide()
+    
+    def update_progress(self, current, total, current_file=None):
+        """Update the progress bar and label.
+        
+        Args:
+            current (int): Current file number
+            total (int): Total number of files
+            current_file (str): Name of current file being processed (optional)
+        """
+        if total > 0:
+            progress_percent = int((current / total) * 100)
+            self.progress_bar.setValue(progress_percent)
+            
+            # Update label with X/Y format
+            progress_text = f"{current}/{total} imported"
+            if current_file:
+                progress_text += f"\n{current_file}"
+            
+            self.progress_label.setText(progress_text)
+        
+        # Show progress elements if not already visible
+        if not self.progress_bar.isVisible():
+            self.show_progress(True)
