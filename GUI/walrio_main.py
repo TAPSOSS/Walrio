@@ -1147,10 +1147,10 @@ class WalrioMusicPlayer(QMainWindow):
         self.timer.start(100)  # Update UI every 100ms for smooth updates
     
     def load_playlist_file(self):
-        """Load M3U playlist file using file dialog."""
+        """Load playlist file using file dialog."""
         playlist_path, _ = QFileDialog.getOpenFileName(
             self, "Load Playlist", "",
-            "Playlist Files (*.m3u *.m3u8)"
+            "Playlist Files (*.m3u *.m3u8 *.pls *.xspf);;M3U Files (*.m3u *.m3u8);;All Files (*)"
         )
         
         if playlist_path:
@@ -1163,27 +1163,31 @@ class WalrioMusicPlayer(QMainWindow):
         Args:
             playlist_path (str): Path to the M3U playlist file to add
         """
-        playlist_name = Path(playlist_path).stem
+        playlist_path_obj = Path(playlist_path)
+        playlist_name = playlist_path_obj.stem
+        playlist_extension = playlist_path_obj.suffix.upper()  # Get extension in uppercase
+        playlist_filename = playlist_path_obj.name  # Full filename with extension
         
         # Check if playlist already exists
         for i in range(self.playlist_list.count()):
             item = self.playlist_list.item(i)
             if item.data(Qt.UserRole) == playlist_path:
                 QMessageBox.information(self, "Playlist Already Loaded", 
-                                      f"Playlist '{playlist_name}' is already in the list.")
+                                      f"Playlist '{playlist_filename}' is already in the list.")
                 return
         
         # Load playlist using playlist module
         try:
             songs = playlist.load_m3u_playlist(playlist_path)
             if songs:
-                # Store songs in loaded_playlists
+                # Store songs in loaded_playlists (use stem for internal reference)
                 self.loaded_playlists[playlist_name] = songs
                 
-                # Add to playlist list widget
-                item = QListWidgetItem(f"{playlist_name} ({len(songs)} tracks)")
+                # Add to playlist list widget with extension
+                display_text = f"{playlist_name}{playlist_extension} ({len(songs)} tracks)"
+                item = QListWidgetItem(display_text)
                 item.setData(Qt.UserRole, playlist_path)
-                item.setToolTip(f"Path: {playlist_path}\nTracks: {len(songs)}")
+                item.setToolTip(f"Path: {playlist_path}\nType: {playlist_extension}\nTracks: {len(songs)}")
                 self.playlist_list.addItem(item)
                 
                 print(f"Loaded playlist '{playlist_name}' with {len(songs)} tracks")
@@ -1302,12 +1306,14 @@ class WalrioMusicPlayer(QMainWindow):
             return
         
         playlist_path = current_item.data(Qt.UserRole)
-        playlist_name = Path(playlist_path).stem
+        playlist_path_obj = Path(playlist_path)
+        playlist_name = playlist_path_obj.stem
+        playlist_filename = playlist_path_obj.name  # Full filename with extension
         
         # Confirm deletion
         reply = QMessageBox.question(
             self, "Delete Playlist", 
-            f"Are you sure you want to remove '{playlist_name}' from the loaded playlists?\n\n"
+            f"Are you sure you want to remove '{playlist_filename}' from the loaded playlists?\n\n"
             f"This will only remove it from the list, not delete the actual file.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
@@ -1337,9 +1343,9 @@ class WalrioMusicPlayer(QMainWindow):
             if self.playlist_list.count() == 0:
                 self.btn_delete_playlist.setEnabled(False)
             
-            print(f"Removed playlist '{playlist_name}' from loaded list")
+            print(f"Removed playlist '{playlist_filename}' from loaded list")
             QMessageBox.information(self, "Playlist Removed", 
-                                  f"'{playlist_name}' has been removed from the loaded playlists.")
+                                  f"'{playlist_filename}' has been removed from the loaded playlists.")
     
     def update_playlist_content_display(self, playlist_name, songs):
         """
