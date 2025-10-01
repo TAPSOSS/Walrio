@@ -27,6 +27,7 @@ except ImportError:
 
 from modules.core import playlist
 from ..models.data_models import Playlist
+from ..models.workers import PlaylistWorker
 
 
 class PlaylistController(QObject):
@@ -48,6 +49,7 @@ class PlaylistController(QObject):
         self.app_state = app_state
         self.playlist_sidebar = playlist_sidebar
         self.playlist_content_view = playlist_content_view
+        self.playlist_worker = None  # Background worker for loading playlists
         
         self._setup_connections()
     
@@ -122,33 +124,102 @@ class PlaylistController(QObject):
         playlist_path_obj = Path(playlist_path)
         playlist_name = playlist_path_obj.stem
         
+        # Stop any existing playlist worker
+        if self.playlist_worker and self.playlist_worker.isRunning():
+            self.playlist_worker.stop()
+            self.playlist_worker.wait()
+        
+        # Show loading message
+        self.playlist_sidebar.show_message(
+            "Loading Playlist", 
+            f"Loading '{playlist_name}'...\nThis may take a moment for large playlists.",
+            "info"
+        )
+        
+        # Create and start the playlist worker
+        self.playlist_worker = PlaylistWorker(playlist_path, playlist_name)
+        
+        # Connect worker signals
+        self.playlist_worker.progress_updated.connect(self._on_playlist_progress)
+        self.playlist_worker.playlist_loaded.connect(self._on_playlist_loaded)
+        self.playlist_worker.error.connect(self._on_playlist_error)
+        
+        # Start loading in background
+        self.playlist_worker.start()
+        print(f"Started background loading for playlist: {playlist_name}")
+    
+    def _on_playlist_progress(self, current, total, current_file):
+        """Handle playlist loading progress updates.
+        
+        Args:
+            current (int): Current file number
+            total (int): Total number of files
+            current_file (str): Name of file currently being processed
+        """
+        progress_percent = int((current / total) * 100) if total > 0 else 0
+        print(f"Loading playlist: {current}/{total} ({progress_percent}%) - {current_file}")
+        
+        # Update sidebar with progress (you might want to add a progress bar to the UI)
+        if current % 50 == 0 or current == total:  # Update every 50 files or at the end
+            self.playlist_sidebar.show_message(
+                "Loading Playlist", 
+                f"Processing file {current} of {total} ({progress_percent}%)\n{current_file}",
+                "info"
+            )
+    
+    def _on_playlist_loaded(self, playlist_name, songs):
+        """Handle successful playlist loading.
+        
+        Args:
+            playlist_name (str): Name of the loaded playlist
+            songs (list): List of song dictionaries
+        """
         try:
-            # Load playlist using playlist module
-            songs = playlist.load_m3u_playlist(playlist_path)
             if songs:
                 # Store in application state
                 self.app_state.add_playlist(playlist_name, songs)
                 
                 # Add to sidebar
                 success = self.playlist_sidebar.add_playlist_to_list(
-                    playlist_name, playlist_path, len(songs)
+                    playlist_name, self.playlist_worker.playlist_path, len(songs)
                 )
                 
                 if success:
-                    print(f"Loaded playlist '{playlist_name}' with {len(songs)} tracks")
-                
+                    print(f"Successfully loaded playlist '{playlist_name}' with {len(songs)} tracks")
+                    self.playlist_sidebar.show_message(
+                        "Playlist Loaded", 
+                        f"Successfully loaded '{playlist_name}' with {len(songs)} tracks."
+                    )
             else:
                 self.playlist_sidebar.show_message(
                     "Load Error", 
-                    f"Could not load playlist from '{playlist_path}'.",
+                    f"No valid tracks found in playlist '{playlist_name}'.",
                     "warning"
                 )
         except Exception as e:
             self.playlist_sidebar.show_message(
                 "Load Error", 
-                f"Error loading playlist: {str(e)}",
+                f"Error storing playlist: {str(e)}",
                 "error"
             )
+        finally:
+            # Clean up worker
+            self.playlist_worker = None
+    
+    def _on_playlist_error(self, error_message):
+        """Handle playlist loading errors.
+        
+        Args:
+            error_message (str): Error message from the worker
+        """
+        print(f"Playlist loading error: {error_message}")
+        self.playlist_sidebar.show_message(
+            "Load Error", 
+            f"Error loading playlist: {error_message}",
+            "error"
+        )
+        # Clean up worker
+        self.playlist_worker = None
     
     def _on_remove_playlist(self, playlist_name):
         """Handle removing a playlist.

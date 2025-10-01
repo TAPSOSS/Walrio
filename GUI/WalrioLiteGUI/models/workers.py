@@ -22,12 +22,185 @@ from pathlib import Path
 # Add the parent directory to the Python path so we can import modules
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
+from modules.core import metadata
+
 try:
     from PySide6.QtCore import QThread, Signal, Qt
 except ImportError:
     print("PySide6 not found. Installing...")
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtCore import QThread, Signal, Qt
+
+
+class PlaylistWorker(QThread):
+    """Worker thread for loading playlists without blocking the main thread."""
+    
+    # Signals
+    progress_updated = Signal(int, int, str)  # current, total, current_file
+    playlist_loaded = Signal(str, list)  # playlist_name, songs
+    error = Signal(str)
+    
+    def __init__(self, playlist_path, playlist_name):
+        """
+        Initialize the playlist worker.
+        
+        Args:
+            playlist_path (str): Path to the playlist file
+            playlist_name (str): Name for the playlist
+        """
+        super().__init__()
+        self.playlist_path = playlist_path
+        self.playlist_name = playlist_name
+        self.should_stop = False
+    
+    def stop(self):
+        """Stop the playlist loading process."""
+        self.should_stop = True
+    
+    def run(self):
+        """Load the playlist in the background."""
+        try:
+            # First, quickly parse the playlist file to get file paths
+            file_paths = self._parse_playlist_structure()
+            if not file_paths:
+                self.error.emit(f"No valid files found in playlist: {self.playlist_path}")
+                return
+            
+            total_files = len(file_paths)
+            songs = []
+            
+            # Process files in batches with metadata extraction
+            for i, (file_path, extinf_info) in enumerate(file_paths):
+                if self.should_stop:
+                    break
+                
+                # Emit progress
+                self.progress_updated.emit(i + 1, total_files, Path(file_path).name)
+                
+                # Extract metadata for this file
+                song_data = self._get_song_metadata(file_path, extinf_info)
+                if song_data:
+                    songs.append(song_data)
+                
+                # Small delay to keep UI responsive
+                self.msleep(1)  # 1ms delay between files
+            
+            if not self.should_stop:
+                self.playlist_loaded.emit(self.playlist_name, songs)
+                
+        except Exception as e:
+            self.error.emit(f"Error loading playlist: {str(e)}")
+    
+    def _parse_playlist_structure(self):
+        """
+        Quickly parse playlist file to extract file paths without metadata.
+        
+        Returns:
+            list: List of (file_path, extinf_info) tuples
+        """
+        file_paths = []
+        
+        try:
+            with open(self.playlist_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            current_extinf = {}
+            for line in lines:
+                line = line.strip()
+                
+                # Skip empty lines and comments (except EXTINF)
+                if not line or (line.startswith('#') and not line.startswith('#EXTINF')):
+                    continue
+                
+                # Parse EXTINF line
+                if line.startswith('#EXTINF:'):
+                    try:
+                        parts = line[8:].split(',', 1)  # Remove #EXTINF: and split on first comma
+                        duration = int(parts[0]) if parts[0].isdigit() else 0
+                        if len(parts) > 1 and ' - ' in parts[1]:
+                            artist, title = parts[1].split(' - ', 1)
+                            current_extinf = {
+                                'artist': artist.strip(),
+                                'title': title.strip(),
+                                'duration': duration
+                            }
+                    except (ValueError, IndexError):
+                        current_extinf = {}
+                else:
+                    # This should be a file path
+                    file_path = line
+                    
+                    # Convert relative path to absolute if needed
+                    if not os.path.isabs(file_path):
+                        playlist_dir = Path(self.playlist_path).parent
+                        file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
+                    
+                    # Add to list with current EXTINF info
+                    file_paths.append((file_path, current_extinf.copy()))
+                    current_extinf = {}  # Reset for next file
+                    
+        except Exception as e:
+            raise Exception(f"Failed to parse playlist structure: {str(e)}")
+        
+        return file_paths
+    
+    def _get_song_metadata(self, file_path, extinf_info):
+        """
+        Get metadata for a single song file.
+        
+        Args:
+            file_path (str): Path to the audio file
+            extinf_info (dict): Information from EXTINF line
+            
+        Returns:
+            dict: Song metadata dictionary or None if failed
+        """
+        try:
+            # Try to extract full metadata from file
+            metadata_info = metadata.extract_metadata_for_playlist(file_path)
+            
+            if metadata_info:
+                # Use extracted metadata but prefer EXTINF info if available
+                song = metadata_info.copy()
+                
+                # Override with EXTINF info if available (might have corrected info)
+                if extinf_info.get('artist'):
+                    song['artist'] = extinf_info['artist']
+                if extinf_info.get('title'):
+                    song['title'] = extinf_info['title']
+                if extinf_info.get('duration'):
+                    song['length'] = extinf_info['duration']
+                    
+                return song
+            else:
+                # Fallback to basic EXTINF info if metadata extraction fails
+                return {
+                    'url': file_path,
+                    'artist': extinf_info.get('artist', 'Unknown Artist'),
+                    'title': extinf_info.get('title', Path(file_path).stem),
+                    'album': 'Unknown Album',
+                    'albumartist': extinf_info.get('artist', 'Unknown Artist'),
+                    'length': extinf_info.get('duration', 0),
+                    'track': 0,
+                    'disc': 0,
+                    'year': 0,
+                    'genre': 'Unknown'
+                }
+                
+        except Exception as e:
+            print(f"Warning: Could not extract metadata from {file_path}: {e}")
+            return {
+                'url': file_path,
+                'title': Path(file_path).stem,
+                'artist': 'Unknown Artist',
+                'album': 'Unknown Album',
+                'albumartist': 'Unknown Artist',
+                'length': 0,
+                'track': 0,
+                'disc': 0,
+                'year': 0,
+                'genre': 'Unknown'
+            }
 
 
 class QueueWorker(QThread):
