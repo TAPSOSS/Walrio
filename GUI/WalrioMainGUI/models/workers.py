@@ -199,7 +199,8 @@ class PlayerWorker(QThread):
         super().__init__()
         self.filepath = filepath
         self.duration = duration
-        self.should_stop = False
+        self.should_stop = False  # Controls position updates only
+        self.thread_should_exit = False  # Controls main thread loop exit
         self.stop_event_listener = False  # Separate flag for event listener thread
         self.start_time = None
         self.paused_duration = 0
@@ -218,7 +219,8 @@ class PlayerWorker(QThread):
             self._start_event_listener_thread()
             
             # Main monitoring loop (position updates only, no event checking)
-            while not self.should_stop and self.process.poll() is None:
+            # Keep loop running as long as process is alive and thread shouldn't exit
+            while not self.thread_should_exit and self.process.poll() is None:
                 
                 if not self.pause_start and not self.should_stop:
                     # Query actual position from the audio daemon every 0.1 seconds for smooth seekbar
@@ -227,9 +229,8 @@ class PlayerWorker(QThread):
                     if actual_position >= 0:  # Emit position updates for all valid positions including 0
                         # Use the actual audio position
                         self.last_known_position = actual_position
-                        if not self.should_stop:
-                            # Emit position update every 0.1 seconds for smooth seekbar
-                            self.position_updated.emit(actual_position)
+                        # Emit position update every 0.1 seconds for smooth seekbar
+                        self.position_updated.emit(actual_position)
                 
                 # Short sleep to avoid busy waiting
                 time.sleep(0.1)
@@ -323,8 +324,11 @@ class PlayerWorker(QThread):
     
     def stop(self):
         """Stop the playback using daemon socket command."""
-        # Set should_stop immediately to break the position update loop
+        # Set should_stop immediately to stop position updates
         self.should_stop = True
+        
+        # Set thread_should_exit to stop the main thread loop
+        self.thread_should_exit = True
         
         # Stop the event listener thread
         self.stop_event_listener = True
@@ -611,7 +615,8 @@ class PlayerWorker(QThread):
         self.paused_duration = 0
         self.pause_start = None
         self.last_known_position = 0
-        print(f"PlayerWorker: Reset should_stop=False for new song")
+        print(f"PlayerWorker: Reset should_stop=False for new song, duration={duration}")
+        print(f"PlayerWorker: Position update loop active: {not self.should_stop and self.isRunning()}")
         
         # Debug: Print the filepath being used
         print(f"PlayerWorker play_new_song called with: {repr(filepath)}")

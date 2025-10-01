@@ -244,6 +244,21 @@ class PlaybackController(QObject):
             self.player_worker.position_updated.connect(self._on_position_updated)
             self.player_worker.start()
         else:
+            # Ensure signals are connected for existing worker
+            try:
+                # Disconnect old connections to avoid duplicates
+                self.player_worker.position_updated.disconnect()
+                self.player_worker.playback_finished.disconnect()
+                self.player_worker.error.disconnect()
+            except:
+                pass  # Signals might not be connected
+            
+            # Reconnect signals
+            self.player_worker.playback_finished.connect(self._on_playback_finished)
+            self.player_worker.error.connect(self._on_playback_error)
+            self.player_worker.position_updated.connect(self._on_position_updated)
+            
+            # Switch to new song
             self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
         
         # Update queue manager
@@ -344,6 +359,10 @@ class PlaybackController(QObject):
         self.app_state.position = position
         self.controls_view.set_position(position)
         self.controls_view.set_time_current(self._format_time(position))
+        
+        # Debug: Print position updates for first few seconds to verify they're working
+        if position < 3.0 and int(position * 10) % 10 == 0:  # Every 0.1s for first 3s
+            print(f"Position update: {position:.1f}s (Duration: {self.app_state.duration}s)")
     
     def _on_playback_finished(self):
         """Handle when playback finishes."""
