@@ -38,10 +38,15 @@ def find_gui_applications(gui_dir: str) -> Dict:
             if not py_file.name.startswith('__'):
                 result['standalone'].append(str(py_file))
         
-        # Check for MVC structure (WalrioMainGUI directory)
-        mvc_dir = gui_path / 'WalrioMainGUI'
-        if mvc_dir.exists() and mvc_dir.is_dir():
-            result['mvc'] = discover_mvc_structure(str(mvc_dir))
+        # Check for GUI application directories with MVC structure
+        result['mvc'] = []
+        for subdir in gui_path.iterdir():
+            if (subdir.is_dir() and 
+                subdir.name.endswith('GUI') and 
+                not subdir.name.startswith('__')):
+                mvc_structure = discover_mvc_structure(str(subdir))
+                if mvc_structure:
+                    result['mvc'].append(mvc_structure)
     
     return result
 
@@ -53,10 +58,22 @@ def discover_mvc_structure(mvc_root_dir: str) -> Dict:
         mvc_root_dir (str): Path to the MVC root directory
         
     Returns:
-        dict: MVC structure with models, views, controllers
+        dict: MVC structure with models, views, controllers, or None if not MVC
     """
     mvc_root = Path(mvc_root_dir)
+    
+    # Check if this directory has MVC structure
+    has_mvc = (
+        (mvc_root / 'models').exists() or
+        (mvc_root / 'views').exists() or
+        (mvc_root / 'controllers').exists()
+    )
+    
+    if not has_mvc:
+        return None
+    
     structure = {
+        'name': mvc_root.name,
         'root_dir': mvc_root_dir,
         'models': [],
         'views': [],
@@ -401,19 +418,31 @@ def generate_mvc_documentation(mvc_structure: Dict) -> str:
         str: RST formatted MVC documentation
     """
     mvc_root = Path(mvc_structure['root_dir'])
+    app_name = mvc_structure['name']
     project_root = mvc_root.parent.parent
     
-    rst = "\nWalrioMainGUI - Structured GUI Architecture\n"
-    rst += "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\n"
+    # Generate appropriate title based on app name
+    if 'Lite' in app_name:
+        title = f"{app_name} - Lightweight GUI Architecture"
+        description = "lightweight, simple music player GUI"
+    elif 'Main' in app_name:
+        title = f"{app_name} - Full-Featured GUI Architecture"
+        description = "full-featured music player GUI"
+    else:
+        title = f"{app_name} - Structured GUI Architecture"
+        description = "structured GUI application"
     
-    rst += "**Location**: ``GUI/WalrioMainGUI/``\n\n"
-    rst += "The WalrioMainGUI application follows a structured component architecture, "
-    rst += "providing a clean separation of concerns for maintainable and scalable code.\n\n"
+    rst = f"\n{title}\n"
+    rst += "~" * len(title) + "\n\n"
+    
+    rst += f"**Location**: ``GUI/{app_name}/``\n\n"
+    rst += f"The {app_name} application follows a structured component architecture, "
+    rst += f"providing a clean separation of concerns for this {description}.\n\n"
     
     # Add structure overview
     rst += "**Component Structure**:\n\n"
     rst += ".. code-block:: text\n\n"
-    rst += "    WalrioMainGUI/\n"
+    rst += f"    {app_name}/\n"
     rst += "    ├── main.py                  # Main application entry point\n"
     rst += "    ├── __main__.py              # Module entry point\n"
     rst += "    ├── models/                  # Data models and business logic\n"
@@ -439,13 +468,16 @@ def generate_mvc_documentation(mvc_structure: Dict) -> str:
     rst += generate_mvc_component_docs("Controllers", mvc_structure['controllers'], "Business logic coordinators")
     
     # Add usage section
+    # Generate usage instructions based on app name
+    launcher_name = "walrio_main.py" if "Main" in app_name else "walrio_lite.py"
+    
     rst += "**Usage**:\n\n"
     rst += ".. code-block:: bash\n\n"
-    rst += "    # Run the MVC application\n"
-    rst += "    python GUI/walrio_main.py\n"
+    rst += f"    # Run the {app_name} application\n"
+    rst += f"    python GUI/{launcher_name}\n"
     rst += "    \n"
     rst += "    # Or as a module\n"
-    rst += "    python -m GUI.WalrioMainGUI\n\n"
+    rst += f"    python -m GUI.{app_name}\n\n"
     
     # Add structured architecture benefits
     rst += "**Structured Architecture Benefits**:\n\n"
@@ -537,17 +569,18 @@ def generate_gui_documentation(gui_dir: str, output_file: str):
             for class_info in gui_info['classes']:
                 print(f"      📋 Class: {class_info['name']} ({len(class_info['methods'])} methods)")
     
-    # Process MVC structure
-    mvc_structure = gui_structure['mvc']
-    if mvc_structure:
-        total_mvc_files = len(mvc_structure['models']) + len(mvc_structure['views']) + len(mvc_structure['controllers'])
-        print(f"  🏗️  Found GUI architecture: {total_mvc_files} components")
-        print(f"    📊 Models: {len(mvc_structure['models'])}")
-        print(f"    🖼️  Views: {len(mvc_structure['views'])}")
-        print(f"    🎮 Controllers: {len(mvc_structure['controllers'])}")
+    # Process MVC structures
+    mvc_structures = gui_structure['mvc']
+    if mvc_structures:
+        for mvc_structure in mvc_structures:
+            total_mvc_files = len(mvc_structure['models']) + len(mvc_structure['views']) + len(mvc_structure['controllers'])
+            print(f"  🏗️  Found {mvc_structure['name']} architecture: {total_mvc_files} components")
+            print(f"    📊 Models: {len(mvc_structure['models'])}")
+            print(f"    🖼️  Views: {len(mvc_structure['views'])}")
+            print(f"    🎮 Controllers: {len(mvc_structure['controllers'])}")
     
     # Generate RST documentation
-    total_apps = len(standalone_apps) + (1 if mvc_structure else 0)
+    total_apps = len(standalone_apps) + len(mvc_structures)
     print(f"\n📝 Generating documentation for {total_apps} GUI applications...")
     
     rst_content = """GUI Applications
@@ -583,15 +616,22 @@ The GUI applications are designed to be:
         description = get_gui_description(gui_app['name'], gui_app)
         rst_content += f"* **{title}**: {description}\n"
     
-    # Add structured GUI application to summary
-    if mvc_structure:
-        rst_content += f"* **WalrioMainGUI (Structured Architecture)**: Full-featured music player with organized component architecture\n"
+    # Add structured GUI applications to summary
+    for mvc_structure in mvc_structures:
+        app_name = mvc_structure['name']
+        if 'Lite' in app_name:
+            description = "Lightweight music player with organized component architecture"
+        elif 'Main' in app_name:
+            description = "Full-featured music player with organized component architecture"
+        else:
+            description = "Structured music player with organized component architecture"
+        rst_content += f"* **{app_name} (Structured Architecture)**: {description}\n"
     
     rst_content += "\nDetailed Documentation\n"
     rst_content += "---------------------\n"
     
-    # Add MVC documentation first (since it's the main application)
-    if mvc_structure:
+    # Add MVC documentation for structured applications (main apps first)
+    for mvc_structure in sorted(mvc_structures, key=lambda x: 'Main' not in x['name']):
         rst_content += generate_mvc_documentation(mvc_structure)
     
     # Add detailed documentation for each standalone GUI app
