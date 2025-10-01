@@ -2280,10 +2280,6 @@ class WalrioMusicPlayer(QMainWindow):
         
         was_playing = self.is_playing
         
-        # Fast stop current playback for track switching
-        if self.is_playing:
-            self._fast_stop_playback()
-        
         # Use queue manager to move to next track
         if self.queue_manager.next_track():
             next_song = self.queue_manager.current_song()
@@ -2294,8 +2290,12 @@ class WalrioMusicPlayer(QMainWindow):
                 # Only update highlighting for faster performance
                 self.update_queue_highlighting()
                 
-                # Resume playback if we were playing
-                if was_playing:
+                # Fast track switching using existing PlayerWorker
+                if was_playing and self.player_worker:
+                    # Use existing PlayerWorker to switch songs directly
+                    self.player_worker.play_new_song(self.current_file, self.duration)
+                elif was_playing:
+                    # Fallback to full restart if no PlayerWorker exists
                     self.start_playback()
     
     def previous_track(self):
@@ -2304,10 +2304,6 @@ class WalrioMusicPlayer(QMainWindow):
             return
         
         was_playing = self.is_playing
-        
-        # Fast stop current playback for track switching
-        if self.is_playing:
-            self._fast_stop_playback()
         
         # Use queue manager to move to previous track
         if self.queue_manager.previous_track():
@@ -2319,8 +2315,12 @@ class WalrioMusicPlayer(QMainWindow):
                 # Only update highlighting for faster performance
                 self.update_queue_highlighting()
                 
-                # Resume playback if we were playing
-                if was_playing:
+                # Fast track switching using existing PlayerWorker
+                if was_playing and self.player_worker:
+                    # Use existing PlayerWorker to switch songs directly
+                    self.player_worker.play_new_song(self.current_file, self.duration)
+                elif was_playing:
+                    # Fallback to full restart if no PlayerWorker exists
                     self.start_playback()
     
     def on_playback_error(self, error):
