@@ -840,12 +840,18 @@ class WalrioMusicPlayer(QMainWindow):
         # Playlist management buttons
         playlist_buttons_layout = QVBoxLayout()
         
-        self.btn_load_playlist = QPushButton("Load Playlist")
-        self.btn_delete_playlist = QPushButton("Delete Selected")
+        self.btn_load_playlist = QPushButton("Add Playlist")
+        self.btn_delete_playlist = QPushButton("Remove Playlist")
         self.btn_refresh_playlists = QPushButton("Refresh")
         
-        self.btn_load_playlist.clicked.connect(self.load_playlist_file)
-        self.btn_delete_playlist.clicked.connect(self.delete_selected_playlist)
+        # Set button widths to match playlist list
+        button_width = 250  # Match the playlist list max width
+        self.btn_load_playlist.setFixedWidth(button_width)
+        self.btn_delete_playlist.setFixedWidth(button_width)
+        self.btn_refresh_playlists.setFixedWidth(button_width)
+        
+        self.btn_load_playlist.clicked.connect(self.add_playlist_file)
+        self.btn_delete_playlist.clicked.connect(self.remove_selected_playlist)
         self.btn_refresh_playlists.clicked.connect(self.refresh_playlist_display)
         
         # Initially disable delete button until a playlist is selected
@@ -964,9 +970,9 @@ class WalrioMusicPlayer(QMainWindow):
         
         # Add/Remove queue buttons
         queue_buttons_layout = QHBoxLayout()
-        self.btn_add_files = QPushButton("Add Files to Queue")
+        self.btn_add_files = QPushButton("Add To Queue")
         self.btn_clear_queue = QPushButton("Clear Queue")
-        self.btn_remove_selected = QPushButton("Remove Selected")
+        self.btn_remove_selected = QPushButton("Remove From Queue")
         
         self.btn_add_files.clicked.connect(self.add_files_to_queue)
         self.btn_clear_queue.clicked.connect(self.clear_queue)
@@ -1026,8 +1032,8 @@ class WalrioMusicPlayer(QMainWindow):
         # Playlist to queue buttons
         playlist_to_queue_layout = QHBoxLayout()
         
-        self.btn_add_to_queue = QPushButton("Add to Queue")
-        self.btn_replace_queue = QPushButton("Replace Queue")
+        self.btn_add_to_queue = QPushButton("Add To Queue")
+        self.btn_replace_queue = QPushButton("Override Queue")
         
         self.btn_add_to_queue.clicked.connect(self.add_selected_playlist_to_queue)
         self.btn_replace_queue.clicked.connect(self.replace_queue_with_selected_playlist)
@@ -1146,10 +1152,10 @@ class WalrioMusicPlayer(QMainWindow):
         self.timer.timeout.connect(self.update_ui)
         self.timer.start(100)  # Update UI every 100ms for smooth updates
     
-    def load_playlist_file(self):
-        """Load playlist file using file dialog."""
+    def add_playlist_file(self):
+        """Add playlist file using file dialog."""
         playlist_path, _ = QFileDialog.getOpenFileName(
-            self, "Load Playlist", "",
+            self, "Add Playlist", "",
             "Playlist Files (*.m3u *.m3u8 *.pls *.xspf);;M3U Files (*.m3u *.m3u8);;All Files (*)"
         )
         
@@ -1240,17 +1246,17 @@ class WalrioMusicPlayer(QMainWindow):
             
         menu = QMenu(self)
         
-        # Load into queue action
-        load_action = QAction("Load into Queue", self)
-        load_action.triggered.connect(lambda: self.on_playlist_clicked(item))
-        menu.addAction(load_action)
+        # Show playlist content action
+        show_action = QAction("Show Playlist", self)
+        show_action.triggered.connect(lambda: self.on_playlist_clicked(item))
+        menu.addAction(show_action)
         
         menu.addSeparator()
         
-        # Delete from list action
-        delete_action = QAction("Delete from List", self)
-        delete_action.triggered.connect(lambda: self.delete_playlist_by_item(item))
-        menu.addAction(delete_action)
+        # Remove from list action
+        remove_action = QAction("Remove from List", self)
+        remove_action.triggered.connect(lambda: self.remove_playlist_by_item(item))
+        menu.addAction(remove_action)
         
         # Show menu
         menu.exec(self.playlist_list.mapToGlobal(position))
@@ -1275,17 +1281,17 @@ class WalrioMusicPlayer(QMainWindow):
         
         print(f"Removed playlist '{playlist_name}' from sidebar")
     
-    def delete_playlist_by_item(self, item):
+    def remove_playlist_by_item(self, item):
         """
-        Delete playlist by item (used by context menu).
+        Remove playlist by item (used by context menu).
         
         Args:
-            item (QListWidgetItem): The playlist item to delete
+            item (QListWidgetItem): The playlist item to remove
         """
         # Select the item first to match the button behavior
         self.playlist_list.setCurrentItem(item)
-        # Then call the delete method
-        self.delete_selected_playlist()
+        # Then call the remove method
+        self.remove_selected_playlist()
     
     def refresh_playlist_display(self):
         """Refresh the playlist display (placeholder for future functionality)."""
@@ -1298,11 +1304,11 @@ class WalrioMusicPlayer(QMainWindow):
         selected_items = self.playlist_list.selectedItems()
         self.btn_delete_playlist.setEnabled(len(selected_items) > 0)
     
-    def delete_selected_playlist(self):
-        """Delete the selected playlist from the loaded list."""
+    def remove_selected_playlist(self):
+        """Remove the selected playlist from the loaded list."""
         current_item = self.playlist_list.currentItem()
         if not current_item:
-            QMessageBox.information(self, "No Selection", "Please select a playlist to delete.")
+            QMessageBox.information(self, "No Selection", "Please select a playlist to remove.")
             return
         
         playlist_path = current_item.data(Qt.UserRole)
@@ -1310,9 +1316,9 @@ class WalrioMusicPlayer(QMainWindow):
         playlist_name = playlist_path_obj.stem
         playlist_filename = playlist_path_obj.name  # Full filename with extension
         
-        # Confirm deletion
+        # Confirm removal
         reply = QMessageBox.question(
-            self, "Delete Playlist", 
+            self, "Remove Playlist", 
             f"Are you sure you want to remove '{playlist_filename}' from the loaded playlists?\n\n"
             f"This will only remove it from the list, not delete the actual file.",
             QMessageBox.Yes | QMessageBox.No,
@@ -1339,7 +1345,7 @@ class WalrioMusicPlayer(QMainWindow):
                 self.btn_add_to_queue.setEnabled(False)
                 self.btn_replace_queue.setEnabled(False)
             
-            # Disable delete button if no playlists remain
+            # Disable remove button if no playlists remain
             if self.playlist_list.count() == 0:
                 self.btn_delete_playlist.setEnabled(False)
             
@@ -1495,7 +1501,7 @@ class WalrioMusicPlayer(QMainWindow):
         """Handle when all files have been processed."""
         # Re-enable the add button
         self.btn_add_files.setEnabled(True)
-        self.btn_add_files.setText("Add Files to Queue")
+        self.btn_add_files.setText("Add To Queue")
         
         # Clean up the worker
         if hasattr(self, 'queue_worker'):
