@@ -58,13 +58,13 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.splitter)
         
         # Right side - Tabbed content area
-        tabs_widget = QWidget()
-        tabs_layout = QVBoxLayout(tabs_widget)
-        tabs_layout.setContentsMargins(0, 0, 0, 0)
+        self.tabs_widget = QWidget()
+        self.tabs_layout = QVBoxLayout(self.tabs_widget)
+        self.tabs_layout.setContentsMargins(0, 0, 0, 0)
         
         # Create tab widget for main content
         self.tab_widget = QTabWidget()
-        tabs_layout.addWidget(self.tab_widget)
+        self.tabs_layout.addWidget(self.tab_widget)
         
         # Track info at the bottom
         self.track_label = QLabel("No file selected")
@@ -73,9 +73,9 @@ class MainWindow(QMainWindow):
         font.setPointSize(12)
         font.setBold(True)
         self.track_label.setFont(font)
-        tabs_layout.addWidget(self.track_label)
+        self.tabs_layout.addWidget(self.track_label)
         
-        self.splitter.addWidget(tabs_widget)
+        self.splitter.addWidget(self.tabs_widget)
         
         # Set splitter proportions (playlist sidebar takes 1/4, main content takes 3/4)
         self.splitter.setSizes([300, 900])
@@ -92,6 +92,10 @@ class MainWindow(QMainWindow):
     def set_current_tab(self, index):
         """Set the current tab by index."""
         self.tab_widget.setCurrentIndex(index)
+    
+    def add_controls(self, controls_widget):
+        """Add the controls widget to the bottom of the layout."""
+        self.tabs_layout.addWidget(controls_widget)
     
     def set_track_info(self, text):
         """Set the track information text."""

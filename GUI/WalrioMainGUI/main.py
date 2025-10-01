@@ -26,9 +26,8 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Walrio")
     
-    # Create and show the main controller
+    # Create the main controller (it will show the window automatically)
     controller = MainController()
-    controller.show()
     
     sys.exit(app.exec())
 

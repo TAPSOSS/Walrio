@@ -50,7 +50,10 @@ class MainController(QObject):
         # Initialize application state
         self.app_state = ApplicationState()
         
-        # Initialize views
+        # Initialize all views
+        self._initialize_views()
+        
+        # Set up view layout
         self._setup_views()
         
         # Initialize sub-controllers
@@ -62,27 +65,31 @@ class MainController(QObject):
         # Setup main window timer
         self._setup_timer()
     
-    def _setup_views(self):
-        """Initialize and setup all view components."""
-        # Main window
+    def _initialize_views(self):
+        """Initialize all view components."""
         self.main_window = MainWindow()
-        
-        # Sidebar
         self.playlist_sidebar = PlaylistSidebarView()
+        self.queue_view = QueueView()
+        self.playlist_content_view = PlaylistContentView()
+        self.controls_view = ControlsView()
+    
+    def _setup_views(self):
+        """Set up and connect all views."""
+        # Add the playlist sidebar to the left
         self.main_window.add_playlist_sidebar(self.playlist_sidebar)
         
-        # Queue view
-        self.queue_view = QueueView()
+        # Add tabs for main content
+        self.main_window.add_tab(self.playlist_content_view, "Playlist")
         self.main_window.add_tab(self.queue_view, "Queue")
         
-        # Playlist content view
-        self.playlist_content_view = PlaylistContentView()
-        self.main_window.add_tab(self.playlist_content_view, "Playlist")
+        # Set default tab
+        self.main_window.set_current_tab(0)  # Start with Playlist tab
         
-        # Controls view - add to the tabs widget layout
-        tabs_widget = self.main_window.centralWidget().layout().itemAt(0).widget().layout().itemAt(1).widget()
-        self.controls_view = ControlsView()
-        tabs_widget.layout().addWidget(self.controls_view)
+        # Add controls to the bottom
+        self.main_window.add_controls(self.controls_view)
+        
+        # Show the main window
+        self.main_window.show()
     
     def _setup_controllers(self):
         """Initialize sub-controllers."""
