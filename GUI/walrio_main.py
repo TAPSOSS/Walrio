@@ -2072,6 +2072,38 @@ class WalrioMusicPlayer(QMainWindow):
         # Re-enable play button (stop button already disabled above)
         self.btn_play_pause.setEnabled(True)
     
+    def _fast_stop_playback(self):
+        """Fast stop for track switching - doesn't wait for graceful shutdown."""
+        # Set state first
+        self.is_playing = False
+        self.btn_play_pause.setText("▶ Play")
+        
+        # Reset position and UI immediately
+        self.position = 0
+        self.progress_slider.setValue(0)
+        self.time_current.setText("00:00")
+        
+        if self.player_worker:
+            # Disconnect all signals first to prevent further updates
+            try:
+                self.player_worker.position_updated.disconnect()
+                self.player_worker.playback_finished.disconnect()
+                self.player_worker.error.disconnect()
+            except:
+                pass  # Signals might already be disconnected
+            
+            # Fast termination for track switching
+            self.player_worker.stop()
+            # Only wait briefly (100ms) instead of 3 seconds
+            if not self.player_worker.wait(100):
+                self.player_worker.terminate()
+                self.player_worker.wait()
+            
+            self.player_worker = None
+        
+        # Re-enable play button
+        self.btn_play_pause.setEnabled(True)
+    
     def on_volume_change(self, value):
         """
         Handle volume slider changes.
@@ -2248,9 +2280,9 @@ class WalrioMusicPlayer(QMainWindow):
         
         was_playing = self.is_playing
         
-        # Stop current playback
+        # Fast stop current playback for track switching
         if self.is_playing:
-            self.stop_playback()
+            self._fast_stop_playback()
         
         # Use queue manager to move to next track
         if self.queue_manager.next_track():
@@ -2259,7 +2291,8 @@ class WalrioMusicPlayer(QMainWindow):
                 self.current_file = next_song.get('url') or next_song.get('filepath')
                 # Sync GUI current_queue_index with queue manager's current_index
                 self.current_queue_index = self.queue_manager.current_index
-                self.update_queue_display()
+                # Only update highlighting for faster performance
+                self.update_queue_highlighting()
                 
                 # Resume playback if we were playing
                 if was_playing:
@@ -2272,9 +2305,9 @@ class WalrioMusicPlayer(QMainWindow):
         
         was_playing = self.is_playing
         
-        # Stop current playback
+        # Fast stop current playback for track switching
         if self.is_playing:
-            self.stop_playback()
+            self._fast_stop_playback()
         
         # Use queue manager to move to previous track
         if self.queue_manager.previous_track():
@@ -2283,7 +2316,8 @@ class WalrioMusicPlayer(QMainWindow):
                 self.current_file = prev_song.get('url') or prev_song.get('filepath')
                 # Sync GUI current_queue_index with queue manager's current_index
                 self.current_queue_index = self.queue_manager.current_index
-                self.update_queue_display()
+                # Only update highlighting for faster performance
+                self.update_queue_highlighting()
                 
                 # Resume playback if we were playing
                 if was_playing:
