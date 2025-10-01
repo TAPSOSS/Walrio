@@ -26,7 +26,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -36,7 +36,7 @@ except ImportError:
     from PySide6.QtWidgets import (
         QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
         QPushButton, QSlider, QLabel, QFileDialog, QMessageBox, QListWidget, QListWidgetItem,
-        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter
+        QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QSplitter, QTabWidget
     )
     from PySide6.QtCore import QTimer, QThread, Signal, Qt
     from PySide6.QtGui import QFont, QColor, QAction
@@ -771,6 +771,8 @@ class WalrioMusicPlayer(QMainWindow):
         self.queue_songs = []  # List of songs in the queue
         self.current_queue_index = 0  # Current song index in queue
         self.loaded_playlists = {}  # Dictionary to store loaded playlists {name: [songs]}
+        self.selected_playlist_name = None  # Currently selected playlist name
+        self.selected_playlist_songs = []  # Currently selected playlist songs
         
         self.setup_ui()
         self.setup_timer()
@@ -854,7 +856,7 @@ class WalrioMusicPlayer(QMainWindow):
     def setup_ui(self):
         """Setup the user interface."""
         self.setWindowTitle("Walrio")
-        self.setGeometry(300, 300, 1000, 500)  # Made wider for playlist sidebar
+        self.setGeometry(300, 300, 1200, 600)  # Made wider and taller for sidebar + tabs
         
         # Central widget with horizontal splitter
         central_widget = QWidget()
@@ -869,26 +871,34 @@ class WalrioMusicPlayer(QMainWindow):
         # Left side - Playlist sidebar
         self.setup_playlist_sidebar(splitter)
         
-        # Right side - Main content (existing UI)
-        main_content_widget = QWidget()
-        layout = QVBoxLayout(main_content_widget)
-        splitter.addWidget(main_content_widget)
+        # Right side - Tabbed content area
+        tabs_widget = QWidget()
+        tabs_layout = QVBoxLayout(tabs_widget)
+        tabs_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Create tab widget for main content
+        self.tab_widget = QTabWidget()
+        tabs_layout.addWidget(self.tab_widget)
+        
+        # Setup tabs
+        self.setup_queue_tab()
+        self.setup_playlist_content_tab()
+        
+        # Add shared controls at the bottom of the tabbed area
+        self.setup_shared_controls(tabs_layout)
+        
+        splitter.addWidget(tabs_widget)
         
         # Set splitter proportions (playlist sidebar takes 1/4, main content takes 3/4)
-        splitter.setSizes([250, 750])
-        
-        # Queue List Widget
-        queue_label = QLabel("Queue")
-        queue_label.setAlignment(Qt.AlignCenter)
-        queue_font = QFont()
-        queue_font.setPointSize(10)
-        queue_font.setBold(True)
-        queue_label.setFont(queue_font)
-        layout.addWidget(queue_label)
+        splitter.setSizes([300, 900])
+    
+    def setup_queue_tab(self):
+        """Setup the Queue tab with queue management components."""
+        queue_widget = QWidget()
+        layout = QVBoxLayout(queue_widget)
         
         # Create table widget for queue display with metadata columns
         self.queue_table = QTableWidget()
-        self.queue_table.setMaximumHeight(200)  # Slightly taller for table view
         self.queue_table.setAlternatingRowColors(True)
         
         # Set up columns: Title, Album, Album Artist, Artist, Year
@@ -960,6 +970,79 @@ class WalrioMusicPlayer(QMainWindow):
         queue_buttons_layout.addWidget(self.btn_clear_queue)
         layout.addLayout(queue_buttons_layout)
         
+        # Add to tab widget
+        self.tab_widget.addTab(queue_widget, "Queue")
+    
+    def setup_playlist_content_tab(self):
+        """Setup the Playlist content tab for viewing selected playlist contents."""
+        playlist_content_widget = QWidget()
+        layout = QVBoxLayout(playlist_content_widget)
+        
+        # Current playlist info
+        self.current_playlist_label = QLabel("No playlist selected")
+        self.current_playlist_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setPointSize(11)
+        font.setBold(True)
+        self.current_playlist_label.setFont(font)
+        layout.addWidget(self.current_playlist_label)
+        
+        # Playlist content table
+        self.playlist_content_table = QTableWidget()
+        self.playlist_content_table.setAlternatingRowColors(True)
+        
+        # Set up columns: same as queue for consistency
+        self.playlist_content_table.setColumnCount(5)
+        self.playlist_content_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year'])
+        
+        # Configure column behavior
+        header = self.playlist_content_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Stretch)  # Title column stretches
+        header.setSectionResizeMode(1, QHeaderView.Interactive)  # Album - manual resize
+        header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
+        header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
+        header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
+        
+        # Set reasonable default column widths
+        self.playlist_content_table.setColumnWidth(1, 120)  # Album
+        self.playlist_content_table.setColumnWidth(2, 120)  # Album Artist
+        self.playlist_content_table.setColumnWidth(3, 100)  # Artist
+        self.playlist_content_table.setColumnWidth(4, 50)   # Year
+        
+        # Performance optimizations
+        self.playlist_content_table.setShowGrid(False)
+        self.playlist_content_table.setWordWrap(False)
+        self.playlist_content_table.setSelectionBehavior(QTableWidget.SelectRows)
+        
+        layout.addWidget(self.playlist_content_table)
+        
+        # Playlist to queue buttons
+        playlist_to_queue_layout = QHBoxLayout()
+        
+        self.btn_add_to_queue = QPushButton("Add to Queue")
+        self.btn_replace_queue = QPushButton("Replace Queue")
+        
+        self.btn_add_to_queue.clicked.connect(self.add_selected_playlist_to_queue)
+        self.btn_replace_queue.clicked.connect(self.replace_queue_with_selected_playlist)
+        
+        # Initially disable these buttons until a playlist is selected
+        self.btn_add_to_queue.setEnabled(False)
+        self.btn_replace_queue.setEnabled(False)
+        
+        playlist_to_queue_layout.addWidget(self.btn_add_to_queue)
+        playlist_to_queue_layout.addWidget(self.btn_replace_queue)
+        
+        layout.addLayout(playlist_to_queue_layout)
+        
+        # Add to tab widget
+        self.tab_widget.addTab(playlist_content_widget, "Playlist")
+    
+    def setup_shared_controls(self, main_layout):
+        """Setup shared controls that appear below the tabs.
+        
+        Args:
+            main_layout (QVBoxLayout): The main layout to add controls to
+        """
         # Track info
         self.track_label = QLabel("No file selected")
         self.track_label.setAlignment(Qt.AlignCenter)
@@ -967,7 +1050,7 @@ class WalrioMusicPlayer(QMainWindow):
         font.setPointSize(12)
         font.setBold(True)
         self.track_label.setFont(font)
-        layout.addWidget(self.track_label)
+        main_layout.addWidget(self.track_label)
         
         # Time and progress
         time_layout = QHBoxLayout()
@@ -988,7 +1071,7 @@ class WalrioMusicPlayer(QMainWindow):
         time_layout.addWidget(self.time_current)
         time_layout.addWidget(self.progress_slider)
         time_layout.addWidget(self.time_total)
-        layout.addLayout(time_layout)
+        main_layout.addLayout(time_layout)
         
         # Control buttons
         controls_layout = QHBoxLayout()
@@ -1042,7 +1125,7 @@ class WalrioMusicPlayer(QMainWindow):
         controls_layout.addWidget(self.btn_next)
         controls_layout.addWidget(self.btn_loop)
         controls_layout.addStretch()
-        layout.addLayout(controls_layout)
+        main_layout.addLayout(controls_layout)
         
         # Initially disable play/stop buttons
         self.btn_play_pause.setEnabled(False)
@@ -1106,7 +1189,7 @@ class WalrioMusicPlayer(QMainWindow):
     
     def on_playlist_clicked(self, item):
         """
-        Handle playlist item click - load playlist songs into queue.
+        Handle playlist item click - show playlist content in the Playlist tab.
         
         Args:
             item (QListWidgetItem): The clicked playlist item
@@ -1117,25 +1200,21 @@ class WalrioMusicPlayer(QMainWindow):
         if playlist_name in self.loaded_playlists:
             songs = self.loaded_playlists[playlist_name]
             
-            # Clear current queue
-            self.clear_queue()
+            # Update the selected playlist for queue operations
+            self.selected_playlist_name = playlist_name
+            self.selected_playlist_songs = songs
             
-            # Add playlist songs to queue
-            self.queue_songs = songs.copy()
-            self.current_queue_index = 0
+            # Update playlist content table
+            self.update_playlist_content_display(playlist_name, songs)
             
-            # Update queue display
-            self.update_queue_display()
+            # Enable the playlist-to-queue buttons
+            self.btn_add_to_queue.setEnabled(True)
+            self.btn_replace_queue.setEnabled(True)
             
-            # Update queue manager
-            self._update_queue_manager()
+            # Switch to playlist tab to show content
+            self.tab_widget.setCurrentIndex(1)  # Playlist tab is index 1
             
-            # Enable navigation buttons
-            if self.queue_songs:
-                self.btn_previous.setEnabled(True)
-                self.btn_next.setEnabled(True)
-            
-            print(f"Loaded playlist '{playlist_name}' into queue ({len(songs)} tracks)")
+            print(f"Selected playlist '{playlist_name}' ({len(songs)} tracks)")
             
     def show_playlist_context_menu(self, position):
         """
@@ -1190,6 +1269,99 @@ class WalrioMusicPlayer(QMainWindow):
         # For now, this just clears and reloads if needed
         # Could be extended to scan a default playlists directory
         print("Playlist display refreshed")
+    
+    def update_playlist_content_display(self, playlist_name, songs):
+        """
+        Update the playlist content table with songs from the selected playlist.
+        
+        Args:
+            playlist_name (str): Name of the playlist being displayed
+            songs (list): List of song dictionaries to display
+        """
+        # Update the playlist label
+        self.current_playlist_label.setText(f"Playlist: {playlist_name} ({len(songs)} tracks)")
+        
+        # Clear and populate the table
+        self.playlist_content_table.setRowCount(len(songs))
+        
+        for row, song in enumerate(songs):
+            # Title
+            title_item = QTableWidgetItem(song.get('title', 'Unknown Title'))
+            self.playlist_content_table.setItem(row, 0, title_item)
+            
+            # Album
+            album_item = QTableWidgetItem(song.get('album', 'Unknown Album'))
+            self.playlist_content_table.setItem(row, 1, album_item)
+            
+            # Album Artist
+            albumartist_item = QTableWidgetItem(song.get('albumartist', 'Unknown Album Artist'))
+            self.playlist_content_table.setItem(row, 2, albumartist_item)
+            
+            # Artist
+            artist_item = QTableWidgetItem(song.get('artist', 'Unknown Artist'))
+            self.playlist_content_table.setItem(row, 3, artist_item)
+            
+            # Year
+            year_item = QTableWidgetItem(str(song.get('year', '')))
+            self.playlist_content_table.setItem(row, 4, year_item)
+    
+    def add_selected_playlist_to_queue(self):
+        """Add the selected playlist songs to the current queue."""
+        if not self.selected_playlist_songs:
+            QMessageBox.information(self, "No Playlist Selected", 
+                                  "Please select a playlist first.")
+            return
+        
+        # Add playlist songs to existing queue
+        self.queue_songs.extend(self.selected_playlist_songs)
+        
+        # Update queue display
+        self.update_queue_display()
+        
+        # Update queue manager
+        self._update_queue_manager()
+        
+        # Enable navigation buttons
+        if self.queue_songs:
+            self.btn_previous.setEnabled(True)
+            self.btn_next.setEnabled(True)
+        
+        # Switch to queue tab to show results
+        self.tab_widget.setCurrentIndex(0)  # Queue tab is index 0
+        
+        print(f"Added {len(self.selected_playlist_songs)} tracks from '{self.selected_playlist_name}' to queue")
+        QMessageBox.information(self, "Added to Queue", 
+                              f"Added {len(self.selected_playlist_songs)} tracks to queue.")
+    
+    def replace_queue_with_selected_playlist(self):
+        """Replace the current queue with the selected playlist songs."""
+        if not self.selected_playlist_songs:
+            QMessageBox.information(self, "No Playlist Selected", 
+                                  "Please select a playlist first.")
+            return
+        
+        # Clear current queue and replace with playlist
+        self.clear_queue()
+        self.queue_songs = self.selected_playlist_songs.copy()
+        self.current_queue_index = 0
+        
+        # Update queue display
+        self.update_queue_display()
+        
+        # Update queue manager
+        self._update_queue_manager()
+        
+        # Enable navigation buttons
+        if self.queue_songs:
+            self.btn_previous.setEnabled(True)
+            self.btn_next.setEnabled(True)
+        
+        # Switch to queue tab to show results
+        self.tab_widget.setCurrentIndex(0)  # Queue tab is index 0
+        
+        print(f"Replaced queue with {len(self.selected_playlist_songs)} tracks from '{self.selected_playlist_name}'")
+        QMessageBox.information(self, "Queue Replaced", 
+                              f"Queue replaced with {len(self.selected_playlist_songs)} tracks from '{self.selected_playlist_name}'.")
     
     def add_files_to_queue(self):
         """Add files to the queue using background thread."""
