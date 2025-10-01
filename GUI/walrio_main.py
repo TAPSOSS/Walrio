@@ -978,14 +978,17 @@ class WalrioMusicPlayer(QMainWindow):
         self.btn_add_files = QPushButton("Add To Queue")
         self.btn_clear_queue = QPushButton("Clear Queue")
         self.btn_remove_selected = QPushButton("Remove From Queue")
+        self.btn_save_queue = QPushButton("Save as Playlist")
         
         self.btn_add_files.clicked.connect(self.add_files_to_queue)
         self.btn_clear_queue.clicked.connect(self.clear_queue)
         self.btn_remove_selected.clicked.connect(self.remove_selected_from_queue)
+        self.btn_save_queue.clicked.connect(self.save_queue_as_playlist)
         
         queue_buttons_layout.addWidget(self.btn_add_files)
         queue_buttons_layout.addWidget(self.btn_remove_selected)
         queue_buttons_layout.addWidget(self.btn_clear_queue)
+        queue_buttons_layout.addWidget(self.btn_save_queue)
         layout.addLayout(queue_buttons_layout)
         
         # Add to tab widget
@@ -1546,6 +1549,56 @@ class WalrioMusicPlayer(QMainWindow):
             self.btn_previous.setEnabled(False)
             self.btn_next.setEnabled(False)
             self.stop_playback()
+    
+    def save_queue_as_playlist(self):
+        """Save the current queue as an M3U playlist file."""
+        if not self.queue_songs:
+            QMessageBox.information(self, "Empty Queue", "The queue is empty. Add some songs first.")
+            return
+        
+        # Get save file path from user
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Queue as Playlist",
+            "queue_playlist.m3u",
+            "M3U Playlist Files (*.m3u);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                # Import the create_m3u_playlist function
+                from modules.core.playlist import create_m3u_playlist
+                
+                # Generate playlist name from filename
+                playlist_name = Path(file_path).stem
+                
+                # Save the playlist
+                success = create_m3u_playlist(
+                    self.queue_songs, 
+                    file_path, 
+                    use_absolute_paths=True, 
+                    playlist_name=playlist_name
+                )
+                
+                if success:
+                    QMessageBox.information(
+                        self, 
+                        "Playlist Saved", 
+                        f"Queue saved as playlist:\n{file_path}\n\n{len(self.queue_songs)} songs saved."
+                    )
+                else:
+                    QMessageBox.critical(
+                        self, 
+                        "Save Failed", 
+                        f"Failed to save playlist to:\n{file_path}"
+                    )
+                    
+            except Exception as e:
+                QMessageBox.critical(
+                    self, 
+                    "Save Error", 
+                    f"Error saving playlist:\n{str(e)}"
+                )
     
     def remove_selected_from_queue(self):
         """Remove selected song from the queue."""
