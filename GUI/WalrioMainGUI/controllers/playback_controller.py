@@ -271,6 +271,12 @@ class PlaybackController(QObject):
         # Set daemon loop mode to 'none' for queue-controlled progression
         if self.player_worker:
             QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none"))
+            
+            # Restore volume from app state (important after stop/play cycle)
+            QTimer.singleShot(300, lambda: self.player_worker.set_volume(self.app_state.volume / 100.0))
+            
+        # Ensure UI volume slider matches app state volume
+        self.controls_view.set_volume(self.app_state.volume)
         
         self.app_state.is_playing = True
         self.controls_view.set_play_pause_text("⏸ Pause")

@@ -52,23 +52,38 @@ def has_cli_interface(file_path: str) -> bool:
         file_path (str): Path to the Python file
         
     Returns:
-        bool: True if file appears to have CLI interface
+        bool: True if file contains CLI interface patterns
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
+        
+        # Exclude files that are clearly not CLI tools
+        filename = Path(file_path).name
+        excluded_files = {
+            '__init__.py'       # Package initialization files only
+        }
+        
+        if filename in excluded_files:
+            return False
             
-        # Look for argparse usage indicators
-        cli_indicators = [
-            'argparse.ArgumentParser',
-            'parse_arguments',
-            'if __name__ == "__main__"',
-            'def main(',
-            'sys.argv'
+        # Look for common CLI patterns
+        cli_patterns = [
+            r'import\s+argparse',
+            r'from\s+argparse\s+import',
+            r'ArgumentParser\s*\(',
+            r'add_argument\s*\(',
+            r'parse_args\s*\(',
         ]
         
-        return any(indicator in content for indicator in cli_indicators)
-    except Exception:
+        # Must have argparse AND __main__ section to be considered a CLI tool
+        has_argparse = any(re.search(pattern, content) for pattern in cli_patterns)
+        has_main = re.search(r'if\s+__name__\s*==\s*[\'"]__main__[\'"]', content)
+        
+        return has_argparse and has_main
+        
+    except Exception as e:
+        print(f"Error checking {file_path}: {e}")
         return False
 
 def get_help_output(file_path: str) -> Optional[str]:
@@ -91,7 +106,7 @@ def get_help_output(file_path: str) -> Optional[str]:
             cwd=os.path.dirname(file_path)
         )
         
-        if result.returncode == 0:
+        if result.returncode == 0 and result.stdout.strip():
             return result.stdout
         
         # If that fails due to import errors, try running as a module
@@ -108,8 +123,12 @@ def get_help_output(file_path: str) -> Optional[str]:
                 cwd=os.path.abspath('..')
             )
             
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 return result.stdout
+        
+        # Debug information for troubleshooting
+        if result.stderr:
+            print(f"    📋 stderr: {result.stderr.strip()[:100]}...")
         
         return None
     except Exception:

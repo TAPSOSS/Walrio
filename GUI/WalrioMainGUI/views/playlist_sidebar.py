@@ -14,7 +14,7 @@ import subprocess
 try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-        QPushButton, QGroupBox, QMenu, QFileDialog
+        QPushButton, QGroupBox, QMenu, QFileDialog, QProgressBar
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont, QAction
@@ -23,7 +23,7 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-        QPushButton, QGroupBox, QMenu, QFileDialog
+        QPushButton, QGroupBox, QMenu, QFileDialog, QProgressBar
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QFont, QAction
@@ -41,7 +41,11 @@ class PlaylistSidebarView(BaseView):
     playlist_refresh_requested = Signal()
     
     def __init__(self, parent=None):
-        """Initialize the playlist sidebar."""
+        """Initialize the playlist sidebar.
+        
+        Args:
+            parent: Parent widget (optional).
+        """
         super().__init__(parent)
     
     def setup_ui(self):
@@ -71,6 +75,28 @@ class PlaylistSidebarView(BaseView):
         self.playlist_list.setContextMenuPolicy(Qt.CustomContextMenu)
         
         container_layout.addWidget(self.playlist_list)
+        
+        # Progress bar and label (initially hidden)
+        progress_layout = QVBoxLayout()
+        
+        self.progress_label = QLabel("")
+        self.progress_label.setAlignment(Qt.AlignCenter)
+        self.progress_label.setWordWrap(True)  # Allow text to wrap to prevent expansion
+        self.progress_label.setMaximumWidth(230)  # Match button width
+        self.progress_label.hide()
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setMaximumWidth(230)  # Match button width
+        self.progress_bar.setMinimumWidth(200)  # Match playlist list minimum
+        self.progress_bar.hide()
+        
+        progress_layout.addWidget(self.progress_label)
+        progress_layout.addWidget(self.progress_bar)
+        container_layout.addLayout(progress_layout)
         
         # Playlist management buttons
         playlist_buttons_layout = QVBoxLayout()
@@ -106,9 +132,18 @@ class PlaylistSidebarView(BaseView):
         self.btn_refresh_playlists.clicked.connect(self._on_refresh_playlists)
     
     def _on_playlist_clicked(self, item):
-        """Handle playlist item click."""
+        """Handle playlist item click.
+        
+        Args:
+            item: The playlist list widget item that was clicked.
+        """
         playlist_path = item.data(Qt.UserRole)
-        playlist_name = item.text().split(' (')[0]  # Remove track count from display
+        display_text = item.text().split(' (')[0]  # Remove track count from display
+        
+        # Extract the base name without extension to match how playlists are stored
+        from pathlib import Path
+        playlist_name = Path(display_text).stem  # Remove extension from display name
+        
         self.playlist_selected.emit(playlist_name, playlist_path)
     
     def _on_selection_changed(self):
@@ -117,7 +152,11 @@ class PlaylistSidebarView(BaseView):
         self.btn_delete_playlist.setEnabled(len(selected_items) > 0)
     
     def _show_context_menu(self, position):
-        """Show context menu for playlist operations."""
+        """Show context menu for playlist operations.
+        
+        Args:
+            position: The position where the context menu was requested.
+        """
         item = self.playlist_list.itemAt(position)
         if not item:
             return
@@ -140,7 +179,11 @@ class PlaylistSidebarView(BaseView):
         menu.exec(self.playlist_list.mapToGlobal(position))
     
     def _remove_playlist_by_item(self, item):
-        """Remove playlist by item (used by context menu)."""
+        """Remove playlist by item (used by context menu).
+        
+        Args:
+            item: The playlist list widget item to remove.
+        """
         self.playlist_list.setCurrentItem(item)
         self._on_remove_playlist()
     
@@ -161,7 +204,11 @@ class PlaylistSidebarView(BaseView):
             self.show_message("No Selection", "Please select a playlist to remove.")
             return
         
-        playlist_name = current_item.text().split(' (')[0]  # Remove track count
+        display_text = current_item.text().split(' (')[0]  # Remove track count
+        
+        # Extract the base name without extension to match how playlists are stored
+        from pathlib import Path
+        playlist_name = Path(display_text).stem  # Remove extension from display name
         
         if self.show_question("Remove Playlist", 
                             f"Are you sure you want to remove '{playlist_name}' from the loaded playlists?\n\n"
@@ -174,12 +221,15 @@ class PlaylistSidebarView(BaseView):
     
     def add_playlist_to_list(self, name, filepath, track_count):
         """
-        Add a playlist to the sidebar list.
-        
+        Add a playlist to the sidebar list with display formatting.
+
         Args:
-            name (str): Playlist name
-            filepath (str): Path to the playlist file
-            track_count (int): Number of tracks in playlist
+            name (str): The name of the playlist.
+            filepath (str): The full path to the playlist file.
+            track_count (int): The number of tracks in the playlist.
+        
+        Returns:
+            bool: True if playlist was added successfully, False if already exists.
         """
         from pathlib import Path
         
@@ -212,8 +262,13 @@ class PlaylistSidebarView(BaseView):
         """
         for i in range(self.playlist_list.count()):
             item = self.playlist_list.item(i)
-            item_name = item.text().split(' (')[0]  # Remove track count
-            if item_name.startswith(name):
+            display_text = item.text().split(' (')[0]  # Remove track count
+            
+            # Extract the base name without extension to match how playlists are stored
+            from pathlib import Path
+            item_name = Path(display_text).stem  # Remove extension from display name
+            
+            if item_name == name:  # Use exact match instead of startswith
                 self.playlist_list.takeItem(i)
                 break
         
@@ -227,8 +282,48 @@ class PlaylistSidebarView(BaseView):
         self.btn_delete_playlist.setEnabled(False)
     
     def get_selected_playlist_path(self):
-        """Get the filepath of the currently selected playlist."""
+        """Get the filepath of the currently selected playlist.
+        
+        Returns:
+            str or None: The filepath of the selected playlist, or None if no selection.
+        """
         current_item = self.playlist_list.currentItem()
         if current_item:
             return current_item.data(Qt.UserRole)
         return None
+    
+    def show_progress(self, visible=True):
+        """Show or hide the progress bar and label.
+        
+        Args:
+            visible (bool): Whether to show the progress elements
+        """
+        if visible:
+            self.progress_label.show()
+            self.progress_bar.show()
+        else:
+            self.progress_label.hide()
+            self.progress_bar.hide()
+    
+    def update_progress(self, current, total, current_file=None):
+        """Update the progress bar and label.
+        
+        Args:
+            current (int): Current file number
+            total (int): Total number of files
+            current_file (str): Name of current file being processed (optional)
+        """
+        if total > 0:
+            progress_percent = int((current / total) * 100)
+            self.progress_bar.setValue(progress_percent)
+            
+            # Update label with X/Y format
+            progress_text = f"{current}/{total} imported"
+            if current_file:
+                progress_text += f"\n{current_file}"
+            
+            self.progress_label.setText(progress_text)
+        
+        # Show progress elements if not already visible
+        if not self.progress_bar.isVisible():
+            self.show_progress(True)
