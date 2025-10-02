@@ -416,10 +416,6 @@ jobs:
     # FINAL RESULTS
     - name: Generate final results
       uses: actions/github-script@v7
-      env:
-        CONTRIBUTING_ERROR: ${{ steps.contributing-check.outputs.error_message }}
-        STYLE_ERROR: ${{ steps.style-check.outputs.error_message }}
-        DOCS_ERROR: ${{ steps.docs-check.outputs.error_message }}
       with:
         script: |
           const { owner, repo } = context.repo;
@@ -431,7 +427,12 @@ jobs:
           const repoUrl = `https://github.com/${owner}/${repo}`;
           const actionUrl = `${repoUrl}/actions/runs/${runId}`;
           
-          // Collect results from all checks (using environment variables for error messages)
+          // Get error messages safely (avoid environment variable issues)
+          const contributingError = '${{ steps.contributing-check.outputs.error_message }}';
+          const styleError = '${{ steps.style-check.outputs.error_message }}';
+          const docsError = '${{ steps.docs-check.outputs.error_message }}';
+          
+          // Collect results from all checks
           const checks = [
             {
               name: 'PR Requirements',
@@ -443,27 +444,24 @@ jobs:
             {
               name: 'CONTRIBUTING.md Check',
               passed: '${{ steps.contributing-check.outputs.passed }}' === 'true',
-              errorMessage: process.env.CONTRIBUTING_ERROR || ''
+              errorMessage: contributingError
             },
             {
               name: 'Style Check',
               passed: ('${{ steps.style-check.outputs.passed }}' === 'true' || '${{ steps.style-check-skipped.outputs.passed }}' === 'true'),
-              errorMessage: process.env.STYLE_ERROR || ''
+              errorMessage: styleError
             },
             {
               name: 'Documentation Build',
               passed: ('${{ steps.docs-check.outputs.passed }}' === 'true' || '${{ steps.docs-check-skipped.outputs.passed }}' === 'true'),
-              errorMessage: process.env.DOCS_ERROR || ''
+              errorMessage: docsError
             }
           ];
           
           // Generate final message
-          let message = `## 🤖 PR Check Bot Results
-
-          Completed comprehensive checks for PR #${prNumber} by @${author}
-
-          ### 📊 Final Results:
-          `;
+          let message = `## 🤖 PR Check Bot Results\n\n`;
+          message += `Completed comprehensive checks for PR #${prNumber} by @${author}\n\n`;
+          message += `### 📊 Final Results:\n`;
           
           let allPassed = true;
           let failedChecks = [];
@@ -488,12 +486,13 @@ jobs:
               if (!check.passed) {
                 message += `#### ${check.name}\n`;
                 
-                // Handle PR Requirements check (has error/warning counts)
+                // Handle PR Requirements check
                 if (check.name === 'PR Requirements') {
                   if (check.errorCount && parseInt(check.errorCount) > 0) {
                     message += `Found ${check.errorCount} error(s)`;
                     if (check.firstError) {
-                      message += `\n\nFirst error: ${check.firstError}`;
+                      const errorText = check.firstError.substring(0, 200);
+                      message += `\n\nFirst error: ${errorText}`;
                       if (check.firstError.length >= 200) {
                         message += '... (truncated)';
                       }
@@ -505,7 +504,7 @@ jobs:
                   }
                 }
                 
-                // Handle other checks (have error messages)
+                // Handle other checks
                 if (check.errorMessage && check.errorMessage.trim()) {
                   message += `${check.errorMessage}\n\n`;
                 }
@@ -523,11 +522,11 @@ jobs:
             message += `⚠️ **${failedChecks.length} check(s) failed, ${passedChecks.length} passed.**\n\n`;
             message += `**Failed:** ${failedChecks.join(', ')}\n`;
             message += `**Passed:** ${passedChecks.join(', ')}\n\n`;
-            message += 'Please address the issues above and run `bot, check` again.\n\n';
+            message += 'Please address the issues above and run "bot, check" again.\n\n';
             message += `🔍 **Need more details?** [View the full action run](${actionUrl}) for complete error messages, logs, and debugging information.\n\n`;
           }
           
-          message += '*To re-run all checks, comment: `bot, check`*';
+          message += '*To re-run all checks, comment: "bot, check"*';
           
           // Update the original comment
           await github.rest.issues.updateComment({
@@ -541,8 +540,6 @@ jobs:
           if (!allPassed) {
             console.log(`❌ ${failedChecks.length} check(s) failed: ${failedChecks.join(', ')}`);
             console.log(`✅ ${passedChecks.length} check(s) passed: ${passedChecks.join(', ')}`);
-            // Note: We don't call core.setFailed() here so the workflow shows as successful
-            // but the comment clearly shows what failed
           } else {
             console.log(`✅ All ${passedChecks.length} checks passed successfully`);
           }
