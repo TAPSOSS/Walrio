@@ -93,7 +93,7 @@ class WalrioBuildScript:
         print("🔍 Checking dependencies...")
         
         required_packages = [
-            "pyinstaller", "PySide6", "mutagen"
+            "PyInstaller", "PySide6", "mutagen"
         ]
         
         missing_packages = []
