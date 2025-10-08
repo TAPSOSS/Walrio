@@ -32,6 +32,7 @@ from ..views.playlist_sidebar import PlaylistSidebarView
 from ..views.queue_view import QueueView
 from ..views.playlist_content_view import PlaylistContentView
 from ..views.controls_view import ControlsView
+from ..views.credits_view import CreditsView
 
 from .playlist_controller import PlaylistController
 from .queue_controller import QueueController
@@ -69,6 +70,7 @@ class MainController(QObject):
         """Initialize all view components."""
         self.main_window = MainWindow()
         self.playlist_sidebar = PlaylistSidebarView()
+        self.credits_view = CreditsView()
         self.queue_view = QueueView()
         self.playlist_content_view = PlaylistContentView()
         self.controls_view = ControlsView()
@@ -78,12 +80,13 @@ class MainController(QObject):
         # Add the playlist sidebar to the left
         self.main_window.add_playlist_sidebar(self.playlist_sidebar)
         
-        # Add tabs for main content (Queue first since it's the default)
+        # Add tabs to the main window
         self.main_window.add_tab(self.queue_view, "Queue")
         self.main_window.add_tab(self.playlist_content_view, "Playlist")
+        self.main_window.add_tab(self.credits_view, "Credits")
         
-        # Set default tab to Queue (now at index 0)
-        self.main_window.set_current_tab(0)  # Start with Queue tab
+        # Set default tab to Queue (index 0)
+        self.main_window.set_current_tab(0)
         
         # Add controls to the bottom
         self.main_window.add_controls(self.controls_view)
@@ -250,8 +253,8 @@ class MainController(QObject):
         Args:
             playlist_path (str): Path to the selected playlist file
         """
-        # Switch to the playlist content tab (index 1)
-        self.main_window.set_current_tab(1)
+        # Switch to the playlist content tab (index 2, since Credits is now first)
+        self.main_window.set_current_tab(2)
     
     def _on_shuffle_state_changed(self, shuffle_enabled):
         """Handle shuffle state changes.
