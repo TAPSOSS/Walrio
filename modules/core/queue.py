@@ -114,12 +114,19 @@ class QueueManager:
         if not self.songs or self.current_index >= len(self.songs):
             return None
         
-        if self.shuffle_mode and self.play_order:
+        effective_shuffle = self.is_shuffle_effective()
+        
+        if effective_shuffle and self.play_order:
             song_index = self.play_order[self.current_index % len(self.play_order)]
+            print(f"DEBUG current_song: Using shuffle - current_index={self.current_index}, play_order[{self.current_index}]={song_index}")
         else:
             song_index = self.current_index % len(self.songs)
+            print(f"DEBUG current_song: Using normal order - current_index={self.current_index}, song_index={song_index}")
         
-        return self.songs[song_index]
+        song = self.songs[song_index]
+        print(f"DEBUG current_song: Returning song: {song.get('title', 'Unknown')} by {song.get('artist', 'Unknown')}")
+        
+        return song
     
     def has_songs(self):
         """
@@ -141,15 +148,22 @@ class QueueManager:
         if not self.songs:
             return False
         
+        # Debug output
+        print(f"DEBUG next_track: repeat_mode={self.repeat_mode.value}, shuffle_mode={self.shuffle_mode}, current_index={self.current_index}")
+        
         if self.repeat_mode == RepeatMode.TRACK:
             # Track repeat: stay on same track (shuffle disabled)
+            print("DEBUG: Using track repeat - staying on same song")
             return True
         elif self.repeat_mode == RepeatMode.QUEUE:
             # Queue repeat: advance and loop at end (shuffle disabled)
+            old_index = self.current_index
             self.current_index = (self.current_index + 1) % len(self.songs)
+            print(f"DEBUG: Using queue repeat - moved from {old_index} to {self.current_index}")
             return True
         elif self.shuffle_mode:
             # Shuffle mode: only active when repeat is OFF
+            old_index = self.current_index
             # Pick a random song from remaining songs
             self.current_index += 1
             if self.current_index >= len(self.songs):
@@ -157,10 +171,13 @@ class QueueManager:
             # Randomize the remaining songs from current position
             remaining_indices = list(range(self.current_index, len(self.songs)))
             self.current_index = random.choice(remaining_indices)
+            print(f"DEBUG: Using shuffle mode - moved from {old_index} to {self.current_index}")
             return True
         else:  # RepeatMode.OFF and shuffle OFF
             # Normal progression: advance and stop at end
+            old_index = self.current_index
             self.current_index += 1
+            print(f"DEBUG: Using normal mode - moved from {old_index} to {self.current_index}")
             return self.current_index < len(self.songs)
     
     def previous_track(self):
@@ -173,20 +190,30 @@ class QueueManager:
         if not self.songs:
             return False
         
+        # Debug output
+        print(f"DEBUG previous_track: repeat_mode={self.repeat_mode.value}, shuffle_mode={self.shuffle_mode}, current_index={self.current_index}")
+        
         if self.repeat_mode == RepeatMode.TRACK:
             # Track repeat: stay on same track (shuffle disabled)
+            print("DEBUG: Using track repeat - staying on same song")
             return True
         elif self.repeat_mode == RepeatMode.QUEUE:
             # Queue repeat: go to previous track normally (shuffle disabled)
+            old_index = self.current_index
             self.current_index = (self.current_index - 1) % len(self.songs)
+            print(f"DEBUG: Using queue repeat - moved from {old_index} to {self.current_index}")
             return True
         elif self.shuffle_mode:
             # Shuffle mode: only active when repeat is OFF, pick random song
+            old_index = self.current_index
             self.current_index = random.randint(0, len(self.songs) - 1)
+            print(f"DEBUG: Using shuffle mode - moved from {old_index} to {self.current_index}")
             return True
         else:
             # Normal mode: go to previous track normally
+            old_index = self.current_index
             self.current_index = (self.current_index - 1) % len(self.songs)
+            print(f"DEBUG: Using normal mode - moved from {old_index} to {self.current_index}")
             return True
     
     def set_current_index(self, index):
