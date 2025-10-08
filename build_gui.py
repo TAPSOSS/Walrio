@@ -65,7 +65,7 @@ class WalrioBuildScript:
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json"
+                    "mutagen", "sqlite3", "pathlib", "json", "PIL", "PIL.Image"
                 ]
             },
             "darwin": {  # macOS
@@ -74,7 +74,7 @@ class WalrioBuildScript:
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json", "Foundation", "AppKit"
+                    "mutagen", "sqlite3", "pathlib", "json", "Foundation", "AppKit", "PIL", "PIL.Image"
                 ]
             },
             "windows": {
@@ -83,7 +83,7 @@ class WalrioBuildScript:
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json", "win32api", "win32gui"
+                    "mutagen", "sqlite3", "pathlib", "json", "win32api", "win32gui", "PIL", "PIL.Image"
                 ]
             }
         }

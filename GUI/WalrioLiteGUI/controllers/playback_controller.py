@@ -249,6 +249,7 @@ class PlaybackController(QObject):
             self.player_worker.playback_finished.connect(self._on_playback_finished)
             self.player_worker.error.connect(self._on_playback_error)
             self.player_worker.position_updated.connect(self._on_position_updated)
+            self.player_worker.song_starting.connect(self._on_song_starting)
             self.player_worker.start()
         else:
             # Ensure signals are connected for existing worker
@@ -257,6 +258,7 @@ class PlaybackController(QObject):
                 self.player_worker.position_updated.disconnect()
                 self.player_worker.playback_finished.disconnect()
                 self.player_worker.error.disconnect()
+                self.player_worker.song_starting.disconnect()
             except:
                 pass  # Signals might not be connected
             
@@ -264,6 +266,7 @@ class PlaybackController(QObject):
             self.player_worker.playback_finished.connect(self._on_playback_finished)
             self.player_worker.error.connect(self._on_playback_error)
             self.player_worker.position_updated.connect(self._on_position_updated)
+            self.player_worker.song_starting.connect(self._on_song_starting)
             
             # Switch to new song
             self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
@@ -401,6 +404,24 @@ class PlaybackController(QObject):
         """
         self.controls_view.show_message("Playback Error", error, "error")
         self.stop_playback()
+    
+    def _on_song_starting(self, song_info):
+        """Handle song starting signal with updated duration.
+        
+        Args:
+            song_info (dict): Dictionary with filepath, duration, title, position
+        """
+        duration = song_info.get('duration', 0.0)
+        if duration > 0:
+            print(f"Song starting with detected duration: {duration} seconds")
+            # Update the app state with the correct duration
+            self.app_state.duration = duration
+            # Update the UI with the new duration
+            self.controls_view.set_time_total(self._format_time(duration))
+            # Set the seekbar maximum
+            self.controls_view.set_seek_max(int(duration))
+        else:
+            print("Song starting but duration unknown")
     
     def update_queue_state(self):
         """Update internal state when queue changes."""

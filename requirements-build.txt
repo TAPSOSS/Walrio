@@ -13,6 +13,7 @@ PySide6>=6.5.0
 
 # Audio processing
 mutagen>=1.46.0
+Pillow>=8.0.0
 # Note: GStreamer (gi.repository) needs system-level installation
 
 # Python GObject bindings (for GStreamer)

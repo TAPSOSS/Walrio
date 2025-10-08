@@ -15,7 +15,6 @@ import subprocess
 import threading
 import time
 import tempfile
-import socket
 import json
 from pathlib import Path
 
@@ -23,7 +22,6 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from modules.core import metadata
-from modules.core.player import AudioPlayer
 
 try:
     from PySide6.QtCore import QThread, Signal, Qt
@@ -355,7 +353,7 @@ class QueueWorker(QThread):
 
 
 class PlayerWorker(QThread):
-    """Worker thread for handling audio playback operations using centralized GStreamer AudioPlayer."""
+    """Worker thread for handling audio playback operations with event-based communication."""
     
     position_updated = Signal(float)
     playback_finished = Signal()
@@ -373,79 +371,56 @@ class PlayerWorker(QThread):
         super().__init__()
         self.filepath = filepath
         self.duration = duration
-        self.should_stop = False
-        self.thread_should_exit = False
-        
-        # Initialize the GStreamer-based audio player
-        self.audio_player = AudioPlayer()
-        
-        # Position tracking
-        self.position_timer = None
+        self.should_stop = False  # Controls position updates only
+        self.thread_should_exit = False  # Controls main thread loop exit
+        self.start_time = None
+        self.paused_duration = 0
+        self.pause_start = None
+        self.last_known_position = 0
+        self.process = None
     
     def run(self):
-        """Run using the centralized AudioPlayer from modules."""
+        """Run the audio player with direct communication."""
         try:
-            # Load and start playback if filepath is provided
-            if self.filepath:
-                success = self.audio_player.load_file(self.filepath)
-                if success:
-                    # Get actual duration from the audio player
-                    detected_duration = self.audio_player.get_duration()
-                    if detected_duration > 0:
-                        self.duration = detected_duration
-                    
-                    # Emit song starting signal with detected duration
-                    self.song_starting.emit({
-                        'filepath': self.filepath,
-                        'duration': self.duration,
-                        'title': os.path.basename(self.filepath),
-                        'position': 0.0
-                    })
-                    
-                    # Start playback using modules/core/player.py
-                    play_success = self.audio_player.play()
-                    if not play_success:
-                        self.error.emit(f"Failed to start playback: {self.filepath}")
-                        return
-                else:
-                    self.error.emit(f"Failed to load file: {self.filepath}")
-                    return
+            # Start the audio process
+            self._start_audio_process()
             
-            # Start position tracking
-            self._start_position_tracking()
-            
-            # Main loop - monitor playback state from modules/core/player.py
-            while not self.should_stop and not self.thread_should_exit:
-                # Check playback state from the core player module
-                player_state = self.audio_player.get_state()
+            # Main monitoring loop (position updates only, no event checking)
+            # Keep loop running as long as process is alive and thread shouldn't exit
+            while not self.thread_should_exit and self.process is not None and self.process.poll() is None:
                 
-                if not player_state['is_playing'] and not player_state['is_paused']:
-                    if hasattr(self, '_playback_was_active') and self._playback_was_active:
-                        print("PlayerWorker: Playback finished (detected by core player)")
-                        self.playback_finished.emit()
-                        break
+                if not self.pause_start and not self.should_stop:
+                    # Query actual position from the audio daemon every 0.1 seconds for smooth seekbar
+                    actual_position = self.get_position()
+                    
+                    if actual_position >= 0:  # Emit position updates for all valid positions including 0
+                        # Use the actual audio position
+                        self.last_known_position = actual_position
+                        # Emit position update every 0.1 seconds for smooth seekbar
+                        self.position_updated.emit(actual_position)
                 
-                # Track if we were playing for completion detection
-                if player_state['is_playing']:
-                    self._playback_was_active = True
-                
-                # Brief sleep to avoid busy waiting
+                # Short sleep to avoid busy waiting
                 time.sleep(0.1)
+            
+            # Process ended - this should be rare now with event-based system
+            if not self.should_stop:
+                print("PlayerWorker: Process ended unexpectedly")
+                self.playback_finished.emit()
                 
         except Exception as e:
             error_msg = f"Error in player worker: {e}"
             print(error_msg)
             self.error.emit(error_msg)
         finally:
-            self._stop_position_tracking()
+            # Cleanup audio player if needed
             if hasattr(self, 'audio_player') and self.audio_player:
                 try:
-                    self.audio_player.stop()
+                    self.audio_player.should_quit = True
                 except Exception:
                     pass
     
     def _send_player_command(self, command):
-        """Send a command to the core audio player module.
+        """Send a command directly to the in-process audio player.
         
         Args:
             command (str): Command to send to the player
@@ -453,64 +428,43 @@ class PlayerWorker(QThread):
         Returns:
             tuple: (success: bool, response: str)
         """
-        if not self.audio_player:
-            return False, "No active audio player"
+        if not (self.process and self.process.poll() is None):
+            return False, "No active player process"
+            
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            return False, "Audio player not initialized"
             
         try:
-            # Parse and execute the command using modules/core/player.py
+            # Parse and execute the command directly
             cmd_parts = command.split(' ', 1)
             cmd = cmd_parts[0].lower()
             args = cmd_parts[1] if len(cmd_parts) > 1 else None
             
-            # Get current player state
-            player_state = self.audio_player.get_state()
-            
             if cmd == 'play':
-                if player_state['is_playing']:
-                    print("Audio: Already playing")
-                    return True, "OK: Already playing"
-                elif player_state['is_paused']:
-                    # Resume paused playback
-                    success = self.audio_player.resume()
-                    return success, "OK: Resumed" if success else "ERROR: Failed to resume"
-                else:
-                    # Start new playback
-                    success = self.audio_player.play()
-                    return success, "OK: Started playback" if success else "ERROR: Failed to start"
+                success = self.audio_player.play()
+                return success, "OK: Play command executed" if success else "ERROR: Play failed"
             
             elif cmd == 'pause':
-                if player_state['is_playing']:
-                    success = self.audio_player.pause()
-                    position = self.audio_player.get_position()
-                    return success, f"OK: Paused at {position:.1f}s" if success else "ERROR: Failed to pause"
-                else:
-                    return True, "OK: Already paused or stopped"
+                success = self.audio_player.pause()
+                return success, "OK: Pause command executed" if success else "ERROR: Pause failed"
             
             elif cmd == 'resume':
-                if player_state['is_paused']:
-                    success = self.audio_player.resume()
-                    position = self.audio_player.get_position()
-                    return success, f"OK: Resumed from {position:.1f}s" if success else "ERROR: Failed to resume"
-                else:
-                    return True, "OK: Not paused"
+                success = self.audio_player.resume()
+                return success, "OK: Resume command executed" if success else "ERROR: Resume failed"
             
             elif cmd == 'stop':
                 success = self.audio_player.stop()
-                return success, "OK: Stopped" if success else "ERROR: Failed to stop"
+                return success, "OK: Stop command executed" if success else "ERROR: Stop failed"
             
             elif cmd == 'load' and args:
                 success = self.audio_player.load_file(args)
-                if success:
-                    # Update our filepath and duration
-                    self.filepath = args
-                    self.duration = self.audio_player.get_duration()
                 return success, f"OK: Loaded {args}" if success else f"ERROR: Failed to load {args}"
             
             elif cmd == 'volume' and args:
                 try:
                     volume = float(args)
-                    success = self.audio_player.set_volume(volume)
-                    return success, f"OK: Volume set to {volume}" if success else "ERROR: Failed to set volume"
+                    self.audio_player.set_volume(volume)
+                    return True, f"OK: Volume set to {volume}"
                 except ValueError:
                     return False, f"ERROR: Invalid volume value: {args}"
             
@@ -518,7 +472,7 @@ class PlayerWorker(QThread):
                 try:
                     position = float(args)
                     success = self.audio_player.seek(position)
-                    return success, f"OK: Seeked to {position}s" if success else "ERROR: Failed to seek"
+                    return success, f"OK: Seeked to {position}" if success else f"ERROR: Seek to {position} failed"
                 except ValueError:
                     return False, f"ERROR: Invalid seek position: {args}"
             
@@ -530,47 +484,87 @@ class PlayerWorker(QThread):
     
     def pause(self):
         """
-        Pause the playback using core AudioPlayer.
+        Pause the playback using direct audio player.
         
         Returns:
             bool: True if pause command was successful, False otherwise.
         """
-        if self.audio_player:
-            return self.audio_player.pause()
-        return False
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            print("Error pausing: Audio player not initialized")
+            return False
+            
+        try:
+            success = self.audio_player.pause()
+            if success:
+                self.pause_start = time.time()
+                print("Pause command successful")
+            else:
+                print("Error pausing: Pause failed")
+            return success
+        except Exception as e:
+            print(f"Error pausing: {e}")
+            return False
     
     def resume(self):
         """
-        Resume the playback using core AudioPlayer.
+        Resume the playback using direct audio player.
         
         Returns:
             bool: True if resume command was successful, False otherwise.
         """
-        if self.audio_player:
-            return self.audio_player.resume()
-        return False
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            print("Error resuming: Audio player not initialized")
+            return False
+            
+        try:
+            success = self.audio_player.resume()
+            if success:
+                if self.pause_start:
+                    # Add the paused duration to our total paused time
+                    self.paused_duration += time.time() - self.pause_start
+                    self.pause_start = None
+                print("Resume command successful")
+            else:
+                print("Error resuming: Resume failed")
+            return success
+        except Exception as e:
+            print(f"Error resuming: {e}")
+            return False
     
     def stop(self):
-        """Stop the playback using core AudioPlayer."""
-        # Set flags to stop the worker thread
+        """Stop the playback using direct audio player."""
+        # Set should_stop immediately to stop position updates
         self.should_stop = True
+        
+        # Set thread_should_exit to stop the main thread loop
         self.thread_should_exit = True
         
-        # Stop the core audio player
+        # Stop audio player thread handling
+        
+        # Stop the audio player directly
         if hasattr(self, 'audio_player') and self.audio_player:
             try:
                 success = self.audio_player.stop()
-                print("Stop command successful" if success else "Stop command failed")
-                return success
+                if success:
+                    print("Stop command successful")
+                else:
+                    print("Error stopping: Stop failed")
             except Exception as e:
                 print(f"Error stopping audio player: {e}")
-                return False
         
-        return True
+        # Terminate the mock process if needed
+        if self.process:
+            try:
+                self.process.terminate()
+            except Exception as e:
+                print(f"Error terminating process: {e}")
+        
+        # Give the run loop a moment to notice should_stop and exit
+        time.sleep(0.05)
     
     def seek(self, position):
         """
-        Seek to a specific position using core AudioPlayer.
+        Seek to a specific position using direct audio player.
         
         Args:
             position (float): Position in seconds to seek to
@@ -578,19 +572,32 @@ class PlayerWorker(QThread):
         Returns:
             bool: True if seek command was successful, False otherwise.
         """
-        if hasattr(self, 'audio_player') and self.audio_player:
-            try:
-                success = self.audio_player.seek(position)
-                print(f"Seek to {position:.2f}s {'successful' if success else 'failed'}")
-                return success
-            except Exception as e:
-                print(f"Error seeking: {e}")
-                return False
-        return False
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            print("Error seeking: Audio player not initialized")
+            return False
+            
+        try:
+            success = self.audio_player.seek(position)
+            
+            if success:
+                print(f"Seek to {position:.2f}s successful")
+                # If seek was successful, update our timing
+                current_time = time.time()
+                self.start_time = current_time - position
+                self.paused_duration = 0
+                self.pause_start = None
+                self.last_known_position = position
+            else:
+                print(f"Error seeking: Seek to {position:.2f}s failed")
+                
+            return success
+        except Exception as e:
+            print(f"Error seeking: {e}")
+            return False
     
     def set_volume(self, volume):
         """
-        Set the playback volume using core AudioPlayer.
+        Set the playback volume using direct audio player.
         
         Args:
             volume (float): Volume level between 0.0 and 1.0
@@ -598,30 +605,33 @@ class PlayerWorker(QThread):
         Returns:
             bool: True if volume command was successful, False otherwise.
         """
-        if hasattr(self, 'audio_player') and self.audio_player:
-            try:
-                success = self.audio_player.set_volume(volume)
-                print(f"Volume set to {volume:.2f} {'successfully' if success else 'failed'}")
-                return success
-            except Exception as e:
-                print(f"Error setting volume: {e}")
-                return False
-        return False
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            print("Error setting volume: Audio player not initialized")
+            return False
+            
+        try:
+            self.audio_player.set_volume(volume)
+            print(f"Volume set to {volume:.2f}")
+            return True
+        except Exception as e:
+            print(f"Error setting volume: {e}")
+            return False
     
     def get_position(self):
         """
-        Get the current playback position from core AudioPlayer.
+        Get the current playback position from the direct audio player.
         
         Returns:
-            float: Current position in seconds, or 0 if not playing
+            float: Current position in seconds, or 0 if query fails
         """
-        if hasattr(self, 'audio_player') and self.audio_player:
-            try:
-                return self.audio_player.get_position()
-            except Exception as e:
-                print(f"Error getting position: {e}")
-                return 0.0
-        return 0.0
+        if not hasattr(self, 'audio_player') or not self.audio_player:
+            return 0.0
+            
+        try:
+            return self.audio_player.get_position()
+        except Exception as e:
+            print(f"Error getting position: {e}")
+            return 0.0
     
     def send_command(self, command):
         """
@@ -636,71 +646,18 @@ class PlayerWorker(QThread):
         success, response = self._send_player_command(command)
         return success
     
-    def _start_position_tracking(self):
-        """Start position tracking timer."""
-        if hasattr(self, 'position_timer') and self.position_timer:
-            return  # Already running
-            
-        from PySide6.QtCore import QTimer
-        self.position_timer = QTimer()
-        self.position_timer.timeout.connect(self._update_position)
-        self.position_timer.start(100)  # Update every 100ms
-    
-    def _stop_position_tracking(self):
-        """Stop position tracking timer."""
-        if hasattr(self, 'position_timer') and self.position_timer:
-            self.position_timer.stop()
-            self.position_timer = None
-    
-    def _update_position(self):
-        """Update position and emit signal."""
-        if not self.should_stop and hasattr(self, 'audio_player') and self.audio_player:
-            try:
-                position = self.get_position()
-                if position >= 0:
-                    self.position_updated.emit(position)
-            except Exception as e:
-                print(f"Error updating position: {e}")
-    
-    def play_new_song(self, filepath, duration=0):
-        """Load and play a new song using core AudioPlayer."""
-        try:
-            # Stop current playback
-            if hasattr(self, 'audio_player') and self.audio_player:
-                self.audio_player.stop()
-            
-            # Update file info
-            self.filepath = filepath
-            self.duration = duration
-            self.should_stop = False
-            
-            # Load new file
-            if self.audio_player.load_file(filepath):
-                # Get actual duration
-                detected_duration = self.audio_player.get_duration()
-                if detected_duration > 0:
-                    self.duration = detected_duration
-                
-                # Emit song starting signal
-                self.song_starting.emit({
-                    'filepath': filepath,
-                    'duration': self.duration,
-                    'title': os.path.basename(filepath),
-                    'position': 0.0
-                })
-                
-                # Start playback
-                return self.audio_player.play()
-            return False
-        except Exception as e:
-            print(f"Error playing new song: {e}")
-            return False
-    
-    # Note: Daemon connection methods removed - now using direct AudioPlayer integration
-    # from modules/core/player.py for better reliability and threading compatibility
-    
-    # PlayerWorker now uses direct integration with modules/core/player.py AudioPlayer
-    # instead of subprocess or daemon approaches for better reliability and threading
+    def _connect_to_daemon_events_with_retry(self):
+        """Connect to daemon events with retry logic for timing issues."""
+        max_retries = 10
+        for attempt in range(max_retries):
+            if self._connect_to_daemon_events():
+                return
+            if attempt < max_retries - 1:
+                print(f"PlayerWorker: Daemon socket not ready, retrying in 0.2s (attempt {attempt + 1})")
+                time.sleep(0.2)
+        print("PlayerWorker: Failed to connect to daemon events after all retries")
+
+    def _connect_to_daemon_events(self):
         """
         Connect to the daemon for event notifications.
         
@@ -908,116 +865,25 @@ class PlayerWorker(QThread):
             else:
                 self._start_audio_process()
     
-    def _get_duration_with_ffprobe(self, filepath):
-        """Get duration of audio file using ffprobe."""
-        try:
-            import subprocess
-            cmd = [
-                'ffprobe',
-                '-v', 'quiet',
-                '-show_entries', 'format=duration',
-                '-of', 'csv=p=0',
-                filepath
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-            if result.returncode == 0 and result.stdout.strip():
-                duration = float(result.stdout.strip())
-                print(f"Detected duration: {duration} seconds for {os.path.basename(filepath)}")
-                return duration
-        except Exception as e:
-            print(f"Error getting duration with ffprobe: {e}")
-        return 0.0
-
     def _start_audio_process(self):
-        """Initialize audio process using mpv for better control, fallback to ffplay."""
+        """Initialize the in-process audio player (standard approach)."""
         try:
-            # First, terminate any existing process
-            if hasattr(self, 'process') and self.process:
-                try:
-                    if hasattr(self.process, 'terminate'):
-                        self.process.terminate()
-                        print("Terminated previous audio process")
-                except Exception as e:
-                    print(f"Error terminating previous process: {e}")
-                    
-            # Try to use mpv first (better control), then ffplay as fallback
-            if hasattr(self, 'filepath') and self.filepath and os.path.exists(self.filepath):
-                import subprocess
-                import tempfile
-                
-                # Get the actual duration using ffprobe
-                detected_duration = self._get_duration_with_ffprobe(self.filepath)
-                if detected_duration > 0:
-                    self.duration = detected_duration
-                    print(f"Updated duration to {self.duration} seconds")
-                
-                # Try mpv first (better for control)
-                try:
-                    # Create a temporary socket for mpv IPC
-                    self.mpv_socket = tempfile.mktemp(suffix='.sock', prefix='walrio_mpv_')
-                    
-                    cmd = [
-                        'mpv',
-                        '--no-video',  # Audio only
-                        '--no-terminal',  # No terminal output
-                        f'--input-ipc-server={self.mpv_socket}',  # Enable IPC control
-                        '--idle=yes',  # Stay open after file ends
-                        self.filepath
-                    ]
-                    
-                    self.process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        stdin=subprocess.PIPE
-                    )
-                    self.audio_backend = 'mpv'
-                    print(f"MPV audio player started for: {os.path.basename(self.filepath)}")
-                    
-                except FileNotFoundError:
-                    print("mpv not found, trying ffplay...")
-                    # Fallback to ffplay
-                    cmd = [
-                        'ffplay',
-                        '-nodisp',  # No display window
-                        '-autoexit',  # Exit when playback finishes
-                        '-loglevel', 'quiet',  # Suppress verbose output
-                        self.filepath
-                    ]
-                    
-                    self.process = subprocess.Popen(
-                        cmd,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        stdin=subprocess.PIPE
-                    )
-                    self.audio_backend = 'ffplay'
-                    print(f"FFplay audio player started for: {os.path.basename(self.filepath)}")
-                
-                self.start_time = time.time()
-                
-                # Emit song_starting signal with duration info
-                self.song_starting.emit({
-                    'filepath': self.filepath,
-                    'duration': self.duration,
-                    'title': os.path.basename(self.filepath),
-                    'position': 0.0
-                })
-                return
-                    
-            # Fallback to mock if ffplay not available or no file
+            # Import and initialize the AudioPlayer directly (works everywhere)
+            from modules.core.player import AudioPlayer
+            self.audio_player = AudioPlayer()
+            
+            # Create a simple mock process object for compatibility
             self.process = type('MockProcess', (), {
-                'poll': lambda *args: None,  # Always return None (running)
-                'terminate': lambda *args: None
+                'poll': lambda: None,  # Always return None (running)
+                'terminate': self._terminate_audio_player
             })()
             
-            print("Mock audio player initialized (ffplay not available)")
+            print("In-process audio player initialized successfully")
             
-            # Load file if specified
-            if hasattr(self, 'filepath') and self.filepath:
-                print(f"PlayerWorker: Would load {self.filepath} (mock mode)")
-                self.start_time = time.time()
-            
+        except ImportError as e:
+            print(f"Failed to import AudioPlayer: {e}")
+            self.process = None
+            return
         except Exception as e:
             print(f"Failed to initialize audio player: {e}")
             self.process = None
