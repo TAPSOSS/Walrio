@@ -199,41 +199,65 @@ class PlaybackController(QObject):
             self.player_worker.set_volume(volume / 100.0)
     
     def load_and_play_song(self, index):
-        """Load and play a song from the queue by index.
+        """Load and play a song by index.
         
         Args:
-            index (int): Index of the song in the queue to load and play
+            index (int): Index of the song in the queue
         """
-        if 0 <= index < len(self.app_state.queue_songs):
-            song = self.app_state.queue_songs[index]
-            self.app_state.current_queue_index = index
-            self.app_state.current_file = song['url']
+        if not self.app_state.queue_songs or index < 0 or index >= len(self.app_state.queue_songs):
+            return
             
-            # Get metadata and update duration
-            metadata = self._get_file_metadata(song['url'])
-            self.app_state.duration = metadata.get('duration', 0)
+        song = self.app_state.queue_songs[index]
+        self.app_state.current_file = song.get('url') or song.get('filepath')
+        self.app_state.current_queue_index = index
+        
+        # CRITICAL: Get duration immediately using metadata module
+        # This prevents seekbar issues and ensures immediate duration availability
+        
+        duration = 0.0
+        
+        # Method 1: Try song metadata first (fastest)
+        if 'length' in song:
+            duration = float(song['length'])
+        elif 'duration' in song:
+            duration = float(song['duration'])
+        
+        # Method 2: If no duration in song metadata, try fast metadata extraction
+        if duration <= 0:
+            try:
+                from modules.core import metadata
+                file_path = song.get('url') or song.get('filepath')
+                if file_path:
+                    metadata_info = metadata.extract_metadata(file_path)
+                    if metadata_info and 'length' in metadata_info:
+                        duration = float(metadata_info['length'])
+                        print(f"DEBUG: Extracted duration {duration}s from file metadata")
+            except Exception as e:
+                print(f"DEBUG: Failed to extract duration from file: {e}")
+        
+        # Always update duration (use extracted duration or 0)
+        self.app_state.duration = duration
+        
+        if duration > 0:
+            # We have duration - use it immediately
+            self.controls_view.set_time_total(self._format_time(duration))
+            self.controls_view.set_duration(duration)
+            print(f"DEBUG: Set duration {duration}s for {song.get('title', 'unknown')}")
+        else:
+            # No duration available - set to 0 and let GStreamer update it
+            self.controls_view.set_time_total("00:00") 
+            self.controls_view.set_duration(0.0)
+            print(f"DEBUG: No duration available for {song.get('title', 'unknown')}, waiting for GStreamer...")
             
-            # Update controls
-            self.controls_view.set_duration(self.app_state.duration)
-            if self.app_state.duration > 0:
-                self.controls_view.set_time_total(self._format_time(self.app_state.duration))
-            else:
-                self.controls_view.set_time_total("--:--")
+        # Always reset completion trigger for new song
+        if hasattr(self, '_completion_triggered'):
+            delattr(self, '_completion_triggered')
             
-            # Reset position
-            self.app_state.reset_playback_state()
-            self.controls_view.set_position(0)
-            self.controls_view.set_time_current("00:00")
-            
-            # Enable controls
-            self.controls_view.set_play_pause_enabled(True)
-            self.controls_view.set_stop_enabled(True)
-            
-            # Emit track changed signal
-            self.track_changed.emit(song)
-            
-            # Start playback
-            self._start_playback()
+        # Emit track changed signal
+        self.track_changed.emit(song)
+        
+        # Start playback
+        self._start_playback()
     
     def _start_playback(self):
         """Start audio playback."""
@@ -449,17 +473,28 @@ class PlaybackController(QObject):
         """
         duration = song_info.get('duration', 0.0)
         print(f"DEBUG: _on_song_starting called with duration: {duration}")
+        
+        # Always update duration when we get it from GStreamer (most accurate)
+        current_duration = self.app_state.duration
         if duration > 0:
-            print(f"Song starting with detected duration: {duration} seconds")
-            # Update the app state with the correct duration
+            if abs(duration - current_duration) > 0.1:
+                print(f"Song starting - updating duration from {current_duration:.1f}s to {duration:.1f}s")
+            else:
+                print(f"Song starting - confirming duration {duration:.1f}s")
+                
+            # Always update with GStreamer's detected duration (most accurate)
             self.app_state.duration = duration
             # Update the UI with the new duration
             self.controls_view.set_time_total(self._format_time(duration))
             # Set the seekbar maximum
             self.controls_view.set_duration(duration)
             print(f"DEBUG: Updated UI with duration {duration}, seekbar max: {int(duration)}")
+            
+            # Reset completion trigger for accurate duration
+            if hasattr(self, '_completion_triggered'):
+                delattr(self, '_completion_triggered')
         else:
-            print("Song starting but duration unknown")
+            print("Song starting but no duration provided from GStreamer")
             
         # Start position timer when song starts
         if not self.position_timer.isActive():
