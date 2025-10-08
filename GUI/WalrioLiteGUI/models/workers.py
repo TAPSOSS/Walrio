@@ -414,8 +414,9 @@ class PlayerWorker(QThread):
                     self.error.emit(f"Failed to load file: {self.filepath}")
                     return
             
-            # Start position tracking
-            self._start_position_tracking()
+            # Position tracking now handled by main thread
+            # Set up position callback for GStreamer-native updates
+            self.audio_player.set_position_callback(self._on_position_update_from_gstreamer)
             
             # Main loop - monitor playback state from modules/core/player.py
             while not self.should_stop and not self.thread_should_exit:
@@ -642,12 +643,14 @@ class PlayerWorker(QThread):
     def _start_position_tracking(self):
         """Start position tracking timer."""
         if hasattr(self, 'position_timer') and self.position_timer:
+            print("DEBUG: Position timer already running")
             return  # Already running
             
         from PySide6.QtCore import QTimer
         self.position_timer = QTimer()
         self.position_timer.timeout.connect(self._update_position)
         self.position_timer.start(100)  # Update every 100ms
+        print("DEBUG: Position timer started - updating every 100ms")
     
     def _stop_position_tracking(self):
         """Stop position tracking timer."""
@@ -655,15 +658,57 @@ class PlayerWorker(QThread):
             self.position_timer.stop()
             self.position_timer = None
     
+    def _on_position_update_from_gstreamer(self, position):
+        """Handle position updates from GStreamer callback.
+        
+        Args:
+            position (float): Current position in seconds from GStreamer
+        """
+        if not self.should_stop:
+            try:
+                # Debug: Print first few position updates and occasionally after
+                if not hasattr(self, '_pos_update_count'):
+                    self._pos_update_count = 0
+                self._pos_update_count += 1
+                
+                if self._pos_update_count <= 5 or self._pos_update_count % 50 == 0:  # First 5 then every 5 seconds
+                    print(f"DEBUG: GStreamer position update #{self._pos_update_count}: position={position}")
+                
+                # Emit position updates via Qt signal
+                self.position_updated.emit(position)
+                
+            except Exception as e:
+                print(f"DEBUG: Position callback error: {e}")
+    
     def _update_position(self):
         """Update position and emit signal."""
         if not self.should_stop and hasattr(self, 'audio_player') and self.audio_player:
             try:
-                position = self.get_position()
+                # Get position directly from audio player
+                position = self.audio_player.get_position()
+                
+                # Debug: Always print first few position updates and periodically after
+                if not hasattr(self, '_pos_update_count'):
+                    self._pos_update_count = 0
+                self._pos_update_count += 1
+                
+                if self._pos_update_count <= 5 or self._pos_update_count % 50 == 0:  # First 5 then every 5 seconds
+                    print(f"DEBUG: Position update #{self._pos_update_count}: position={position}")
+                
+                # Emit position updates if we have a valid position
                 if position >= 0:
                     self.position_updated.emit(position)
+                    # Debug: Print position occasionally  
+                    if hasattr(self, '_last_pos_debug'):
+                        if abs(position - self._last_pos_debug) > 1.0:  # Every second
+                            print(f"DEBUG: Position update: {position:.1f}s")
+                            self._last_pos_debug = position
+                    else:
+                        self._last_pos_debug = position
+                        print(f"DEBUG: First position update: {position:.1f}s")
+                        
             except Exception as e:
-                print(f"Error updating position: {e}")
+                print(f"DEBUG: Error updating position: {e}")
     
     def play_new_song(self, filepath, duration=0):
         """Load and play a new song using core AudioPlayer."""

@@ -64,6 +64,10 @@ class AudioPlayer:
         self.repeat_count = 0
         self.interactive_mode = False  # Track if we're in interactive mode
         
+        # Position update callback
+        self.position_callback = None
+        self.position_update_interval = 100  # ms
+        
         # Event notification system for daemon mode
         self.event_listeners = []  # List of sockets to send events to
         
@@ -133,6 +137,49 @@ class AudioPlayer:
         bus = self.pipeline.get_bus()
         bus.add_signal_watch()
         bus.connect("message", self._on_bus_message)
+        
+        # Position update timer (will be set when playback starts)
+        self.position_timeout_id = None
+    
+    def set_position_callback(self, callback):
+        """Set callback function for position updates.
+        
+        Args:
+            callback: Function to call with position updates (seconds as float)
+        """
+        self.position_callback = callback
+    
+    def _start_position_updates(self):
+        """Start sending position updates via callback."""
+        if self.position_callback and not self.position_timeout_id:
+            from gi.repository import GLib
+            # Use GLib timeout for thread-safe position updates
+            self.position_timeout_id = GLib.timeout_add(
+                self.position_update_interval, 
+                self._emit_position_update
+            )
+            print("DEBUG: Started GStreamer position updates")
+    
+    def _stop_position_updates(self):
+        """Stop sending position updates."""
+        if self.position_timeout_id:
+            from gi.repository import GLib
+            GLib.source_remove(self.position_timeout_id)
+            self.position_timeout_id = None
+            print("DEBUG: Stopped GStreamer position updates")
+    
+    def _emit_position_update(self):
+        """Emit position update via callback. Returns True to keep timeout active."""
+        if self.position_callback and self.pipeline and self.is_playing:
+            try:
+                position = self.get_position()
+                if position >= 0:
+                    self.position_callback(position)
+                return True  # Keep timeout active
+            except Exception as e:
+                print(f"DEBUG: Position update error: {e}")
+                return True  # Keep trying
+        return False  # Stop timeout
     
     def _on_pad_added(self, decodebin, pad):
         """
@@ -178,11 +225,25 @@ class AudioPlayer:
         elif message.type == Gst.MessageType.STATE_CHANGED:
             if message.src == self.pipeline:
                 old_state, new_state, pending_state = message.parse_state_changed()
+                print(f"DEBUG: State changed from {old_state} to {new_state}")
                 if new_state == Gst.State.PLAYING:
                     self.is_playing = True
                     self.is_paused = False
+                    print("DEBUG: Set is_playing=True")
+                    # Start position updates when playback begins
+                    self._start_position_updates()
                 elif new_state == Gst.State.PAUSED:
+                    self.is_playing = False
                     self.is_paused = True
+                    print("DEBUG: Set is_playing=False (paused)")
+                    # Stop position updates when paused
+                    self._stop_position_updates()
+                elif new_state in [Gst.State.READY, Gst.State.NULL]:
+                    self.is_playing = False
+                    self.is_paused = False
+                    print(f"DEBUG: Set is_playing=False ({new_state})")
+                    # Stop position updates when stopped
+                    self._stop_position_updates()
     
     def _handle_eos(self):
         """Handle end of stream for looping."""
@@ -495,24 +556,30 @@ class AudioPlayer:
         Returns:
             float: Current position in seconds.
         """
-        if self.pipeline and self.is_playing:
+        if self.pipeline:
             try:
-                # Query current position from pipeline
+                # Query current position from pipeline regardless of is_playing flag
+                # This is more reliable for position tracking
                 success, position = self.pipeline.query_position(Gst.Format.TIME)
-                if success:
+                if success and position != Gst.CLOCK_TIME_NONE:
                     # Convert from nanoseconds to seconds
                     self.position = position / Gst.SECOND
                     return self.position
+                else:
+                    # Pipeline exists but no valid position yet (still starting)
+                    return self.position
             except Exception as e:
-                # Debug: Exception in position query
-                print(f"DEBUG: Position query exception: {e}")
+                # Debug: Exception in position query (less frequent logging)
+                import time
+                current_time = time.time()
+                if not hasattr(self, '_last_exception_debug') or current_time - self._last_exception_debug > 5:
+                    print(f"DEBUG: Position query exception: {e}")
+                    self._last_exception_debug = current_time
         else:
-            # Debug: No pipeline or not playing
-            import time
-            current_time = time.time()
-            if not hasattr(self, '_last_position_debug') or current_time - self._last_position_debug > 1:
-                print(f"DEBUG: No position - pipeline={bool(self.pipeline)}, is_playing={self.is_playing}")
-                self._last_position_debug = current_time
+            # No pipeline available
+            if not hasattr(self, '_no_pipeline_warned'):
+                print("DEBUG: No pipeline available for position query")
+                self._no_pipeline_warned = True
         
         return self.position
     

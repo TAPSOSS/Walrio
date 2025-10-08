@@ -51,6 +51,11 @@ class PlaybackController(QObject):
         self.controls_view = controls_view
         self.player_worker = None
         
+        # Create position timer in main thread
+        self.position_timer = QTimer(self)
+        self.position_timer.timeout.connect(self._update_position)
+        self.position_timer.setInterval(100)  # Update every 100ms
+        
         self._setup_connections()
     
     def _setup_connections(self):
@@ -320,6 +325,11 @@ class PlaybackController(QObject):
         self.app_state.is_playing = False
         self.controls_view.set_play_pause_text("▶ Play")
         
+        # Stop position timer
+        if self.position_timer.isActive():
+            self.position_timer.stop()
+            print("DEBUG: Stopped position timer")
+        
         # Immediately disable the stop button to prevent multiple clicks
         self.controls_view.set_stop_enabled(False)
         
@@ -352,6 +362,20 @@ class PlaybackController(QObject):
         
         # Re-enable play button
         self.controls_view.set_play_pause_enabled(True)
+    
+    def _update_position(self):
+        """Update position from player worker (main thread timer)."""
+        if not self.app_state.is_playing or not self.player_worker:
+            return
+            
+        # Get position directly from player worker's audio player
+        if hasattr(self.player_worker, 'audio_player') and self.player_worker.audio_player:
+            try:
+                position = self.player_worker.audio_player.get_position()
+                if position >= 0:
+                    self._on_position_updated(position)
+            except Exception as e:
+                print(f"DEBUG: Position update error: {e}")
     
     def _on_position_updated(self, position):
         """Handle position updates from player worker.
@@ -424,6 +448,11 @@ class PlaybackController(QObject):
             print(f"DEBUG: Updated UI with duration {duration}, seekbar max: {int(duration)}")
         else:
             print("Song starting but duration unknown")
+            
+        # Start position timer when song starts
+        if not self.position_timer.isActive():
+            self.position_timer.start()
+            print("DEBUG: Started position timer in main thread")
     
     def update_queue_state(self):
         """Update internal state when queue changes."""
