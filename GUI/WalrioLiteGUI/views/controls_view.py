@@ -82,7 +82,7 @@ class ControlsView(BaseView):
         self.btn_play_pause = QPushButton("▶ Play")
         self.btn_stop = QPushButton("⏹ Stop")
         self.btn_next = QPushButton("⏭ Next")
-        self.btn_shuffle = QPushButton("🔀 Shuffle")
+        self.btn_shuffle = QPushButton("🔀 Shuffle: Off")
         self.btn_loop = QPushButton("🔁 Repeat: Off")
         
         # Style buttons
@@ -263,6 +263,39 @@ class ControlsView(BaseView):
             enabled (bool): True to enable the button, False to disable
         """
         self.btn_shuffle.setEnabled(enabled)
+    
+    def set_shuffle_text(self, text):
+        """Set the shuffle button text.
+        
+        Args:
+            text (str): Text to display on the shuffle button
+        """
+        self.btn_shuffle.setText(text)
+    
+    def set_shuffle_style(self, is_active):
+        """Set the shuffle button style based on active state.
+        
+        Args:
+            is_active (bool): True for active/enabled style, False for inactive style
+        """
+        if is_active:
+            self.btn_shuffle.setStyleSheet("""
+                QPushButton {
+                    font-size: 12px;
+                    padding: 6px 8px;
+                    min-width: 70px;
+                    background-color: #FF9800;
+                    color: white;
+                }
+            """)
+        else:
+            self.btn_shuffle.setStyleSheet("""
+                QPushButton {
+                    font-size: 12px;
+                    padding: 6px 8px;
+                    min-width: 70px;
+                }
+            """)
     
     def set_loop_text(self, text):
         """Set the loop button text.

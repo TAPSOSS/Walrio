@@ -37,6 +37,7 @@ class QueueController(QObject):
     song_selected = Signal(int)  # row index
     queue_updated = Signal()
     navigation_state_changed = Signal(bool)  # enabled state
+    shuffle_state_changed = Signal(bool)  # shuffle enabled state
     
     def __init__(self, app_state, queue_view):
         """
@@ -302,39 +303,32 @@ class QueueController(QObject):
         self.app_state.current_queue_index = queue_index
         self._update_queue_display()
     
-    def shuffle_queue(self):
-        """Shuffle the entire queue randomly and jump to a random song."""
-        if not self.app_state.queue_songs:
-            self.queue_view.show_message("Empty Queue", "The queue is empty. Add some songs first.")
-            return
-        
-        # Use the queue manager's play_random_song method for immediate random song
-        if self.app_state.queue_manager:
-            success = self.app_state.queue_manager.play_random_song()
-            if success:
-                # Update the app state with the new current index
-                self.app_state.current_queue_index = self.app_state.queue_manager.current_index
-                
-                # Load the randomly selected song
-                current_song = self.app_state.queue_manager.current_song()
-                if current_song and 'url' in current_song:
-                    self.app_state.current_file = current_song['url']
-                    self.app_state.reset_playback_state()
-                
-                # Update display
-                self._update_queue_display()
-                
-                # Emit signal to let main controller know about the song change
-                self.song_selected.emit(self.app_state.current_queue_index)
-                
-                # Show feedback message
-                song_title = current_song.get('title', 'Unknown') if current_song else 'Unknown'
-                self.queue_view.show_message(
-                    "Shuffled!", 
-                    f"Jumped to random song:\n{song_title}\n\nPosition: {self.app_state.current_queue_index + 1}/{len(self.app_state.queue_songs)}"
-                )
-        else:
+    def toggle_shuffle_mode(self):
+        """Toggle shuffle mode on/off."""
+        if not self.app_state.queue_manager:
             self.queue_view.show_message("Queue Error", "Queue manager not available.", "error")
+            return
+            
+        # Toggle the shuffle mode
+        current_shuffle = self.app_state.queue_manager.shuffle_mode
+        new_shuffle = not current_shuffle
+        self.app_state.queue_manager.set_shuffle_mode(new_shuffle)
+        
+        # Update the app state shuffle flag if it exists
+        if hasattr(self.app_state, 'shuffle_mode'):
+            self.app_state.shuffle_mode = new_shuffle
+        
+        # Emit signal to update UI
+        self.shuffle_state_changed.emit(new_shuffle)
+        
+        # Show feedback message
+        mode_text = "ON" if new_shuffle else "OFF"
+        self.queue_view.show_message(
+            "Shuffle Mode", 
+            f"Shuffle mode is now {mode_text}\n\n" + 
+            ("Songs will be selected randomly when current song ends." if new_shuffle 
+             else "Songs will play in normal order.")
+        )
     
     def handle_playlist_to_queue(self, songs, action):
         """Handle adding or replacing queue with playlist songs.

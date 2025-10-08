@@ -148,14 +148,19 @@ class MainController(QObject):
             self.controls_view.set_navigation_enabled
         )
         
-        # Connect shuffle button to queue shuffle functionality
+        # Connect shuffle button to toggle shuffle mode
         self.controls_view.shuffle_requested.connect(
-            self.queue_controller.shuffle_queue
+            self.queue_controller.toggle_shuffle_mode
         )
         
         # Update shuffle button state based on queue availability
         self.queue_controller.navigation_state_changed.connect(
             self.controls_view.set_shuffle_enabled
+        )
+        
+        # Update shuffle button appearance when mode changes
+        self.queue_controller.shuffle_state_changed.connect(
+            self._on_shuffle_state_changed
         )
     
     def _setup_timer(self):
@@ -211,15 +216,28 @@ class MainController(QObject):
             self.playback_controller.player_worker.stop()
             self.playback_controller.player_worker.wait()
     
-    def _on_playlist_selected_switch_tab(self, playlist_name, playlist_path):
-        """Handle switching to playlist tab when a playlist is selected.
+    def _on_playlist_selected_switch_tab(self, playlist_path):
+        """Switch to playlist tab when a playlist is selected.
         
         Args:
-            playlist_name (str): Name of the selected playlist
-            playlist_path (str): File path to the selected playlist
+            playlist_path (str): Path to the selected playlist file
         """
-        # Switch to the playlist tab (index 1) to show the selected playlist content
+        # Switch to the playlist content tab (index 1)
         self.main_window.set_current_tab(1)
+    
+    def _on_shuffle_state_changed(self, shuffle_enabled):
+        """Handle shuffle state changes.
+        
+        Args:
+            shuffle_enabled (bool): Whether shuffle mode is enabled
+        """
+        # Update shuffle button text and style
+        if shuffle_enabled:
+            self.controls_view.set_shuffle_text("🔀 Shuffle: On")
+            self.controls_view.set_shuffle_style(True)
+        else:
+            self.controls_view.set_shuffle_text("🔀 Shuffle: Off")
+            self.controls_view.set_shuffle_style(False)
     
     def show(self):
         """Show the main window."""
