@@ -3,7 +3,34 @@
 Playback controller for Walrio GUI
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
+Licensed under the BSD-3-Clau                # Fast track switching using existing PlayerWorker
+                if was_playing and self.player_worker:
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from ..models import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_info:
+                            new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for next button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for next button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
+                elif was_playing:
+                    self._start_playback()e LICENSE file for details)
 
 Controller for managing audio playback operations.
 """
@@ -112,7 +139,30 @@ class PlaybackController(QObject):
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
-                    self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from modules.core import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_info:
+                            new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for previous button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for previous button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
                 elif was_playing:
                     self._start_playback()
     
@@ -139,7 +189,30 @@ class PlaybackController(QObject):
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
-                    self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from modules.core import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_info:
+                            new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for next button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for next button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
                 elif was_playing:
                     self._start_playback()
     
@@ -227,13 +300,19 @@ class PlaybackController(QObject):
             try:
                 from modules.core import metadata
                 file_path = song.get('url') or song.get('filepath')
+                print(f"DEBUG: Attempting to extract metadata from: {file_path}")
                 if file_path:
                     metadata_info = metadata.extract_metadata(file_path)
+                    print(f"DEBUG: Metadata extraction result: {metadata_info}")
                     if metadata_info and 'length' in metadata_info:
                         duration = float(metadata_info['length'])
                         print(f"DEBUG: Extracted duration {duration}s from file metadata")
+                    else:
+                        print(f"DEBUG: No length field in metadata: {metadata_info}")
             except Exception as e:
                 print(f"DEBUG: Failed to extract duration from file: {e}")
+                import traceback
+                traceback.print_exc()
         
         # Always update duration (use extracted duration or 0)
         self.app_state.duration = duration
@@ -299,6 +378,16 @@ class PlaybackController(QObject):
             
             # Switch to new song
             self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+            
+            # Always manually emit song_starting signal for reused PlayerWorker to ensure UI updates
+            song_info = {
+                'filepath': self.app_state.current_file,
+                'duration': self.app_state.duration,
+                'title': Path(self.app_state.current_file).name,
+                'position': 0.0
+            }
+            print(f"DEBUG: Manually emitting song_starting signal for reused PlayerWorker (duration: {self.app_state.duration}) - from load_and_play_song")
+            self._on_song_starting(song_info)
         
         # Update queue manager
         self.app_state.update_queue_manager()
@@ -472,6 +561,7 @@ class PlaybackController(QObject):
             song_info (dict): Dictionary with filepath, duration, title, position
         """
         duration = song_info.get('duration', 0.0)
+        print(f"DEBUG: _on_song_starting called with song_info: {song_info}")
         print(f"DEBUG: _on_song_starting called with duration: {duration}")
         
         # Always update duration when we get it from GStreamer (most accurate)
