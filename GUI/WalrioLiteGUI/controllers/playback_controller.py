@@ -374,6 +374,15 @@ class PlaybackController(QObject):
                 position = self.player_worker.audio_player.get_position()
                 if position >= 0:
                     self._on_position_updated(position)
+                    
+                    # Check if we're very close to the end (within 0.2 seconds)
+                    duration = self.app_state.duration
+                    if duration > 0 and position >= (duration - 0.2):
+                        if not hasattr(self, '_completion_triggered'):
+                            self._completion_triggered = True
+                            print(f"DEBUG: Song completion triggered at position {position:.2f}/{duration:.2f}")
+                            # Trigger playback finished manually
+                            self._on_playback_finished()
             except Exception as e:
                 print(f"DEBUG: Position update error: {e}")
     
@@ -406,6 +415,7 @@ class PlaybackController(QObject):
     
     def _on_playback_finished(self):
         """Handle when playback finishes."""
+        print("DEBUG: PlaybackController._on_playback_finished() called")
         print("Playback finished - song has ended")
         
         # Prevent multiple calls
@@ -415,7 +425,9 @@ class PlaybackController(QObject):
         self.app_state.is_processing_finish = True
         
         # Emit signal to main controller
+        print("DEBUG: PlaybackController emitting playback_finished signal")
         self.playback_finished.emit()
+        print("DEBUG: PlaybackController playback_finished signal emitted")
         
         # Reset the flag
         self.app_state.is_processing_finish = False
@@ -453,6 +465,10 @@ class PlaybackController(QObject):
         if not self.position_timer.isActive():
             self.position_timer.start()
             print("DEBUG: Started position timer in main thread")
+            
+        # Reset completion trigger for new song
+        if hasattr(self, '_completion_triggered'):
+            delattr(self, '_completion_triggered')
     
     def update_queue_state(self):
         """Update internal state when queue changes."""

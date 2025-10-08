@@ -213,8 +213,9 @@ class AudioPlayer:
             bus: The GStreamer bus that sent the message.
             message: The GStreamer message to process.
         """
-        print(f"DEBUG: Bus message received: {message.type}")
+        # Only log important bus messages
         if message.type == Gst.MessageType.EOS:
+            print(f"DEBUG: Bus message received: {message.type}")  
             # End of stream - handle looping
             print("DEBUG: EOS message received - calling _handle_eos()")
             self._handle_eos()
@@ -222,6 +223,12 @@ class AudioPlayer:
             error, debug = message.parse_error()
             print(f"GStreamer Error: {error}, Debug: {debug}")
             self.stop()
+        elif message.type == Gst.MessageType.WARNING:
+            warning, debug = message.parse_warning()
+            print(f"GStreamer Warning: {warning}, Debug: {debug}")
+        elif message.type == Gst.MessageType.INFO:
+            info, debug = message.parse_info()
+            print(f"GStreamer Info: {info}, Debug: {debug}")
         elif message.type == Gst.MessageType.STATE_CHANGED:
             if message.src == self.pipeline:
                 old_state, new_state, pending_state = message.parse_state_changed()
@@ -250,6 +257,16 @@ class AudioPlayer:
         print("DEBUG: _handle_eos() called")
         if self.should_quit:
             print("DEBUG: should_quit is True, returning early")
+            return
+        
+        # Check if we've had any meaningful playback to avoid premature EOS
+        current_position = self.get_position()
+        print(f"DEBUG: EOS received at position {current_position:.2f}s")
+        
+        # Only process EOS if we've actually played for at least 1 second
+        # This prevents premature EOS messages from being processed
+        if current_position < 1.0:
+            print("DEBUG: Ignoring premature EOS - insufficient playback time")
             return
         
         # Send song finished event to listeners

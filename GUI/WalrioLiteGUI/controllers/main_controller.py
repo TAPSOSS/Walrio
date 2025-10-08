@@ -193,6 +193,7 @@ class MainController(QObject):
     
     def _on_playback_finished(self):
         """Handle playback finished events."""
+        print("DEBUG: MainController._on_playback_finished() called")
         # Check if we should continue with next track or stop
         if self.app_state.queue_manager:
             should_continue, next_song = self.app_state.queue_manager.handle_song_finished()

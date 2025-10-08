@@ -420,12 +420,22 @@ class PlayerWorker(QThread):
             
             # Main loop - monitor playback state from modules/core/player.py
             while not self.should_stop and not self.thread_should_exit:
+                # Process any pending GLib main context messages to ensure bus messages are handled
+                try:
+                    from gi.repository import GLib
+                    main_context = GLib.MainContext.default()
+                    while main_context.pending():
+                        main_context.iteration(False)
+                except Exception as e:
+                    pass  # Ignore GLib processing errors
+                
                 # Check playback state from the core player module
                 player_state = self.audio_player.get_state()
                 
                 if not player_state['is_playing'] and not player_state['is_paused']:
                     if hasattr(self, '_playback_was_active') and self._playback_was_active:
-                        print("PlayerWorker: Playback finished (detected by core player)")
+                        print("PlayerWorker: Playback finished (detected by core player state polling)")
+                        print(f"PlayerWorker: Player state - is_playing: {player_state['is_playing']}, is_paused: {player_state['is_paused']}")
                         self.playback_finished.emit()
                         break
                 
@@ -856,10 +866,9 @@ class PlayerWorker(QThread):
                 print(f"PlayerWorker: Received event {event_name}: {data}")
                 
                 if event_name == "song_finished":
-                    print("PlayerWorker: Song finished event - stopping position updates and emitting playback_finished")
+                    print("PlayerWorker: Song finished event - emitting playback_finished")
                     print(f"PlayerWorker: Emitting playback_finished signal now...")
-                    # Stop position updates to prevent repeating final position
-                    self.should_stop = True
+                    # Don't set should_stop=True here - PlayerWorker needs to stay alive for next song
                     self.playback_finished.emit()
                     print(f"PlayerWorker: playback_finished signal emitted successfully")
                 elif event_name == "song_starting":
