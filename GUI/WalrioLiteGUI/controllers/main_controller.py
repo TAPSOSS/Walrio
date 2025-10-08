@@ -253,8 +253,8 @@ class MainController(QObject):
         Args:
             playlist_path (str): Path to the selected playlist file
         """
-        # Switch to the playlist content tab (index 2, since Credits is now first)
-        self.main_window.set_current_tab(2)
+        # Switch to the playlist content tab (index 1, since Credits is now last)
+        self.main_window.set_current_tab(1)
     
     def _on_shuffle_state_changed(self, shuffle_enabled):
         """Handle shuffle state changes.
