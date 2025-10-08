@@ -61,7 +61,7 @@ class PlaylistContentView(BaseView):
         
         # Set up columns: same as queue for consistency
         self.playlist_content_table.setColumnCount(7)
-        self.playlist_content_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Duration', 'Filepath'])
+        self.playlist_content_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Length', 'Filepath'])
         
         # Configure column behavior
         header = self.playlist_content_table.horizontalHeader()
@@ -70,7 +70,7 @@ class PlaylistContentView(BaseView):
         header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
         header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
         header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
-        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Duration - fixed width
+        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Length - fixed width
         header.setSectionResizeMode(6, QHeaderView.Interactive)  # Filepath - manual resize
         
         # Set reasonable default column widths
@@ -78,7 +78,7 @@ class PlaylistContentView(BaseView):
         self.playlist_content_table.setColumnWidth(2, 120)  # Album Artist
         self.playlist_content_table.setColumnWidth(3, 100)  # Artist
         self.playlist_content_table.setColumnWidth(4, 50)   # Year
-        self.playlist_content_table.setColumnWidth(5, 80)   # Duration
+        self.playlist_content_table.setColumnWidth(5, 80)   # Length
         
         # Enable right-click context menu on header for column visibility
         header.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -207,7 +207,7 @@ class PlaylistContentView(BaseView):
     def _show_column_context_menu(self, position):
         """Show context menu for column visibility."""
         header = self.playlist_content_table.horizontalHeader()
-        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Duration", "Filepath"]
+        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Length", "Filepath"]
         
         menu = QMenu(self)
         

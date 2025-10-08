@@ -5,7 +5,15 @@ Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-Contains QueueWorker and PlayerWorker classes for handling
+Contains QueueWorker and Playe                song = {
+                    'url': self.file_url,
+                    'title': metadata['title'],
+                    'artist': metadata['artist'],
+                    'album': metadata['album'],
+                    'albumartist': metadata['albumartist'],
+                    'year': metadata['year'],
+                    'length': metadata['length']
+                }lasses for handling
 audio metadata extraction and playback operations.
 """
 
@@ -313,7 +321,7 @@ class QueueWorker(QThread):
                     'album': metadata.get('album', ''),
                     'albumartist': metadata.get('album_artist', metadata.get('artist', '')),
                     'year': metadata.get('date_year', metadata.get('year', metadata.get('date', ''))),
-                    'duration': self._parse_duration(metadata.get('duration', '0:00'))
+                    'length': self._parse_duration(metadata.get('duration', '0:00'))
                 }
             else:
                 # Fallback if metadata extraction fails (error reading metadata)
@@ -323,7 +331,7 @@ class QueueWorker(QThread):
                     'album': 'Unknown',
                     'albumartist': 'Unknown',
                     'year': 'Unknown',
-                    'duration': 0
+                    'length': 0
                 }
                 
         except Exception as e:
@@ -334,7 +342,7 @@ class QueueWorker(QThread):
                 'album': 'Unknown',
                 'albumartist': 'Unknown',
                 'year': 'Unknown',
-                'duration': 0
+                'length': 0
             }
     
     def _parse_duration(self, duration_str):

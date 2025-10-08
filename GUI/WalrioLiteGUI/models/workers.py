@@ -250,13 +250,13 @@ class QueueWorker(QThread):
                 # Get metadata for the file
                 metadata = self._get_file_metadata(filepath)
                 song = {
-                    'url': filepath,
+                    'url': self.file_url,
                     'title': metadata['title'],
                     'artist': metadata['artist'],
                     'album': metadata['album'],
                     'albumartist': metadata['albumartist'],
                     'year': metadata['year'],
-                    'duration': metadata['duration']
+                    'length': metadata['length']
                 }
                 
                 # Debug: Print the song data
@@ -314,7 +314,7 @@ class QueueWorker(QThread):
                     'album': metadata.get('album', ''),
                     'albumartist': metadata.get('album_artist', metadata.get('artist', '')),
                     'year': metadata.get('date_year', metadata.get('year', metadata.get('date', ''))),
-                    'duration': self._parse_duration(metadata.get('duration', '0:00'))
+                    'length': self._parse_duration(metadata.get('duration', '0:00'))
                 }
             else:
                 # Fallback if metadata extraction fails (error reading metadata)
@@ -324,7 +324,7 @@ class QueueWorker(QThread):
                     'album': 'Unknown',
                     'albumartist': 'Unknown',
                     'year': 'Unknown',
-                    'duration': 0
+                    'length': 0
                 }
                 
         except Exception as e:
@@ -335,7 +335,7 @@ class QueueWorker(QThread):
                 'album': 'Unknown',
                 'albumartist': 'Unknown',
                 'year': 'Unknown',
-                'duration': 0
+                'length': 0
             }
     
     def _parse_duration(self, duration_str):

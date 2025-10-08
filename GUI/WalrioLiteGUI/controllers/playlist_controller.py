@@ -169,6 +169,10 @@ class PlaylistController(QObject):
         """
         try:
             if songs:
+                # DEBUG: Check what playlist controller receives
+                print(f"DEBUG playlist_controller received {len(songs)} songs")
+                print(f"DEBUG first song from worker: {songs[0]}")
+                
                 # Store in application state
                 self.app_state.add_playlist(playlist_name, songs)
                 
