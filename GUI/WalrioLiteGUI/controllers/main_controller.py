@@ -237,11 +237,21 @@ class MainController(QObject):
         Args:
             shuffle_enabled (bool): Whether shuffle mode is enabled
         """
-        # Update shuffle button text and style
+        self._update_shuffle_button_appearance()
+    
+    def _update_shuffle_button_appearance(self):
+        """Update shuffle button appearance based on shuffle toggle state."""
+        if not self.app_state.queue_manager:
+            return
+            
+        shuffle_enabled = self.app_state.queue_manager.shuffle_mode
+        
         if shuffle_enabled:
+            # Shuffle is toggled on - show as on regardless of repeat state
             self.controls_view.set_shuffle_text("🔀 Shuffle: On")
             self.controls_view.set_shuffle_style(True)
         else:
+            # Shuffle is toggled off
             self.controls_view.set_shuffle_text("🔀 Shuffle: Off")
             self.controls_view.set_shuffle_style(False)
     

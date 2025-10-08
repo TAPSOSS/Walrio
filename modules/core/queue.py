@@ -90,7 +90,19 @@ class QueueManager:
         """
         self.shuffle_mode = enabled
         self._update_play_order()
-        print(f"Shuffle mode: {'ON' if enabled else 'OFF'}")
+        effective_shuffle = self.is_shuffle_effective()
+        print(f"Shuffle mode: {'ON' if enabled else 'OFF'}" + 
+              (f" (disabled by repeat mode)" if enabled and not effective_shuffle else ""))
+    
+    def is_shuffle_effective(self):
+        """
+        Check if shuffle mode is effectively active.
+        Shuffle is only effective when repeat mode is OFF.
+        
+        Returns:
+            bool: True if shuffle is both enabled and effective, False otherwise.
+        """
+        return self.shuffle_mode and self.repeat_mode == RepeatMode.OFF
     
     def current_song(self):
         """
@@ -121,6 +133,7 @@ class QueueManager:
     def next_track(self):
         """
         Move to next track based on repeat mode and shuffle mode.
+        Repeat mode takes priority over shuffle mode.
         
         Returns:
             bool: True if there's a next track, False if queue ended.
@@ -129,35 +142,30 @@ class QueueManager:
             return False
         
         if self.repeat_mode == RepeatMode.TRACK:
-            # Track repeat: stay on same track
+            # Track repeat: stay on same track (shuffle disabled)
             return True
-        elif self.shuffle_mode:
-            # Shuffle mode: jump to random song (works with both queue repeat and off)
-            if self.repeat_mode == RepeatMode.QUEUE or len(self.songs) > 1:
-                # Pick a random song (can be same song if only one available)
-                self.current_index = random.randint(0, len(self.songs) - 1)
-                return True
-            else:
-                # RepeatMode.OFF with shuffle: pick random from remaining songs
-                self.current_index += 1
-                if self.current_index >= len(self.songs):
-                    return False  # End of queue
-                # Randomize the remaining songs from current position
-                remaining_indices = list(range(self.current_index, len(self.songs)))
-                self.current_index = random.choice(remaining_indices)
-                return True
         elif self.repeat_mode == RepeatMode.QUEUE:
-            # Queue repeat: advance and loop at end  
+            # Queue repeat: advance and loop at end (shuffle disabled)
             self.current_index = (self.current_index + 1) % len(self.songs)
             return True
-        else:  # RepeatMode.OFF
+        elif self.shuffle_mode:
+            # Shuffle mode: only active when repeat is OFF
+            # Pick a random song from remaining songs
+            self.current_index += 1
+            if self.current_index >= len(self.songs):
+                return False  # End of queue
+            # Randomize the remaining songs from current position
+            remaining_indices = list(range(self.current_index, len(self.songs)))
+            self.current_index = random.choice(remaining_indices)
+            return True
+        else:  # RepeatMode.OFF and shuffle OFF
             # Normal progression: advance and stop at end
             self.current_index += 1
             return self.current_index < len(self.songs)
     
     def previous_track(self):
         """
-        Move to previous track. In shuffle mode, this picks a random song.
+        Move to previous track. Repeat mode takes priority over shuffle mode.
         
         Returns:
             bool: True if successfully moved to previous track, False otherwise.
@@ -166,14 +174,18 @@ class QueueManager:
             return False
         
         if self.repeat_mode == RepeatMode.TRACK:
-            # Track repeat: stay on same track
+            # Track repeat: stay on same track (shuffle disabled)
+            return True
+        elif self.repeat_mode == RepeatMode.QUEUE:
+            # Queue repeat: go to previous track normally (shuffle disabled)
+            self.current_index = (self.current_index - 1) % len(self.songs)
             return True
         elif self.shuffle_mode:
-            # Shuffle mode: pick a random song for "previous" too
+            # Shuffle mode: only active when repeat is OFF, pick random song
             self.current_index = random.randint(0, len(self.songs) - 1)
             return True
         else:
-            # Normal/queue repeat: go to previous
+            # Normal mode: go to previous track normally
             self.current_index = (self.current_index - 1) % len(self.songs)
             return True
     
