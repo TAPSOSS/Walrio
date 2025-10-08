@@ -420,7 +420,7 @@ class PlaybackController(QObject):
             # Update the UI with the new duration
             self.controls_view.set_time_total(self._format_time(duration))
             # Set the seekbar maximum
-            self.controls_view.set_seek_max(int(duration))
+            self.controls_view.set_duration(duration)
             print(f"DEBUG: Updated UI with duration {duration}, seekbar max: {int(duration)}")
         else:
             print("Song starting but duration unknown")

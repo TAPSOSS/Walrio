@@ -964,7 +964,7 @@ class AudioPlayer:
 
     def _get_file_duration(self, filepath):
         """
-        Get the duration of an audio file using GStreamer discoverer.
+        Get the duration of an audio file using the centralized metadata module.
         
         Args:
             filepath (str): Path to the audio file.
@@ -972,6 +972,24 @@ class AudioPlayer:
         Returns:
             float: Duration in seconds, or 0 if unable to determine.
         """
+        # Method 1: Use centralized metadata module (preferred)
+        try:
+            # Import the metadata module from the same package
+            import sys
+            import os
+            sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+            from . import metadata
+            
+            # Extract metadata which includes duration
+            metadata_info = metadata.extract_metadata(filepath)
+            if metadata_info and metadata_info.get('length', 0) > 0:
+                duration = float(metadata_info['length'])
+                print(f"DEBUG: Metadata module detected duration: {duration:.1f}s for {os.path.basename(filepath)}")
+                return duration
+        except Exception as e:
+            print(f"DEBUG: Metadata module duration detection failed: {e}")
+        
+        # Method 2: Try GStreamer discoverer as fallback
         try:
             # Create a temporary pipeline to discover duration
             uri = f"file://{os.path.abspath(filepath)}"
@@ -981,13 +999,16 @@ class AudioPlayer:
                 info = discoverer.discover_uri(uri)
                 duration = info.get_duration()
                 if duration != Gst.CLOCK_TIME_NONE:
-                    return duration / Gst.SECOND
+                    duration_secs = duration / Gst.SECOND
+                    print(f"DEBUG: GStreamer discoverer detected duration: {duration_secs:.1f}s")
+                    return duration_secs
             except Exception as e:
-                print(f"Error discovering duration: {e}")
+                print(f"DEBUG: GStreamer discoverer failed: {e}")
                 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"DEBUG: GStreamer discoverer unavailable: {e}")
         
+        print(f"DEBUG: Could not detect duration for {os.path.basename(filepath)}")
         return 0.0
 
 def play_audio(filepath):
