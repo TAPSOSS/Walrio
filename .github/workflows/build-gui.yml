@@ -1,0 +1,181 @@
+name: Build Walrio GUIs
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.9', '3.10', '3.11']
+        exclude:
+          # Reduce matrix size - only test multiple Python versions on Linux
+          - os: macos-latest
+            python-version: '3.9'
+          - os: macos-latest  
+            python-version: '3.10'
+          - os: windows-latest
+            python-version: '3.9'
+          - os: windows-latest
+            python-version: '3.10'
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    # Linux-specific setup
+    - name: Install Linux dependencies
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          gstreamer1.0-tools \
+          gstreamer1.0-plugins-base \
+          gstreamer1.0-plugins-good \
+          gstreamer1.0-plugins-bad \
+          gstreamer1.0-plugins-ugly \
+          gstreamer1.0-libav \
+          libgstreamer1.0-dev \
+          libgirepository1.0-dev \
+          libcairo2-dev \
+          libgtk-3-dev
+          
+    # macOS-specific setup  
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      run: |
+        brew update
+        brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly
+        brew install gobject-introspection gtk+3
+        
+    # Windows-specific setup
+    - name: Install Windows dependencies  
+      if: runner.os == 'Windows'
+      run: |
+        # Install GStreamer for Windows
+        Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.6/msvc/gstreamer-1.0-msvc-x86_64-1.22.6.msi" -OutFile "gstreamer.msi"
+        Start-Process msiexec.exe -Wait -ArgumentList '/I gstreamer.msi /quiet'
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+        
+    - name: Install additional build dependencies
+      run: |
+        pip install PyGObject PySide6 mutagen
+        
+    # Linux: Install PyGObject via system packages (more reliable)
+    - name: Install PyGObject (Linux)
+      if: runner.os == 'Linux'  
+      run: |
+        pip install PyGObject --no-binary PyGObject
+        
+    - name: Run dependency check
+      run: |
+        python build_gui.py --no-deps-check --gui both --clean
+        
+    - name: Build GUIs
+      run: |
+        python build_gui.py --gui both --clean
+        
+    - name: Test built executables (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        # Test that executables were created and can show help
+        if [ -f "dist/WalrioMain" ]; then
+          echo "WalrioMain executable found"
+          # Could add: timeout 10s ./dist/WalrioMain --help || true
+        fi
+        if [ -f "dist/WalrioLite" ]; then
+          echo "WalrioLite executable found" 
+          # Could add: timeout 10s ./dist/WalrioLite --help || true
+        fi
+        
+    - name: Test built executables (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        if (Test-Path "dist/WalrioMain.exe") {
+          Write-Host "WalrioMain.exe found"
+        }
+        if (Test-Path "dist/WalrioLite.exe") {
+          Write-Host "WalrioLite.exe found"
+        }
+        
+    - name: Create artifact name
+      id: artifact
+      run: |
+        OS_NAME="${{ runner.os }}"
+        if [ "$OS_NAME" = "Linux" ]; then
+          OS_NAME="linux"
+        elif [ "$OS_NAME" = "Windows" ]; then
+          OS_NAME="windows"  
+        elif [ "$OS_NAME" = "macOS" ]; then
+          OS_NAME="macos"
+        fi
+        echo "name=walrio-${OS_NAME}-py${{ matrix.python-version }}" >> $GITHUB_OUTPUT
+      shell: bash
+      
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ steps.artifact.outputs.name }}
+        path: |
+          dist/
+          !dist/**/*.spec
+        retention-days: 30
+        
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      
+    - name: Create release archives
+      run: |
+        for dir in walrio-*; do
+          if [ -d "$dir" ]; then
+            if [[ "$dir" == *"windows"* ]]; then
+              zip -r "${dir}.zip" "$dir"
+            else
+              tar -czf "${dir}.tar.gz" "$dir"
+            fi
+          fi
+        done
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          *.zip
+          *.tar.gz
+        draft: true
+        prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

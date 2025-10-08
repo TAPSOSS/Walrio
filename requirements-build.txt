@@ -1,0 +1,47 @@
+# Walrio GUI Build Requirements
+# Copyright (c) 2025 TAPS OSS
+# Project: https://github.com/TAPSOSS/Walrio
+# Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
+# Core build dependencies
+pyinstaller>=5.10.1
+setuptools>=65.0.0
+
+# GUI Framework
+PySide6>=6.5.0
+# Alternative: PyQt6>=6.5.0 (if PySide6 not available)
+
+# Audio processing
+mutagen>=1.46.0
+# Note: GStreamer (gi.repository) needs system-level installation
+
+# Python GObject bindings (for GStreamer)
+PyGObject>=3.42.0; sys_platform == "linux" or sys_platform == "darwin"
+# Note: Windows users should install PyGObject from https://pygobject.readthedocs.io/
+
+# System integration
+pathlib2>=2.3.7; python_version < "3.4"
+
+# Development and testing
+pytest>=7.0.0
+pytest-qt>=4.0.0
+pytest-cov>=4.0.0
+
+# Documentation (optional)
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Build optimization  
+upx>=4.0.0; sys_platform == "linux"  # Binary compression (optional)
+
+# Platform-specific dependencies
+pywin32>=305; sys_platform == "win32"
+# macOS: No additional Python packages needed beyond system frameworks
+
+# Optional audio codecs (if not available system-wide)
+# These are fallbacks - prefer system GStreamer installation
+python-vlc>=3.0.0  # VLC Python bindings (backup audio engine)
+
+# Build metadata
+wheel>=0.38.0
+build>=0.8.0
