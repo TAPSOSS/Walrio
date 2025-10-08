@@ -103,9 +103,12 @@ class QueueController(QObject):
         song_title = song_dict.get('title', 'Unknown')
         print(f"Added to queue: {song_title} (Queue size: {len(self.app_state.queue_songs)})")
         
-        # Enable navigation buttons if we have multiple songs
-        if len(self.app_state.queue_songs) > 1:
-            self.navigation_state_changed.emit(True)
+        # Emit navigation state for any songs (enables play button)
+        # But navigation buttons (prev/next) only enabled for multiple songs  
+        queue_has_songs = len(self.app_state.queue_songs) > 0
+        has_multiple_songs = len(self.app_state.queue_songs) > 1
+        
+        self.navigation_state_changed.emit(queue_has_songs)
         
         # If no current file, load the first song from queue
         if not self.app_state.current_file and len(self.app_state.queue_songs) == 1:

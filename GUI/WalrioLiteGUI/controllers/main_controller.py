@@ -148,9 +148,9 @@ class MainController(QObject):
             self.queue_controller.update_current_position_and_scroll
         )
         
-        # Update navigation buttons based on queue state
+        # Handle queue state changes
         self.queue_controller.navigation_state_changed.connect(
-            self.controls_view.set_navigation_enabled
+            self._on_queue_navigation_state_changed
         )
         
         # Connect shuffle button to toggle shuffle mode
@@ -158,15 +158,31 @@ class MainController(QObject):
             self.queue_controller.toggle_shuffle_mode
         )
         
-        # Update shuffle button state based on queue availability
-        self.queue_controller.navigation_state_changed.connect(
-            self.controls_view.set_shuffle_enabled
+        # Update shuffle button appearance when mode changes
+        self.queue_controller.shuffle_state_changed.connect(
+            self._on_shuffle_state_changed
         )
         
         # Update shuffle button appearance when mode changes
         self.queue_controller.shuffle_state_changed.connect(
             self._on_shuffle_state_changed
         )
+    
+    def _on_queue_navigation_state_changed(self, has_songs):
+        """Handle when queue gets songs or becomes empty.
+        
+        Args:
+            has_songs (bool): True if queue has songs, False if empty
+        """
+        # Enable/disable play button and handle first song loading
+        self.playback_controller.on_queue_has_songs(has_songs)
+        
+        # Navigation buttons only enabled for multiple songs
+        has_multiple_songs = len(self.app_state.queue_songs) > 1
+        self.controls_view.set_navigation_enabled(has_multiple_songs)
+        
+        # Shuffle button enabled when we have any songs
+        self.controls_view.set_shuffle_enabled(has_songs)
     
     def _setup_timer(self):
         """Setup the main application timer."""

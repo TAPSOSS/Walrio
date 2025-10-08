@@ -331,6 +331,14 @@ class PlaybackController(QObject):
         # Always reset completion trigger for new song
         if hasattr(self, '_completion_triggered'):
             delattr(self, '_completion_triggered')
+        
+        # Enable controls once we have a song loaded
+        self.controls_view.set_play_pause_enabled(True)
+        
+        # Enable navigation if we have multiple songs
+        if self.app_state.queue_songs and len(self.app_state.queue_songs) > 1:
+            self.controls_view.set_navigation_enabled(True)
+            self.controls_view.set_shuffle_enabled(True)
             
         # Emit track changed signal
         self.track_changed.emit(song)
@@ -408,6 +416,7 @@ class PlaybackController(QObject):
         
         self.app_state.is_playing = True
         self.controls_view.set_play_pause_text("⏸ Pause")
+        self.controls_view.set_play_pause_enabled(True)
         self.controls_view.set_stop_enabled(True)
     
     def _pause_playback(self):
@@ -599,6 +608,27 @@ class PlaybackController(QObject):
         """Update internal state when queue changes."""
         # Update queue manager
         self.app_state.update_queue_manager()
+    
+    def on_queue_has_songs(self, has_songs):
+        """Handle when queue gets songs or becomes empty.
+        
+        Args:
+            has_songs (bool): True if queue has songs, False if empty
+        """
+        if has_songs:
+            # Enable play/pause button when we have songs
+            self.controls_view.set_play_pause_enabled(True)
+            
+            # If no current file is loaded, load the first song from queue (but don't start playing)
+            if not self.app_state.current_file and self.app_state.queue_songs:
+                # Load first song without starting playback
+                self.load_and_play_song(0)
+                # But stop any playback that may have started
+                if self.app_state.is_playing:
+                    self.stop_playback()
+        else:
+            # Disable play/pause button when queue is empty
+            self.controls_view.set_play_pause_enabled(False)
     
     def _get_file_metadata(self, filepath):
         """Get metadata for an audio file.
