@@ -320,15 +320,6 @@ class QueueController(QObject):
         
         # Emit signal to update UI
         self.shuffle_state_changed.emit(new_shuffle)
-        
-        # Show feedback message
-        mode_text = "ON" if new_shuffle else "OFF"
-        self.queue_view.show_message(
-            "Shuffle Mode", 
-            f"Shuffle mode is now {mode_text}\n\n" + 
-            ("Songs will be selected randomly when current song ends." if new_shuffle 
-             else "Songs will play in normal order.")
-        )
     
     def handle_playlist_to_queue(self, songs, action):
         """Handle adding or replacing queue with playlist songs.
