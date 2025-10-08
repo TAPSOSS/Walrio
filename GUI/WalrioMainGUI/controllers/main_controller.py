@@ -143,9 +143,29 @@ class MainController(QObject):
             self.queue_controller.update_current_position
         )
         
+        # Update queue highlighting AND scroll when position changes via next/previous buttons
+        self.playback_controller.queue_position_changed_from_button.connect(
+            self.queue_controller.update_current_position_and_scroll
+        )
+        
         # Update navigation buttons based on queue state
         self.queue_controller.navigation_state_changed.connect(
             self.controls_view.set_navigation_enabled
+        )
+        
+        # Connect shuffle button to toggle shuffle mode
+        self.controls_view.shuffle_requested.connect(
+            self.queue_controller.toggle_shuffle_mode
+        )
+        
+        # Update shuffle button state based on queue availability
+        self.queue_controller.navigation_state_changed.connect(
+            self.controls_view.set_shuffle_enabled
+        )
+        
+        # Update shuffle button appearance when mode changes
+        self.queue_controller.shuffle_state_changed.connect(
+            self._on_shuffle_state_changed
         )
     
     def _setup_timer(self):
@@ -182,6 +202,12 @@ class MainController(QObject):
                 self.app_state.current_file = next_song.get('url') or next_song.get('filepath')
                 self.app_state.current_queue_index = self.app_state.queue_manager.current_index
                 
+                # Emit queue position changed signal to update highlighting
+                self.playback_controller.queue_position_changed.emit(self.app_state.current_queue_index)
+                
+                # Emit track changed signal for UI updates
+                self.playback_controller.track_changed.emit(next_song)
+                
                 # Update displays
                 self.queue_view.update_queue_display(
                     self.app_state.queue_songs,
@@ -201,15 +227,38 @@ class MainController(QObject):
             self.playback_controller.player_worker.stop()
             self.playback_controller.player_worker.wait()
     
-    def _on_playlist_selected_switch_tab(self, playlist_name, playlist_path):
-        """Handle switching to playlist tab when a playlist is selected.
+    def _on_playlist_selected_switch_tab(self, playlist_path):
+        """Switch to playlist tab when a playlist is selected.
         
         Args:
-            playlist_name (str): Name of the selected playlist
-            playlist_path (str): File path to the selected playlist
+            playlist_path (str): Path to the selected playlist file
         """
-        # Switch to the playlist tab (index 1) to show the selected playlist content
+        # Switch to the playlist content tab (index 1)
         self.main_window.set_current_tab(1)
+    
+    def _on_shuffle_state_changed(self, shuffle_enabled):
+        """Handle shuffle state changes.
+        
+        Args:
+            shuffle_enabled (bool): Whether shuffle mode is enabled
+        """
+        self._update_shuffle_button_appearance()
+    
+    def _update_shuffle_button_appearance(self):
+        """Update shuffle button appearance based on shuffle toggle state."""
+        if not self.app_state.queue_manager:
+            return
+            
+        shuffle_enabled = self.app_state.queue_manager.shuffle_mode
+        
+        if shuffle_enabled:
+            # Shuffle is toggled on - show as on regardless of repeat state
+            self.controls_view.set_shuffle_text("🔀 Shuffle: On")
+            self.controls_view.set_shuffle_style(True)
+        else:
+            # Shuffle is toggled off
+            self.controls_view.set_shuffle_text("🔀 Shuffle: Off")
+            self.controls_view.set_shuffle_style(False)
     
     def show(self):
         """Show the main window."""

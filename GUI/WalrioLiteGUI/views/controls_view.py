@@ -38,6 +38,7 @@ class ControlsView(BaseView):
     previous_requested = Signal()
     next_requested = Signal()
     loop_toggle_requested = Signal()
+    shuffle_requested = Signal()
     seek_started = Signal()
     seek_ended = Signal(int)  # position
     slider_value_changed = Signal(int)  # value
@@ -81,6 +82,7 @@ class ControlsView(BaseView):
         self.btn_play_pause = QPushButton("▶ Play")
         self.btn_stop = QPushButton("⏹ Stop")
         self.btn_next = QPushButton("⏭ Next")
+        self.btn_shuffle = QPushButton("🔀 Shuffle: Off")
         self.btn_loop = QPushButton("🔁 Repeat: Off")
         
         # Style buttons
@@ -92,7 +94,7 @@ class ControlsView(BaseView):
             }
         """
         for btn in [self.btn_previous, self.btn_play_pause, self.btn_stop, 
-                   self.btn_next, self.btn_loop]:
+                   self.btn_next, self.btn_shuffle, self.btn_loop]:
             btn.setStyleSheet(button_style)
         
         # Volume control
@@ -114,6 +116,7 @@ class ControlsView(BaseView):
         controls_layout.addWidget(self.btn_play_pause)
         controls_layout.addWidget(self.btn_stop)
         controls_layout.addWidget(self.btn_next)
+        controls_layout.addWidget(self.btn_shuffle)
         controls_layout.addWidget(self.btn_loop)
         controls_layout.addStretch()
         main_layout.addLayout(controls_layout)
@@ -123,6 +126,7 @@ class ControlsView(BaseView):
         self.btn_stop.setEnabled(False)
         self.btn_previous.setEnabled(False)
         self.btn_next.setEnabled(False)
+        self.btn_shuffle.setEnabled(False)
     
     def connect_signals(self):
         """Connect the UI signals."""
@@ -130,6 +134,7 @@ class ControlsView(BaseView):
         self.btn_play_pause.clicked.connect(self._on_play_pause)
         self.btn_stop.clicked.connect(self._on_stop)
         self.btn_next.clicked.connect(self._on_next)
+        self.btn_shuffle.clicked.connect(self._on_shuffle)
         self.btn_loop.clicked.connect(self._on_loop_toggle)
         
         self.progress_slider.sliderPressed.connect(self._on_seek_start)
@@ -153,6 +158,10 @@ class ControlsView(BaseView):
     def _on_next(self):
         """Handle next button click."""
         self.next_requested.emit()
+    
+    def _on_shuffle(self):
+        """Handle shuffle button click."""
+        self.shuffle_requested.emit()
     
     def _on_loop_toggle(self):
         """Handle loop toggle button click."""
@@ -246,6 +255,47 @@ class ControlsView(BaseView):
         """
         self.btn_previous.setEnabled(enabled)
         self.btn_next.setEnabled(enabled)
+    
+    def set_shuffle_enabled(self, enabled):
+        """Enable or disable the shuffle button.
+        
+        Args:
+            enabled (bool): True to enable the button, False to disable
+        """
+        self.btn_shuffle.setEnabled(enabled)
+    
+    def set_shuffle_text(self, text):
+        """Set the shuffle button text.
+        
+        Args:
+            text (str): Text to display on the shuffle button
+        """
+        self.btn_shuffle.setText(text)
+    
+    def set_shuffle_style(self, is_active):
+        """Set the shuffle button style based on active state.
+        
+        Args:
+            is_active (bool): True for active/enabled style, False for inactive style
+        """
+        if is_active:
+            self.btn_shuffle.setStyleSheet("""
+                QPushButton {
+                    font-size: 12px;
+                    padding: 6px 8px;
+                    min-width: 70px;
+                    background-color: #FF9800;
+                    color: white;
+                }
+            """)
+        else:
+            self.btn_shuffle.setStyleSheet("""
+                QPushButton {
+                    font-size: 12px;
+                    padding: 6px 8px;
+                    min-width: 70px;
+                }
+            """)
     
     def set_loop_text(self, text):
         """Set the loop button text.

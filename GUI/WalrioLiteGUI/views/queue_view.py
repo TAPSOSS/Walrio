@@ -14,7 +14,7 @@ import subprocess
 try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-        QPushButton, QHeaderView, QMenu, QFileDialog
+        QPushButton, QHeaderView, QMenu, QFileDialog, QAbstractItemView
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QColor, QAction
@@ -23,7 +23,7 @@ except ImportError:
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-        QPushButton, QHeaderView, QMenu, QFileDialog
+        QPushButton, QHeaderView, QMenu, QFileDialog, QAbstractItemView
     )
     from PySide6.QtCore import Qt, Signal
     from PySide6.QtGui import QColor, QAction
@@ -265,3 +265,16 @@ class QueueView(BaseView):
     def get_current_row(self):
         """Get the currently selected row."""
         return self.queue_table.currentRow()
+    
+    def scroll_to_current_song(self, index):
+        """Scroll the table to center on the currently playing song.
+        
+        Args:
+            index (int): Index of the currently playing song to center on
+        """
+        if 0 <= index < self.queue_table.rowCount():
+            # Create a QModelIndex for the row to scroll to (using the first column)
+            item = self.queue_table.item(index, 0)
+            if item:
+                # Scroll to position the item in the center of the viewport
+                self.queue_table.scrollToItem(item, QAbstractItemView.PositionAtCenter)

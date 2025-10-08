@@ -35,6 +35,8 @@ class PlaybackController(QObject):
     track_changed = Signal(dict)  # song info
     playback_finished = Signal()
     queue_position_changed = Signal(int)  # current queue index
+    queue_position_changed_from_button = Signal(int)  # current queue index when changed via next/prev button
+    repeat_mode_changed = Signal(str)  # repeat mode
     
     def __init__(self, app_state, controls_view):
         """
@@ -99,8 +101,9 @@ class PlaybackController(QObject):
                 # Emit track changed signal
                 self.track_changed.emit(prev_song)
                 
-                # Emit queue position changed signal
+                # Emit queue position changed signal (both regular and button-specific)
                 self.queue_position_changed.emit(self.app_state.current_queue_index)
+                self.queue_position_changed_from_button.emit(self.app_state.current_queue_index)
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
@@ -125,8 +128,9 @@ class PlaybackController(QObject):
                 # Emit track changed signal
                 self.track_changed.emit(next_song)
                 
-                # Emit queue position changed signal
+                # Emit queue position changed signal (both regular and button-specific)
                 self.queue_position_changed.emit(self.app_state.current_queue_index)
+                self.queue_position_changed_from_button.emit(self.app_state.current_queue_index)
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
@@ -150,6 +154,9 @@ class PlaybackController(QObject):
         # Update queue manager if one exists
         if self.app_state.queue_manager:
             self.app_state.queue_manager.set_repeat_mode(self.app_state.loop_mode)
+        
+        # Emit signal to update shuffle state based on repeat mode
+        self.repeat_mode_changed.emit(self.app_state.loop_mode)
     
     def _on_seek_start(self):
         """Handle when user starts seeking."""

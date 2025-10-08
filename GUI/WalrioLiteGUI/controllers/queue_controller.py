@@ -37,6 +37,7 @@ class QueueController(QObject):
     song_selected = Signal(int)  # row index
     queue_updated = Signal()
     navigation_state_changed = Signal(bool)  # enabled state
+    shuffle_state_changed = Signal(bool)  # shuffle enabled state
     
     def __init__(self, app_state, queue_view):
         """
@@ -301,6 +302,36 @@ class QueueController(QObject):
         """
         self.app_state.current_queue_index = queue_index
         self._update_queue_display()
+    
+    def update_current_position_and_scroll(self, queue_index):
+        """Update the queue display highlighting and scroll to center on the current song.
+        This method is called when the position changes due to next/previous button clicks.
+        
+        Args:
+            queue_index (int): Index of the currently playing song in the queue
+        """
+        self.app_state.current_queue_index = queue_index
+        self._update_queue_display()
+        # Scroll the queue view to center on the newly playing song
+        self.queue_view.scroll_to_current_song(queue_index)
+    
+    def toggle_shuffle_mode(self):
+        """Toggle shuffle mode on/off."""
+        if not self.app_state.queue_manager:
+            self.queue_view.show_message("Queue Error", "Queue manager not available.", "error")
+            return
+            
+        # Toggle the shuffle mode
+        current_shuffle = self.app_state.queue_manager.shuffle_mode
+        new_shuffle = not current_shuffle
+        self.app_state.queue_manager.set_shuffle_mode(new_shuffle)
+        
+        # Update the app state shuffle flag if it exists
+        if hasattr(self.app_state, 'shuffle_mode'):
+            self.app_state.shuffle_mode = new_shuffle
+        
+        # Emit signal to update UI
+        self.shuffle_state_changed.emit(new_shuffle)
     
     def handle_playlist_to_queue(self, songs, action):
         """Handle adding or replacing queue with playlist songs.
