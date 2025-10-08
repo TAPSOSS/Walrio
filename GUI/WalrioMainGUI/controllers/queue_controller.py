@@ -303,6 +303,18 @@ class QueueController(QObject):
         self.app_state.current_queue_index = queue_index
         self._update_queue_display()
     
+    def update_current_position_and_scroll(self, queue_index):
+        """Update the queue display highlighting and scroll to center on the current song.
+        This method is called when the position changes due to next/previous button clicks.
+        
+        Args:
+            queue_index (int): Index of the currently playing song in the queue
+        """
+        self.app_state.current_queue_index = queue_index
+        self._update_queue_display()
+        # Scroll the queue view to center on the newly playing song
+        self.queue_view.scroll_to_current_song(queue_index)
+    
     def toggle_shuffle_mode(self):
         """Toggle shuffle mode on/off."""
         if not self.app_state.queue_manager:

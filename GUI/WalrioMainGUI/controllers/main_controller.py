@@ -143,6 +143,11 @@ class MainController(QObject):
             self.queue_controller.update_current_position
         )
         
+        # Update queue highlighting AND scroll when position changes via next/previous buttons
+        self.playback_controller.queue_position_changed_from_button.connect(
+            self.queue_controller.update_current_position_and_scroll
+        )
+        
         # Update navigation buttons based on queue state
         self.queue_controller.navigation_state_changed.connect(
             self.controls_view.set_navigation_enabled

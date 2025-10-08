@@ -118,15 +118,10 @@ class QueueManager:
         
         if effective_shuffle and self.play_order:
             song_index = self.play_order[self.current_index % len(self.play_order)]
-            print(f"DEBUG current_song: Using shuffle - current_index={self.current_index}, play_order[{self.current_index}]={song_index}")
         else:
             song_index = self.current_index % len(self.songs)
-            print(f"DEBUG current_song: Using normal order - current_index={self.current_index}, song_index={song_index}")
         
-        song = self.songs[song_index]
-        print(f"DEBUG current_song: Returning song: {song.get('title', 'Unknown')} by {song.get('artist', 'Unknown')}")
-        
-        return song
+        return self.songs[song_index]
     
     def has_songs(self):
         """
