@@ -219,6 +219,60 @@ class QueueManager:
             return True
         return False
     
+    def shuffle_queue(self):
+        """
+        Shuffle the entire queue by randomly reordering all songs.
+        This physically reorders the songs list and resets the current index.
+        
+        Returns:
+            bool: True if queue was shuffled, False if queue is empty
+        """
+        if not self.songs:
+            return False
+            
+        # Get the currently playing song before shuffle
+        current_song = self.current_song() if self.has_songs() else None
+        
+        # Shuffle the actual songs list
+        random.shuffle(self.songs)
+        
+        # Find the new index of the currently playing song
+        if current_song:
+            for i, song in enumerate(self.songs):
+                if song == current_song:
+                    self.current_index = i
+                    break
+        else:
+            self.current_index = 0
+            
+        # Update play order for the new arrangement
+        self._update_play_order()
+        print("Queue shuffled - song order randomized")
+        return True
+    
+    def play_random_song(self):
+        """
+        Jump to a completely random song in the queue.
+        This doesn't reorder the queue, just changes the current playing position.
+        
+        Returns:
+            bool: True if jumped to random song, False if queue is empty
+        """
+        if not self.songs:
+            return False
+            
+        # Select a random index
+        random_index = random.randint(0, len(self.songs) - 1)
+        
+        # Set the current index to the random position
+        old_index = self.current_index
+        self.current_index = random_index
+        
+        current_song = self.current_song()
+        song_title = current_song.get('title', 'Unknown') if current_song else 'Unknown'
+        print(f"Jumped to random song: {song_title} (position {random_index + 1}/{len(self.songs)})")
+        return True
+    
     def clear_queue(self):
         """Clear all songs from the queue."""
         self.songs.clear()
