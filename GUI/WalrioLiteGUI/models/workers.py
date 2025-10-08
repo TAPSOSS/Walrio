@@ -391,10 +391,13 @@ class PlayerWorker(QThread):
                 if success:
                     # Get actual duration from the audio player
                     detected_duration = self.audio_player.get_duration()
+                    print(f"DEBUG: AudioPlayer detected duration: {detected_duration}")
                     if detected_duration > 0:
                         self.duration = detected_duration
+                        print(f"DEBUG: Updated PlayerWorker duration to: {self.duration}")
                     
                     # Emit song starting signal with detected duration
+                    print(f"DEBUG: Emitting song_starting signal with duration: {self.duration}")
                     self.song_starting.emit({
                         'filepath': self.filepath,
                         'duration': self.duration,
@@ -678,10 +681,13 @@ class PlayerWorker(QThread):
             if self.audio_player.load_file(filepath):
                 # Get actual duration
                 detected_duration = self.audio_player.get_duration()
+                print(f"DEBUG: play_new_song - AudioPlayer detected duration: {detected_duration}")
                 if detected_duration > 0:
                     self.duration = detected_duration
+                    print(f"DEBUG: play_new_song - Updated duration to: {self.duration}")
                 
                 # Emit song starting signal
+                print(f"DEBUG: play_new_song - Emitting song_starting signal with duration: {self.duration}")
                 self.song_starting.emit({
                     'filepath': filepath,
                     'duration': self.duration,

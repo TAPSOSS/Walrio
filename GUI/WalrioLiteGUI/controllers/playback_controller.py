@@ -412,6 +412,7 @@ class PlaybackController(QObject):
             song_info (dict): Dictionary with filepath, duration, title, position
         """
         duration = song_info.get('duration', 0.0)
+        print(f"DEBUG: _on_song_starting called with duration: {duration}")
         if duration > 0:
             print(f"Song starting with detected duration: {duration} seconds")
             # Update the app state with the correct duration
@@ -420,6 +421,7 @@ class PlaybackController(QObject):
             self.controls_view.set_time_total(self._format_time(duration))
             # Set the seekbar maximum
             self.controls_view.set_seek_max(int(duration))
+            print(f"DEBUG: Updated UI with duration {duration}, seekbar max: {int(duration)}")
         else:
             print("Song starting but duration unknown")
     
