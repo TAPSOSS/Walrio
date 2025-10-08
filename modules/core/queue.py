@@ -57,13 +57,14 @@ class QueueManager:
         self.shuffle_mode = False
         self.playback_history = []  # Global history of previously played songs (indices)
         self.forward_queue = []  # Predicted future songs for shuffle mode
+        self.forward_history = []  # Songs to return to when hitting next after previous
     
 
     
     def set_repeat_mode(self, mode):
         """
         Set the repeat mode (can be changed dynamically).
-        Only clears forward predictions if the next expected song would be different.
+        Mode changes preserve forward queue - only manual selections clear it.
         
         Args:
             mode (str or RepeatMode): The repeat mode to set. Can be a string 
@@ -73,78 +74,53 @@ class QueueManager:
             mode = RepeatMode(mode.lower())
         
         old_repeat = self.repeat_mode
+        print(f"[DEBUG] set_repeat_mode(): Before change - current: {self.current_index}, forward_queue: {self.forward_queue}")
         
-        # Predict what the next song would be with the current mode
-        old_next = None
-        if old_repeat == RepeatMode.TRACK:
-            old_next = self.current_index
-        elif old_repeat == RepeatMode.QUEUE:
-            old_next = (self.current_index + 1) % len(self.songs) if len(self.songs) > 0 else None
-        elif self.shuffle_mode and self.is_shuffle_effective() and len(self.songs) > 0:
-            old_next = self._get_next_shuffle_song()
-        elif self.current_index is not None and self.current_index + 1 < len(self.songs):
-            old_next = self.current_index + 1
-        
-        # Change the mode
         self.repeat_mode = mode
-        
-        # Predict what the next song would be with the new mode
-        new_next = None
-        if mode == RepeatMode.TRACK:
-            new_next = self.current_index
-        elif mode == RepeatMode.QUEUE:
-            new_next = (self.current_index + 1) % len(self.songs) if len(self.songs) > 0 else None
-        elif self.shuffle_mode and self.is_shuffle_effective() and len(self.songs) > 0:
-            new_next = self._get_next_shuffle_song()
-        elif self.current_index is not None and self.current_index + 1 < len(self.songs):
-            new_next = self.current_index + 1
-        
-        # Only clear forward queue if the expected next song is different
-        if old_next != new_next:
-            self.forward_queue = []
-            print(f"[DEBUG] set_repeat_mode(): Clearing forward queue - next song changed from {old_next} to {new_next}")
-        else:
-            print(f"[DEBUG] set_repeat_mode(): Keeping forward queue - next song unchanged: {new_next}")
-        
         print(f"Repeat mode set to: {mode.value}")
+        print(f"[DEBUG] set_repeat_mode(): After change - forward queue preserved with {len(self.forward_queue)} items")
+        
+        # Show what next song would be after mode change
+        if mode == RepeatMode.TRACK:
+            print(f"[DEBUG] set_repeat_mode(): Next song in track repeat would be: {self.current_index} (same)")
+        elif mode == RepeatMode.QUEUE:
+            next_idx = (self.current_index + 1) % len(self.songs) if len(self.songs) > 0 else None
+            print(f"[DEBUG] set_repeat_mode(): Next song in queue repeat would be: {next_idx}")
+        elif self.shuffle_mode and self.is_shuffle_effective():
+            if self.forward_queue:
+                print(f"[DEBUG] set_repeat_mode(): Next song in shuffle mode would be: {self.forward_queue[0]}")
+            else:
+                print(f"[DEBUG] set_repeat_mode(): Shuffle mode but no forward queue")
+        elif self.current_index + 1 < len(self.songs):
+            print(f"[DEBUG] set_repeat_mode(): Next song in normal mode would be: {self.current_index + 1}")
     
     def set_shuffle_mode(self, enabled):
         """
         Set shuffle mode.
-        Only clears forward predictions if the next expected song would be different.
+        Mode changes preserve forward queue - only manual selections clear it.
         
         Args:
             enabled (bool): True to enable shuffle mode, False to disable it.
         """
         old_shuffle = self.shuffle_mode
-        
-        # Predict what the next song would be with the current mode
-        old_next = None
-        if old_shuffle and self.is_shuffle_effective() and len(self.songs) > 0:
-            old_next = self._get_next_shuffle_song()
-        elif not old_shuffle and self.current_index is not None and self.current_index + 1 < len(self.songs):
-            old_next = self.current_index + 1
-        
-        # Change the mode
         self.shuffle_mode = enabled
-        
-        # Predict what the next song would be with the new mode  
-        new_next = None
-        if self.shuffle_mode and self.is_shuffle_effective() and len(self.songs) > 0:
-            new_next = self._get_next_shuffle_song()
-        elif not self.shuffle_mode and self.current_index is not None and self.current_index + 1 < len(self.songs):
-            new_next = self.current_index + 1
-        
-        # Only clear forward queue if the expected next song is different
-        if old_next != new_next:
-            self.forward_queue = []
-            print(f"[DEBUG] set_shuffle_mode(): Clearing forward queue - next song changed from {old_next} to {new_next}")
-        else:
-            print(f"[DEBUG] set_shuffle_mode(): Keeping forward queue - next song unchanged: {new_next}")
-        
         effective_shuffle = self.is_shuffle_effective()
+        
+        # Show what the next song would be before and after the change
+        print(f"[DEBUG] set_shuffle_mode(): Before change - current: {self.current_index}, forward_queue: {self.forward_queue}")
+        
         print(f"Shuffle mode: {'ON' if enabled else 'OFF'}" + 
               (f" (disabled by repeat mode)" if enabled and not effective_shuffle else ""))
+        print(f"[DEBUG] set_shuffle_mode(): After change - forward queue preserved with {len(self.forward_queue)} items")
+        
+        # Show what the next song would be after mode change
+        if not self.shuffle_mode and self.current_index + 1 < len(self.songs):
+            print(f"[DEBUG] set_shuffle_mode(): Next song in normal mode would be: {self.current_index + 1}")
+        elif self.shuffle_mode and effective_shuffle:
+            if self.forward_queue:
+                print(f"[DEBUG] set_shuffle_mode(): Next song in shuffle mode would be: {self.forward_queue[0]}")
+            else:
+                print(f"[DEBUG] set_shuffle_mode(): Shuffle mode but no forward queue - would generate new one")
     
     def is_shuffle_effective(self):
         """
@@ -211,6 +187,7 @@ class QueueManager:
     def next_track(self):
         """
         Move to next track based on repeat mode and shuffle mode.
+        Prioritizes forward history (from previous button) over normal progression.
         Always adds current song to global history for universal previous functionality.
         
         Returns:
@@ -218,6 +195,17 @@ class QueueManager:
         """
         if not self.songs:
             return False
+        
+        # Check if we have forward history from previous button usage
+        if self.forward_history:
+            # Always add current song to playback history before moving
+            self.playback_history.append(self.current_index)
+            
+            # Go back to where we were before hitting previous
+            next_index = self.forward_history.pop()
+            print(f"[DEBUG] next_track(): Using forward history, going to {next_index}")
+            self.current_index = next_index
+            return True
         
         # Always add current song to playback history before moving (except track repeat)
         if self.repeat_mode != RepeatMode.TRACK:
@@ -249,6 +237,7 @@ class QueueManager:
         """
         Move to previous track using global playback history.
         Always goes to the previously played song regardless of mode.
+        When going back, adds current song to forward history for next button.
         
         Returns:
             bool: True if successfully moved to previous track, False otherwise.
@@ -260,8 +249,13 @@ class QueueManager:
             # Track repeat: stay on same track
             return True
         elif len(self.playback_history) > 0:
+            # Add current song to forward history so next can return here
+            self.forward_history.append(self.current_index)
+            print(f"[DEBUG] previous_track(): Added {self.current_index} to forward history")
+            
             # Always go back to the most recent song in history, regardless of mode
             self.current_index = self.playback_history.pop()
+            print(f"[DEBUG] previous_track(): Went back to {self.current_index}")
             return True
         else:
             # No history available - can't go back further
@@ -270,6 +264,8 @@ class QueueManager:
     def set_current_index(self, index):
         """
         Set the current track index.
+        Manual song selection clears forward queue to resync predictions.
+        History tracking ensures proper previous button functionality.
         
         Args:
             index (int): The index to set as the current track.
@@ -278,9 +274,18 @@ class QueueManager:
             bool: True if the index was valid and set successfully, False otherwise.
         """
         if 0 <= index < len(self.songs):
-            # Add previous song to history before jumping to new one
-            if self.current_index != index and self.current_index not in self.playback_history:
+            # Add current song to history before jumping to new one (if jumping to different song)
+            if self.current_index != index and self.current_index is not None:
                 self.playback_history.append(self.current_index)
+                print(f"[DEBUG] set_current_index(): Added {self.current_index} to history before jumping to {index}")
+            
+            # Clear forward queue and forward history when manually jumping to a different song
+            # This ensures shuffle predictions are resynced and previous/next chain is reset
+            if self.current_index != index:
+                self.forward_queue = []
+                self.forward_history = []
+                print(f"[DEBUG] set_current_index(): Cleared forward queue and history due to manual song selection (jumped to {index})")
+            
             self.current_index = index
             return True
         return False
