@@ -272,17 +272,40 @@ class QueueController(QObject):
     
     def _load_song_from_queue(self, index):
         """Load a song from the queue by index.
+        Handles missing files on manual selection by attempting to play and checking result.
         
         Args:
             index (int): Index of the song in the queue to load
         """
         if 0 <= index < len(self.app_state.queue_songs):
             song = self.app_state.queue_songs[index]
+            file_path = song['url']
+            
+            # Check if file was previously marked as missing
+            was_missing = song.get('file_missing', False)
+            
+            # Always attempt to load, even if marked as missing (manual selection override)
             self.app_state.current_queue_index = index
-            self.app_state.current_file = song['url']
+            self.app_state.current_file = file_path
             
             # Reset position
             self.app_state.reset_playback_state()
+            
+            # If this was a manual attempt on a missing file, check if it's now available
+            if was_missing:
+                import os
+                if os.path.exists(file_path):
+                    print(f"[INFO] Previously missing file now found: {file_path}")
+                    # Update the song data to reflect it's no longer missing
+                    song['file_missing'] = False
+                    # Update queue manager if it exists
+                    if (hasattr(self.app_state, 'queue_manager') and 
+                        self.app_state.queue_manager and 
+                        index < len(self.app_state.queue_manager.songs)):
+                        self.app_state.queue_manager.songs[index]['file_missing'] = False
+                else:
+                    print(f"[WARNING] Manual attempt on missing file: {file_path}")
+                    # File is still missing - playback will likely fail and show error
             
             # Update queue display to highlight current song
             self._update_queue_display()

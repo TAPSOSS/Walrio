@@ -79,15 +79,13 @@ class PlaylistWorker(QThread):
                 # Emit progress
                 self.progress_updated.emit(i + 1, total_files, Path(file_path).name)
                 
-                # Check if file exists before extracting metadata
-                if not Path(file_path).exists():
-                    print(f"Warning: File not found: {file_path}")
-                    missing_files.append(file_path)
-                else:
-                    # Extract metadata for this file
-                    song_data = self._get_song_metadata(file_path, extinf_info)
-                    if song_data:
-                        songs.append(song_data)
+                # Extract metadata for this file (handles missing files with placeholders)
+                song_data = self._get_song_metadata(file_path, extinf_info)
+                if song_data:
+                    songs.append(song_data)
+                    # Track missing files for error reporting
+                    if song_data.get('file_missing', False):
+                        missing_files.append(file_path)
                 
                 # Small delay to keep UI responsive
                 self.msleep(1)  # 1ms delay between files
@@ -162,9 +160,14 @@ class PlaylistWorker(QThread):
         Returns:
             dict: Song metadata dictionary or None if failed
         """
+        # Check if file exists
+        file_exists = os.path.exists(file_path)
+        
         try:
-            # Try to extract full metadata from file
-            metadata_info = metadata.extract_metadata_for_playlist(file_path)
+            # Try to extract full metadata from file (only if it exists)
+            metadata_info = None
+            if file_exists:
+                metadata_info = metadata.extract_metadata_for_playlist(file_path)
             
             if metadata_info:
                 # Use extracted metadata but prefer EXTINF info if available
@@ -177,6 +180,9 @@ class PlaylistWorker(QThread):
                     song['title'] = extinf_info['title']
                 if extinf_info.get('duration'):
                     song['length'] = extinf_info['duration']
+                
+                # Add file existence flag
+                song['file_missing'] = not file_exists
                     
                 return song
             else:
@@ -191,7 +197,8 @@ class PlaylistWorker(QThread):
                     'track': 0,
                     'disc': 0,
                     'year': 0,
-                    'genre': 'Unknown'
+                    'genre': 'Unknown',
+                    'file_missing': not file_exists
                 }
                 
         except Exception as e:
@@ -206,7 +213,8 @@ class PlaylistWorker(QThread):
                 'track': 0,
                 'disc': 0,
                 'year': 0,
-                'genre': 'Unknown'
+                'genre': 'Unknown',
+                'file_missing': not file_exists
             }
 
 
