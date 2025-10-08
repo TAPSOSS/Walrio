@@ -197,6 +197,12 @@ class MainController(QObject):
                 self.app_state.current_file = next_song.get('url') or next_song.get('filepath')
                 self.app_state.current_queue_index = self.app_state.queue_manager.current_index
                 
+                # Emit queue position changed signal to update highlighting
+                self.playback_controller.queue_position_changed.emit(self.app_state.current_queue_index)
+                
+                # Emit track changed signal for UI updates
+                self.playback_controller.track_changed.emit(next_song)
+                
                 # Update displays
                 self.queue_view.update_queue_display(
                     self.app_state.queue_songs,
