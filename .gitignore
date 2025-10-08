@@ -6,3 +6,9 @@ __pycache__/
 
 # ignore generated documentation files
 docs/source/cli_usage.rst
+
+# ignore build files and distribution files (executables)
+build/
+dist/
+WalrioLite.spec
+WalrioMain.spec
