@@ -353,7 +353,8 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     print(f"\n=== Playing {len(songs)} songs ===")
     print(f"Repeat mode: {repeat_mode}")
     print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
-    print("Press Ctrl+C to control playback\n")
+    print("Press Ctrl+C to control playback")
+    print("Controls: 'q'=quit, 'n'=next, 's'=toggle shuffle, 'i'=instant shuffle, 'r'=repeat mode\n")
     
     while True:
         try:
@@ -399,7 +400,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 
         except KeyboardInterrupt:
             print("\nPlayback interrupted by user.")
-            user_input = input("Enter 'q' to quit, 'n' for next song, 's' to toggle shuffle, 'r' to change repeat mode, or any other key to continue: ").lower()
+            user_input = input("Enter 'q' to quit, 'n' for next song, 's' to toggle shuffle, 'i' for instant shuffle, 'r' to change repeat mode, or any other key to continue: ").lower()
             if user_input == 'q':
                 break
             elif user_input == 'n':
@@ -408,6 +409,13 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                     break
             elif user_input == 's':
                 queue_manager.set_shuffle_mode(not queue_manager.shuffle_mode)
+            elif user_input == 'i':
+                # Instant shuffle - jump to random song immediately
+                if queue_manager.play_random_song():
+                    print("Jumped to random song!")
+                    # Continue playing the new random song
+                else:
+                    print("Could not shuffle - empty queue.")
             elif user_input == 'r':
                 print("Repeat modes: off, track, queue")
                 new_mode = input("Enter repeat mode: ").strip().lower()
