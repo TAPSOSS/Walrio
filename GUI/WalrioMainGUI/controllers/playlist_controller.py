@@ -28,6 +28,7 @@ except ImportError:
 from modules.core import playlist
 from ..models.data_models import Playlist
 from ..models.workers import PlaylistWorker
+from ..views.error_dialog import show_missing_files_dialog
 
 
 class PlaylistController(QObject):
@@ -158,12 +159,13 @@ class PlaylistController(QObject):
         # Update progress bar in sidebar
         self.playlist_sidebar.update_progress(current, total, current_file)
     
-    def _on_playlist_loaded(self, playlist_name, songs):
+    def _on_playlist_loaded(self, playlist_name, songs, missing_files):
         """Handle successful playlist loading.
         
         Args:
             playlist_name (str): Name of the loaded playlist
             songs (list): List of song dictionaries
+            missing_files (list): List of file paths that could not be found
         """
         try:
             if songs:
@@ -177,10 +179,21 @@ class PlaylistController(QObject):
                 
                 if success:
                     print(f"Successfully loaded playlist '{playlist_name}' with {len(songs)} tracks")
-                    self.playlist_sidebar.show_message(
-                        "Playlist Loaded", 
-                        f"Successfully loaded '{playlist_name}' with {len(songs)} tracks."
-                    )
+                    
+                    # Show success message
+                    success_msg = f"Successfully loaded '{playlist_name}' with {len(songs)} tracks."
+                    if missing_files:
+                        success_msg += f" ({len(missing_files)} files not found)"
+                    
+                    self.playlist_sidebar.show_message("Playlist Loaded", success_msg)
+                    
+                    # Show detailed error log if there are missing files
+                    if missing_files:
+                        show_missing_files_dialog(
+                            f"Missing Files - {playlist_name}",
+                            missing_files,
+                            self.playlist_sidebar
+                        )
             else:
                 self.playlist_sidebar.show_message(
                     "Load Error", 

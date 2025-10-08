@@ -38,7 +38,7 @@ class PlaylistWorker(QThread):
     
     # Signals
     progress_updated = Signal(int, int, str)  # current, total, current_file
-    playlist_loaded = Signal(str, list)  # playlist_name, songs
+    playlist_loaded = Signal(str, list, list)  # playlist_name, songs, missing_files
     error = Signal(str)
     
     def __init__(self, playlist_path, playlist_name):
@@ -69,6 +69,7 @@ class PlaylistWorker(QThread):
             
             total_files = len(file_paths)
             songs = []
+            missing_files = []
             
             # Process files in batches with metadata extraction
             for i, (file_path, extinf_info) in enumerate(file_paths):
@@ -78,16 +79,21 @@ class PlaylistWorker(QThread):
                 # Emit progress
                 self.progress_updated.emit(i + 1, total_files, Path(file_path).name)
                 
-                # Extract metadata for this file
-                song_data = self._get_song_metadata(file_path, extinf_info)
-                if song_data:
-                    songs.append(song_data)
+                # Check if file exists before extracting metadata
+                if not Path(file_path).exists():
+                    print(f"Warning: File not found: {file_path}")
+                    missing_files.append(file_path)
+                else:
+                    # Extract metadata for this file
+                    song_data = self._get_song_metadata(file_path, extinf_info)
+                    if song_data:
+                        songs.append(song_data)
                 
                 # Small delay to keep UI responsive
                 self.msleep(1)  # 1ms delay between files
             
             if not self.should_stop:
-                self.playlist_loaded.emit(self.playlist_name, songs)
+                self.playlist_loaded.emit(self.playlist_name, songs, missing_files)
                 
         except Exception as e:
             self.error.emit(f"Error loading playlist: {str(e)}")

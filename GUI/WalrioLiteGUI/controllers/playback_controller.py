@@ -564,8 +564,31 @@ class PlaybackController(QObject):
         Args:
             error (str): Error message describing what went wrong during playback
         """
-        self.controls_view.show_message("Playback Error", error, "error")
+        # Check if it's a file not found error
+        if "file not found" in error.lower() or "no such file" in error.lower() or "does not exist" in error.lower():
+            # Get the current file path
+            current_file = self.app_state.current_file or "Unknown file"
+            
+            # Show error message with file URI
+            error_message = f"Cannot load file (file not found):\n{current_file}\n\nSkipping to next song..."
+            self.controls_view.show_message("File Not Found", error_message, "warning")
+            
+            # Skip to next song instead of stopping
+            self._skip_to_next_song_on_error()
+        else:
+            # For other errors, show the original error and stop playback
+            self.controls_view.show_message("Playback Error", error, "error")
+            self.stop_playback()
+    
+    def _skip_to_next_song_on_error(self):
+        """Skip to the next song when current song fails to load."""
+        print(f"Skipping unplayable song: {self.app_state.current_file}")
+        
+        # Stop current playback
         self.stop_playback()
+        
+        # Emit signal to main controller to handle next song
+        self.playback_finished.emit()
     
     def _on_song_starting(self, song_info):
         """Handle song starting signal with updated duration.
