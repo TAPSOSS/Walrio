@@ -10,8 +10,10 @@ Licensed under the BSD-3-Clau                # Fast track switching using existi
                     try:
                         from ..models import metadata
                         metadata_info = metadata.extract_metadata(self.app_state.current_file)
-                        if metadata_info and 'length' in metadata_info:
-                            new_duration = float(metadata_info['length'])
+                        if metadata_info and 'length' in metadata_inf            # If no current file is loaded, load the first song from queue (but don't start playing)
+            if not self.app_state.current_file and self.app_state.queue_songs:
+                # Load first song without starting playback
+                self.load_and_play_song(0, auto_play=False)                        new_duration = float(metadata_info['length'])
                             print(f"DEBUG: Extracted duration {new_duration}s for next button navigation")
                     except Exception as e:
                         print(f"DEBUG: Failed to extract duration for navigation: {e}")
@@ -271,11 +273,12 @@ class PlaybackController(QObject):
         if self.player_worker:
             self.player_worker.set_volume(volume / 100.0)
     
-    def load_and_play_song(self, index):
-        """Load and play a song by index.
+    def load_and_play_song(self, index, auto_play=True):
+        """Load and optionally play a song by index.
         
         Args:
             index (int): Index of the song in the queue
+            auto_play (bool): Whether to automatically start playback (default: True)
         """
         if not self.app_state.queue_songs or index < 0 or index >= len(self.app_state.queue_songs):
             return
@@ -343,8 +346,9 @@ class PlaybackController(QObject):
         # Emit track changed signal
         self.track_changed.emit(song)
         
-        # Start playback
-        self._start_playback()
+        # Start playback only if auto_play is True
+        if auto_play:
+            self._start_playback()
     
     def _start_playback(self):
         """Start audio playback."""
@@ -406,10 +410,10 @@ class PlaybackController(QObject):
         
         # Set daemon loop mode to 'none' for queue-controlled progression
         if self.player_worker:
-            QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none"))
+            QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none") if self.player_worker else None)
             
             # Restore volume from app state (important after stop/play cycle)
-            QTimer.singleShot(300, lambda: self.player_worker.set_volume(self.app_state.volume / 100.0))
+            QTimer.singleShot(300, lambda: self.player_worker.set_volume(self.app_state.volume / 100.0) if self.player_worker else None)
             
         # Ensure UI volume slider matches app state volume
         self.controls_view.set_volume(self.app_state.volume)
@@ -622,10 +626,7 @@ class PlaybackController(QObject):
             # If no current file is loaded, load the first song from queue (but don't start playing)
             if not self.app_state.current_file and self.app_state.queue_songs:
                 # Load first song without starting playback
-                self.load_and_play_song(0)
-                # But stop any playback that may have started
-                if self.app_state.is_playing:
-                    self.stop_playback()
+                self.load_and_play_song(0, auto_play=False)
         else:
             # Disable play/pause button when queue is empty
             self.controls_view.set_play_pause_enabled(False)
