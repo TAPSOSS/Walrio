@@ -302,6 +302,40 @@ class QueueController(QObject):
         self.app_state.current_queue_index = queue_index
         self._update_queue_display()
     
+    def shuffle_queue(self):
+        """Shuffle the entire queue randomly and jump to a random song."""
+        if not self.app_state.queue_songs:
+            self.queue_view.show_message("Empty Queue", "The queue is empty. Add some songs first.")
+            return
+        
+        # Use the queue manager's play_random_song method for immediate random song
+        if self.app_state.queue_manager:
+            success = self.app_state.queue_manager.play_random_song()
+            if success:
+                # Update the app state with the new current index
+                self.app_state.current_queue_index = self.app_state.queue_manager.current_index
+                
+                # Load the randomly selected song
+                current_song = self.app_state.queue_manager.current_song()
+                if current_song and 'url' in current_song:
+                    self.app_state.current_file = current_song['url']
+                    self.app_state.reset_playback_state()
+                
+                # Update display
+                self._update_queue_display()
+                
+                # Emit signal to let main controller know about the song change
+                self.song_selected.emit(self.app_state.current_queue_index)
+                
+                # Show feedback message
+                song_title = current_song.get('title', 'Unknown') if current_song else 'Unknown'
+                self.queue_view.show_message(
+                    "Shuffled!", 
+                    f"Jumped to random song:\n{song_title}\n\nPosition: {self.app_state.current_queue_index + 1}/{len(self.app_state.queue_songs)}"
+                )
+        else:
+            self.queue_view.show_message("Queue Error", "Queue manager not available.", "error")
+    
     def handle_playlist_to_queue(self, songs, action):
         """Handle adding or replacing queue with playlist songs.
         

@@ -147,6 +147,16 @@ class MainController(QObject):
         self.queue_controller.navigation_state_changed.connect(
             self.controls_view.set_navigation_enabled
         )
+        
+        # Connect shuffle button to queue shuffle functionality
+        self.controls_view.shuffle_requested.connect(
+            self.queue_controller.shuffle_queue
+        )
+        
+        # Update shuffle button state based on queue availability
+        self.queue_controller.navigation_state_changed.connect(
+            self.controls_view.set_shuffle_enabled
+        )
     
     def _setup_timer(self):
         """Setup the main application timer."""
