@@ -66,12 +66,12 @@ class CreditsView(BaseView):
         
         # Try to load SVG first, fallback to PNG
         try:
-            # Look for the icon in the bundled resources or current directory
+            # Look for the icon in the icons folder (bundled resources or source directory)
             icon_paths = [
-                Path.cwd() / "walrio.svg",  # When running from source
-                Path(__file__).parent.parent.parent.parent / "walrio.svg",  # When bundled
-                Path.cwd() / "walrio.png",  # PNG fallback when running from source
-                Path(__file__).parent.parent.parent.parent / "walrio.png",  # PNG fallback when bundled
+                Path.cwd() / "icons" / "walrio.svg",  # SVG when running from source
+                Path(__file__).parent.parent.parent.parent / "icons" / "walrio.svg",  # SVG when bundled
+                Path.cwd() / "icons" / "walrio.png",  # PNG fallback when running from source
+                Path(__file__).parent.parent.parent.parent / "icons" / "walrio.png",  # PNG fallback when bundled
             ]
             
             icon_loaded = False
