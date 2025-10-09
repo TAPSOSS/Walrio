@@ -35,23 +35,23 @@ help:
 
 # GUI Build targets
 build:
-	python build_gui.py --gui both --clean
+	python .github/scripts/build_gui.py --gui both --clean
 
 build-main:
-	python build_gui.py --gui main --clean
+	python .github/scripts/build_gui.py --gui main --clean
 
 build-lite:
-	python build_gui.py --gui lite --clean
+	python .github/scripts/build_gui.py --gui lite --clean
 
 build-debug:
-	python build_gui.py --gui both --clean --debug
+	python .github/scripts/build_gui.py --gui both --clean --debug
 
 clean:
-	python build_gui.py --clean
+	python .github/scripts/build_gui.py --clean
 	@echo "Build directories cleaned"
 
 deps-check:
-	python build_gui.py --no-deps-check --gui both 2>/dev/null || echo "Dependencies missing"
+	python .github/scripts/build_gui.py --no-deps-check --gui both 2>/dev/null || echo "Dependencies missing"
 
 install-deps:
 	pip install -r requirements.txt

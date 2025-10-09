@@ -23,7 +23,8 @@ class WalrioBuildScript:
     
     def __init__(self):
         """Initialize the build script with paths and platform detection."""
-        self.root_dir = Path(__file__).parent.absolute()
+        # Since script is now in .github/scripts/, go up two levels to reach project root
+        self.root_dir = Path(__file__).parent.parent.parent.absolute()
         self.dist_dir = self.root_dir / "dist"
         self.build_dir = self.root_dir / "build"
         self.gui_dir = self.root_dir / "GUI"
@@ -308,7 +309,7 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
         ])
         
         # Add runtime hook for GStreamer initialization
-        hook_file = self.root_dir / "gst_runtime_hook.py"
+        hook_file = self.root_dir / ".github" / "scripts" / "gst_runtime_hook.py"
         if not hook_file.exists():
             self.create_gstreamer_hook(hook_file)
         cmd.append(f"--runtime-hook={hook_file}")
