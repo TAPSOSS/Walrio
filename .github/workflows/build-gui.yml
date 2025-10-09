@@ -190,30 +190,7 @@ jobs:
         
 
 
-    - name: Comprehensive GStreamer verification
-      run: |
-        echo "=== Comprehensive GStreamer/PyGObject Verification ==="
-        
-        # Print environment variables
-        echo "Environment variables:"
-        echo "  GST_PLUGIN_PATH: ${GST_PLUGIN_PATH:-Not set}"
-        echo "  GI_TYPELIB_PATH: ${GI_TYPELIB_PATH:-Not set}"
-        echo "  PKG_CONFIG_PATH: ${PKG_CONFIG_PATH:-Not set}"
-        
-        # Test basic Python imports
-        echo "Testing Python gi import..."
-        python -c "import sys; print('Python version:', sys.version)"
-        
-        echo "Testing PyGObject import..."
-        python -c "import gi; print('SUCCESS: gi import successful')" || echo "ERROR: gi import failed"
-        
-        echo "Testing GStreamer import..."
-        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
-        
-        echo "Testing GStreamer initialization..."
-        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
-        
-        echo "Verification completed."
+
         
     - name: Run dependency check
       continue-on-error: true
