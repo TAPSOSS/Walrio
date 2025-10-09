@@ -73,9 +73,8 @@ jobs:
     - name: Install Windows dependencies  
       if: runner.os == 'Windows'
       run: |
-        # Install GStreamer for Windows
-        Invoke-WebRequest -Uri "https://gstreamer.freedesktop.org/data/pkg/windows/1.22.6/msvc/gstreamer-1.0-msvc-x86_64-1.22.6.msi" -OutFile "gstreamer.msi"
-        Start-Process msiexec.exe -Wait -ArgumentList '/I gstreamer.msi /quiet'
+        # Install latest GStreamer via Chocolatey (most reliable method)
+        choco install gstreamer -y
         
     - name: Install Python dependencies
       run: |
