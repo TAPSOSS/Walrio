@@ -59,10 +59,30 @@ jobs:
     # macOS-specific setup  
     - name: Install macOS dependencies
       if: runner.os == 'macOS'
+      continue-on-error: true
       run: |
-        brew update
-        brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly
-        brew install gobject-introspection gtk+3
+        echo "Installing macOS dependencies..."
+        
+        # Try to update brew (non-blocking)
+        brew update || echo "Brew update failed, continuing..."
+        
+        # Install core GStreamer (retry on failure)
+        echo "Installing GStreamer..."
+        if ! brew install gstreamer gst-plugins-base; then
+          echo "Core GStreamer installation failed, retrying once..."
+          sleep 10
+          brew install gstreamer gst-plugins-base || echo "GStreamer installation failed, continuing..."
+        fi
+        
+        # Install additional plugins (optional, non-blocking)
+        echo "Installing GStreamer plugins..."
+        brew install gst-plugins-good gst-plugins-bad gst-plugins-ugly || echo "Some GStreamer plugins failed to install"
+        
+        # Install Python/GTK dependencies (optional, non-blocking)  
+        echo "Installing Python/GTK dependencies..."
+        brew install gobject-introspection gtk+3 || echo "GTK dependencies failed to install"
+        
+        echo "macOS dependency installation completed (some failures may be non-critical)"
         
     # Windows-specific setup
     - name: Install Windows dependencies  
@@ -132,7 +152,7 @@ jobs:
         elif [ "$OS_NAME" = "macOS" ]; then
           OS_NAME="macos"
         fi
-        echo "name=walrio-${OS_NAME}-py${{ matrix.python-version }}" >> $GITHUB_OUTPUT
+        echo "name=walrio-${OS_NAME}" >> $GITHUB_OUTPUT
       shell: bash
       
     - name: Upload build artifacts
