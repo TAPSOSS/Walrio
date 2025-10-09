@@ -90,7 +90,7 @@ class WalrioBuildScript:
 
     def check_dependencies(self):
         """Check if required dependencies are installed."""
-        print("🔍 Checking dependencies...")
+        print("Checking dependencies...")
         
         required_packages = [
             "PyInstaller", "PySide6", "mutagen"
@@ -101,9 +101,9 @@ class WalrioBuildScript:
         for package in required_packages:
             try:
                 __import__(package)
-                print(f"  ✅ {package} - installed")
+                print(f"  [OK] {package} - installed")
             except ImportError:
-                print(f"  ❌ {package} - missing")
+                print(f"  [MISSING] {package} - missing")
                 missing_packages.append(package)
         
         # Check for GStreamer (platform-specific)
@@ -111,12 +111,12 @@ class WalrioBuildScript:
             import gi
             gi.require_version('Gst', '1.0')
             from gi.repository import Gst
-            print("  ✅ GStreamer - installed")
+            print("  [OK] GStreamer - installed")
         except (ImportError, ValueError):
             print("  ⚠️  GStreamer - not found (audio playback may not work)")
             
         if missing_packages:
-            print(f"\n❌ Missing required packages: {', '.join(missing_packages)}")
+            print(f"\n[ERROR] Missing required packages: {', '.join(missing_packages)}")
             print("Install them with: pip install " + " ".join(missing_packages))
             return False
             
@@ -124,14 +124,14 @@ class WalrioBuildScript:
 
     def clean_build_dirs(self):
         """Clean previous build directories."""
-        print("🧹 Cleaning previous build directories...")
+        print("Cleaning previous build directories...")
         
         dirs_to_clean = [self.dist_dir, self.build_dir]
         
         for dir_path in dirs_to_clean:
             if dir_path.exists():
                 shutil.rmtree(dir_path)
-                print(f"  🗑️  Removed {dir_path}")
+                print(f"  Removed {dir_path}")
             
         # Create fresh directories
         self.dist_dir.mkdir(exist_ok=True)
@@ -145,7 +145,7 @@ class WalrioBuildScript:
         config = self.configs[gui_type]
         platform_config = self.platform_configs[self.platform]
         
-        print(f"🔨 Building {config['name']} for {self.platform}...")
+        print(f"Building {config['name']} for {self.platform}...")
         
         # Build PyInstaller command
         cmd = [
@@ -187,16 +187,16 @@ class WalrioBuildScript:
         # Remove empty strings
         cmd = [arg for arg in cmd if arg]
         
-        print(f"  📝 Command: {' '.join(cmd)}")
+        print(f"  Command: {' '.join(cmd)}")
         
         # Execute PyInstaller
         try:
             result = subprocess.run(cmd, cwd=self.root_dir, check=True, 
                                   capture_output=True, text=True)
-            print(f"  ✅ {config['name']} built successfully")
+            print(f"  [SUCCESS] {config['name']} built successfully")
             return True
         except subprocess.CalledProcessError as e:
-            print(f"  ❌ Failed to build {config['name']}")
+            print(f"  [FAILED] Failed to build {config['name']}")
             print(f"  Error: {e.stderr}")
             return False
 
@@ -214,11 +214,11 @@ class WalrioBuildScript:
         with open(info_file, 'w') as f:
             json.dump(build_info, f, indent=2)
         
-        print(f"📄 Build info saved to {info_file}")
+        print(f"Build info saved to {info_file}")
 
     def create_launcher_scripts(self):
         """Create platform-specific launcher scripts."""
-        print("🚀 Creating launcher scripts...")
+        print("Creating launcher scripts...")
         
         if self.platform == "linux":
             # Create .desktop files for Linux
@@ -249,7 +249,7 @@ StartupNotify=true
                     
                     # Make desktop file executable
                     os.chmod(desktop_file, 0o755)
-                    print(f"  📄 Created {desktop_file}")
+                    print(f"  Created {desktop_file}")
         
         elif self.platform == "windows":
             # Create batch files for Windows
@@ -267,7 +267,7 @@ cd /d "%~dp0"
                     with open(batch_file, 'w') as f:
                         f.write(batch_content)
                     
-                    print(f"  📄 Created {batch_file}")
+                    print(f"  Created {batch_file}")
 
     def create_readme(self):
         """Create README for distribution."""
@@ -339,7 +339,7 @@ Lightweight audio player with essential playback controls and simplified interfa
         with open(readme_file, 'w') as f:
             f.write(readme_content)
         
-        print(f"📄 Created {readme_file}")
+        print(f"Created {readme_file}")
 
 def main():
     """Main build script entry point."""
@@ -355,7 +355,7 @@ def main():
     
     args = parser.parse_args()
     
-    print("🎵 Walrio GUI Build Script")
+    print("Walrio GUI Build Script")
     print("=" * 50)
     
     builder = WalrioBuildScript()
@@ -393,11 +393,11 @@ def main():
     
     # Summary
     print("\n" + "=" * 50)
-    print(f"🎉 Build Complete! ({success_count}/{len(guis_to_build)} successful)")
+    print(f"Build Complete! ({success_count}/{len(guis_to_build)} successful)")
     
     if built_guis:
-        print(f"📁 Output directory: {builder.dist_dir}")
-        print("🚀 Built applications:")
+        print(f"Output directory: {builder.dist_dir}")
+        print("Built applications:")
         for gui in built_guis:
             config = builder.configs[gui]
             extension = builder.platform_configs[builder.platform]["extension"]
