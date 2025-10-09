@@ -285,7 +285,11 @@ jobs:
         elif [ "$OS_NAME" = "macOS" ]; then
           OS_NAME="macos"
         fi
-        echo "name=walrio-${{ matrix.gui-variant }}-${OS_NAME}" >> $GITHUB_OUTPUT
+        
+        VARIANT="${{ matrix.gui-variant }}"
+        VARIANT_UPPER=$(echo "$VARIANT" | tr '[:lower:]' '[:upper:]')
+        
+        echo "name=WALRIO_${VARIANT_UPPER}-${OS_NAME}" >> $GITHUB_OUTPUT
       shell: bash
       
     - name: Upload build artifacts
@@ -306,16 +310,21 @@ jobs:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       with:
-        pattern: walrio-*
+        pattern: "WALRIO_*-*"
         merge-multiple: false
       
     - name: Create release archives
       run: |
         # Create archives for each variant and platform
-        for artifact_dir in walrio-*/; do
+        for artifact_dir in */; do
           if [ -d "$artifact_dir" ]; then
             # Remove trailing slash
             dir_name="${artifact_dir%/}"
+            
+            # Skip if not our artifact naming pattern
+            if [[ ! "$dir_name" =~ ^WALRIO_(MAIN|LITE)-(linux|macos|windows)$ ]]; then
+              continue
+            fi
             
             # Create appropriate archive format
             if [[ "$dir_name" == *"windows"* ]]; then
