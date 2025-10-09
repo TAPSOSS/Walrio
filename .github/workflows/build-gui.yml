@@ -56,7 +56,6 @@ jobs:
         sudo apt update
         sudo apt install -y \
           python3-gi \
-          python3-gi-dev \
           gir1.2-gstreamer-1.0 \
           gir1.2-gst-plugins-base-1.0 \
           gstreamer1.0-plugins-good \
