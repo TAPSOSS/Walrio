@@ -92,6 +92,15 @@ jobs:
           python3-dev \
           pkg-config \
           libffi-dev
+        
+        echo "Setting up Linux environment variables for GStreamer..."
+        # Set up GStreamer environment variables
+        echo "GST_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/gstreamer-1.0" >> $GITHUB_ENV
+        echo "GI_TYPELIB_PATH=/usr/lib/x86_64-linux-gnu/girepository-1.0" >> $GITHUB_ENV
+        
+        # Export for current session
+        export GST_PLUGIN_PATH="/usr/lib/x86_64-linux-gnu/gstreamer-1.0"
+        export GI_TYPELIB_PATH="/usr/lib/x86_64-linux-gnu/girepository-1.0"
           
     # macOS-specific setup  
     - name: Install macOS dependencies
@@ -140,47 +149,69 @@ jobs:
     - name: Install Windows dependencies  
       if: runner.os == 'Windows'
       run: |
-        # Install GStreamer
-        choco install gstreamer -y
+        Write-Host "=== Installing Windows Dependencies ==="
         
-        # Install MSYS2 - the officially recommended approach for PyGObject on Windows
+        # Install MSYS2 first - this is the most reliable way to get PyGObject on Windows
         Write-Host "Installing MSYS2..."
-        choco install msys2 -y
+        choco install msys2 -y --force
         
-        # Initialize MSYS2 and install PyGObject
-        Write-Host "Setting up PyGObject via MSYS2..."
-        $env:PATH = "C:\tools\msys64\ucrt64\bin;C:\tools\msys64\usr\bin;" + $env:PATH
+        # Wait for installation to complete
+        Start-Sleep -Seconds 10
         
-        # Update MSYS2 package database
+        # Set up MSYS2 paths
+        $env:PATH = "C:\tools\msys64\mingw64\bin;C:\tools\msys64\usr\bin;" + $env:PATH
+        
+        Write-Host "Updating MSYS2 package database..."
         C:\tools\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
         
-        # Install PyGObject and Python via MSYS2
-        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-python-gobject mingw-w64-ucrt-x86_64-gtk4"
+        Write-Host "Installing GStreamer and PyGObject via MSYS2..."
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-python mingw-w64-x86_64-python-gobject mingw-w64-x86_64-gstreamer mingw-w64-x86_64-gst-plugins-base mingw-w64-x86_64-gst-plugins-good mingw-w64-x86_64-gst-plugins-bad mingw-w64-x86_64-gst-plugins-ugly"
         
-        # Verify installation
-        $msys2Python = "C:\tools\msys64\ucrt64\bin\python.exe"
-        if (Test-Path $msys2Python) {
-          Write-Host "MSYS2 Python found at: $msys2Python"
-          & $msys2Python -c "import gi; print('PyGObject import successful')"
-          Write-Host "PyGObject successfully installed via MSYS2"
-        } else {
-          Write-Host "MSYS2 Python installation failed, trying conda-forge fallback..."
+        Write-Host "Setting up environment variables for Windows PyGObject..."
+        # Set environment variables for current session and future steps
+        $msys64Path = "C:\tools\msys64\mingw64"
+        
+        # Add to PATH
+        echo "PATH=${msys64Path}\bin;${env:PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        # Set PKG_CONFIG_PATH
+        echo "PKG_CONFIG_PATH=${msys64Path}\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        # Set GI and GST paths
+        echo "GI_TYPELIB_PATH=${msys64Path}\lib\girepository-1.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "GST_PLUGIN_PATH=${msys64Path}\lib\gstreamer-1.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        # Set library paths
+        echo "LD_LIBRARY_PATH=${msys64Path}\lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        
+        # Export for current session
+        $env:PKG_CONFIG_PATH = "${msys64Path}\lib\pkgconfig"
+        $env:GI_TYPELIB_PATH = "${msys64Path}\lib\girepository-1.0"
+        $env:GST_PLUGIN_PATH = "${msys64Path}\lib\gstreamer-1.0"
+        $env:LD_LIBRARY_PATH = "${msys64Path}\lib"
+        $env:PATH = "${msys64Path}\bin;" + $env:PATH
+        
+        Write-Host "Verifying PyGObject installation..."
+        # Test PyGObject import with system Python using MSYS2 libraries
+        try {
+          python -c "import gi; print('✓ PyGObject import successful')"
+          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')"
+          Write-Host "✓ PyGObject and GStreamer successfully available"
+        } catch {
+          Write-Host "⚠️ PyGObject import test failed: $($_.Exception.Message)"
+          Write-Host "Will attempt conda-forge fallback..."
           
-          # Fallback to conda-forge
-          try {
-            choco install miniconda3 -y
-            $env:PATH = "C:\tools\miniconda3;C:\tools\miniconda3\Scripts;C:\tools\miniconda3\condabin;" + $env:PATH
-            refreshenv
-            
-            & C:\tools\miniconda3\Scripts\conda.exe config --set always_yes true
-            & C:\tools\miniconda3\Scripts\conda.exe install -c conda-forge pygobject gtk
-            
-            Write-Host "PyGObject installed via conda-forge fallback"
-          } catch {
-            Write-Host "ERROR: All PyGObject installation methods failed"
-            exit 1
-          }
+          # Install conda as fallback
+          choco install miniconda3 -y
+          $env:PATH = "C:\tools\miniconda3;C:\tools\miniconda3\Scripts;C:\tools\miniconda3\condabin;" + $env:PATH
+          
+          & C:\tools\miniconda3\Scripts\conda.exe config --set always_yes true
+          & C:\tools\miniconda3\Scripts\conda.exe install -c conda-forge pygobject gtk gstreamer
+          
+          Write-Host "PyGObject installed via conda-forge fallback"
         }
+        
+        Write-Host "Windows dependencies installation completed"
         
     - name: Install Python dependencies (non-Linux)
       if: runner.os != 'Linux'
@@ -263,6 +294,31 @@ jobs:
         echo "PyGObject system packages already installed"
         # Verify installation
         python3 -c "import gi; print('PyGObject system installation successful')" || echo "PyGObject verification failed"
+
+    - name: Comprehensive GStreamer verification
+      run: |
+        echo "=== Comprehensive GStreamer/PyGObject Verification ==="
+        
+        # Print environment variables
+        echo "Environment variables:"
+        echo "  GST_PLUGIN_PATH: ${GST_PLUGIN_PATH:-Not set}"
+        echo "  GI_TYPELIB_PATH: ${GI_TYPELIB_PATH:-Not set}"
+        echo "  PKG_CONFIG_PATH: ${PKG_CONFIG_PATH:-Not set}"
+        
+        # Test basic Python imports
+        echo "Testing Python gi import..."
+        python -c "import sys; print('Python version:', sys.version)"
+        
+        echo "Testing PyGObject import..."
+        python -c "import gi; print('✓ gi import successful')" || echo "❌ gi import failed"
+        
+        echo "Testing GStreamer import..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')" || echo "❌ GStreamer import failed"
+        
+        echo "Testing GStreamer initialization..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('✓ GStreamer initialization successful' if result else '⚠️ GStreamer initialization failed')" || echo "❌ GStreamer initialization test failed"
+        
+        echo "Verification completed."
         
     - name: Run dependency check
       continue-on-error: true

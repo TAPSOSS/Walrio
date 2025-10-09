@@ -122,9 +122,23 @@ class WalrioBuildScript:
             import gi
             gi.require_version('Gst', '1.0')
             from gi.repository import Gst
-            print("  [OK] GStreamer - installed")
-        except (ImportError, ValueError):
-            print("  [WARNING] GStreamer - not found (audio playback may not work)")
+            
+            # Initialize GStreamer to verify it's properly set up
+            if Gst.init_check(None):
+                print("  [OK] GStreamer - installed and initialized")
+            else:
+                print("  [WARNING] GStreamer - installed but initialization failed")
+        except ImportError as e:
+            print(f"  [WARNING] PyGObject/GStreamer - not found ({e})")
+            print(f"            Audio playback may not work in the built executable")
+            # Print environment info for debugging
+            import os
+            gst_path = os.environ.get('GST_PLUGIN_PATH', 'Not set')
+            gi_path = os.environ.get('GI_TYPELIB_PATH', 'Not set')
+            print(f"            GST_PLUGIN_PATH: {gst_path}")
+            print(f"            GI_TYPELIB_PATH: {gi_path}")
+        except ValueError as e:
+            print(f"  [WARNING] GStreamer version issue - {e}")
             
         if missing_packages:
             print(f"\n[ERROR] Missing required packages: {', '.join(missing_packages)}")
