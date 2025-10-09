@@ -187,17 +187,24 @@ jobs:
         # Check if MSYS2 Python is available
         $msys2Python = "C:\tools\msys64\ucrt64\bin\python.exe"
         if (Test-Path $msys2Python) {
-          Write-Host "Using MSYS2 Python environment"
-          # Install dependencies in MSYS2 environment
-          C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-ucrt-x86_64-python-pip"
-          & $msys2Python -m pip install PySide6 mutagen pyinstaller
+          Write-Host "MSYS2 Python found, but using system Python for better compatibility"
+          # MSYS2 has PEP 668 restrictions, so let's use system Python instead
+          # and set up environment to find MSYS2 libraries
           
-          # Set up Python path for subsequent steps
-          $env:PYTHON_EXECUTABLE = $msys2Python
-          echo "PYTHON_EXECUTABLE=$msys2Python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Add MSYS2 paths to system PATH for library discovery
+          $env:PATH = "C:\tools\msys64\ucrt64\bin;C:\tools\msys64\usr\bin;" + $env:PATH
+          
+          # Set up library paths for PyGObject
+          $env:PKG_CONFIG_PATH = "C:\tools\msys64\ucrt64\lib\pkgconfig"
+          $env:GI_TYPELIB_PATH = "C:\tools\msys64\ucrt64\lib\girepository-1.0"
+          
+          # Use system Python with access to MSYS2 libraries
+          pip install PySide6 mutagen pyinstaller
+          
+          Write-Host "Configured to use system Python with MSYS2 library paths"
         } else {
           Write-Host "Using system Python (conda fallback was used)"
-          pip install PySide6 mutagen
+          pip install PySide6 mutagen pyinstaller
         }
         
     # Linux: Install PyGObject via system packages (more reliable)
@@ -212,23 +219,11 @@ jobs:
     - name: Run dependency check
       continue-on-error: true
       run: |
-        if [ "${{ runner.os }}" = "Windows" ] && [ -n "$PYTHON_EXECUTABLE" ]; then
-          echo "Using MSYS2 Python for dependency check: $PYTHON_EXECUTABLE"
-          "$PYTHON_EXECUTABLE" build_gui.py --no-deps-check --gui both --clean
-        else
-          python build_gui.py --no-deps-check --gui both --clean
-        fi
-      shell: bash
+        python build_gui.py --no-deps-check --gui both --clean
         
     - name: Build GUIs
       run: |
-        if [ "${{ runner.os }}" = "Windows" ] && [ -n "$PYTHON_EXECUTABLE" ]; then
-          echo "Using MSYS2 Python: $PYTHON_EXECUTABLE"
-          "$PYTHON_EXECUTABLE" build_gui.py --gui both --clean
-        else
-          python build_gui.py --gui both --clean
-        fi
-      shell: bash
+        python build_gui.py --gui both --clean
         
     - name: Test built executables (Linux/macOS)
       if: runner.os != 'Windows'
