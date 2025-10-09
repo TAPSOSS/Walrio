@@ -91,25 +91,41 @@ jobs:
         # Install GStreamer
         choco install gstreamer -y
         
-        # Download and install pre-built PyGObject wheels for Windows
-        # These are official builds from the GNOME project
-        $pygobjectUrl = "https://download.gnome.org/binaries/win64/pygobject/3.46/pygobject-3.46.0-py3.11-win-amd64.whl"
-        try {
-          Invoke-WebRequest -Uri $pygobjectUrl -OutFile "pygobject.whl"
-          pip install pygobject.whl
-          Write-Host "PyGObject installed from GNOME binaries"
-        } catch {
-          Write-Host "GNOME binaries failed, trying alternative sources..."
+        # Install MSYS2 - the officially recommended approach for PyGObject on Windows
+        Write-Host "Installing MSYS2..."
+        choco install msys2 -y
+        
+        # Initialize MSYS2 and install PyGObject
+        Write-Host "Setting up PyGObject via MSYS2..."
+        $env:PATH = "C:\tools\msys64\ucrt64\bin;C:\tools\msys64\usr\bin;" + $env:PATH
+        
+        # Update MSYS2 package database
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+        
+        # Install PyGObject and Python via MSYS2
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-python-gobject mingw-w64-ucrt-x86_64-gtk4"
+        
+        # Verify installation
+        $msys2Python = "C:\tools\msys64\ucrt64\bin\python.exe"
+        if (Test-Path $msys2Python) {
+          Write-Host "MSYS2 Python found at: $msys2Python"
+          & $msys2Python -c "import gi; print('PyGObject import successful')"
+          Write-Host "PyGObject successfully installed via MSYS2"
+        } else {
+          Write-Host "MSYS2 Python installation failed, trying conda-forge fallback..."
           
-          # Try alternative: use conda-forge which has Windows PyGObject builds
+          # Fallback to conda-forge
           try {
-            # Install conda if not present
             choco install miniconda3 -y
-            $env:PATH = "C:\tools\miniconda3;C:\tools\miniconda3\Scripts;" + $env:PATH
-            conda install -c conda-forge pygobject -y
-            Write-Host "PyGObject installed via conda-forge"
+            $env:PATH = "C:\tools\miniconda3;C:\tools\miniconda3\Scripts;C:\tools\miniconda3\condabin;" + $env:PATH
+            refreshenv
+            
+            & C:\tools\miniconda3\Scripts\conda.exe config --set always_yes true
+            & C:\tools\miniconda3\Scripts\conda.exe install -c conda-forge pygobject gtk
+            
+            Write-Host "PyGObject installed via conda-forge fallback"
           } catch {
-            Write-Host "All PyGObject installation methods failed"
+            Write-Host "ERROR: All PyGObject installation methods failed"
             exit 1
           }
         }
@@ -137,9 +153,21 @@ jobs:
     - name: Install additional build dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
-        # Install PySide6 and mutagen via regular pip
-        pip install PySide6 mutagen
-        # PyGObject should already be installed in the Windows dependencies step
+        # Check if MSYS2 Python is available
+        $msys2Python = "C:\tools\msys64\ucrt64\bin\python.exe"
+        if (Test-Path $msys2Python) {
+          Write-Host "Using MSYS2 Python environment"
+          # Install dependencies in MSYS2 environment
+          C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-ucrt-x86_64-python-pip"
+          & $msys2Python -m pip install PySide6 mutagen pyinstaller
+          
+          # Set up Python path for subsequent steps
+          $env:PYTHON_EXECUTABLE = $msys2Python
+          echo "PYTHON_EXECUTABLE=$msys2Python" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          Write-Host "Using system Python (conda fallback was used)"
+          pip install PySide6 mutagen
+        }
         
     # Linux: Install PyGObject via system packages (more reliable)
     - name: Install PyGObject (Linux)
@@ -153,11 +181,23 @@ jobs:
     - name: Run dependency check
       continue-on-error: true
       run: |
-        python build_gui.py --no-deps-check --gui both --clean
+        if [ "${{ runner.os }}" = "Windows" ] && [ -n "$PYTHON_EXECUTABLE" ]; then
+          echo "Using MSYS2 Python for dependency check: $PYTHON_EXECUTABLE"
+          "$PYTHON_EXECUTABLE" build_gui.py --no-deps-check --gui both --clean
+        else
+          python build_gui.py --no-deps-check --gui both --clean
+        fi
+      shell: bash
         
     - name: Build GUIs
       run: |
-        python build_gui.py --gui both --clean
+        if [ "${{ runner.os }}" = "Windows" ] && [ -n "$PYTHON_EXECUTABLE" ]; then
+          echo "Using MSYS2 Python: $PYTHON_EXECUTABLE"
+          "$PYTHON_EXECUTABLE" build_gui.py --gui both --clean
+        else
+          python build_gui.py --gui both --clean
+        fi
+      shell: bash
         
     - name: Test built executables (Linux/macOS)
       if: runner.os != 'Windows'
