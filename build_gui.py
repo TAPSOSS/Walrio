@@ -37,7 +37,6 @@ class WalrioBuildScript:
             "walrio_main": {
                 "entry_point": "GUI/walrio_main.py",
                 "name": "WalrioMain",
-                "icon": "icons/walrio.png",  # Use new unified icon for all platforms
                 "console": False,
                 "additional_data": [
                     ("modules", "modules"),
@@ -49,7 +48,6 @@ class WalrioBuildScript:
             "walrio_lite": {
                 "entry_point": "GUI/walrio_lite.py", 
                 "name": "WalrioLite",
-                "icon": "icons/walrio.png",  # Use new unified icon for all platforms
                 "console": False,
                 "additional_data": [
                     ("modules", "modules"),
@@ -170,10 +168,19 @@ class WalrioBuildScript:
             "--windowed" if not config["console"] else "",
         ]
         
-        # Add icon if it exists
-        icon_path = self.root_dir / config["icon"]
+        # Add platform-specific icon if it exists
+        if self.platform == "windows":
+            # Windows requires ICO format
+            icon_path = self.root_dir / "icons" / "walrio.ico"
+        else:
+            # Linux and macOS can use PNG
+            icon_path = self.root_dir / "icons" / "walrio.png"
+            
         if icon_path.exists():
             cmd.append(f"--icon={icon_path}")
+            print(f"  Using icon: {icon_path}")
+        else:
+            print(f"  Warning: Icon not found at {icon_path}")
         
         # Add hidden imports
         for import_name in platform_config["hidden_imports"]:
