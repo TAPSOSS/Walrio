@@ -22,6 +22,7 @@ class WalrioBuildScript:
     """PyInstaller build automation for Walrio GUIs."""
     
     def __init__(self):
+        """Initialize the build script with paths and platform detection."""
         self.root_dir = Path(__file__).parent.absolute()
         self.dist_dir = self.root_dir / "dist"
         self.build_dir = self.root_dir / "build"
@@ -91,7 +92,11 @@ class WalrioBuildScript:
         }
 
     def check_dependencies(self):
-        """Check if required dependencies are installed."""
+        """Check if required dependencies are installed.
+        
+        Returns:
+            bool: True if all required dependencies are available, False otherwise.
+        """
         print("Checking dependencies...")
         
         required_packages = [
@@ -140,7 +145,15 @@ class WalrioBuildScript:
         self.build_dir.mkdir(exist_ok=True)
 
     def build_gui(self, gui_type, debug=False):
-        """Build a specific GUI with PyInstaller."""
+        """Build a specific GUI with PyInstaller.
+        
+        Args:
+            gui_type (str): Type of GUI to build ('main' or 'lite').
+            debug (bool): Whether to build in debug mode (onedir vs onefile).
+            
+        Returns:
+            bool: True if build succeeded, False otherwise.
+        """
         if gui_type not in self.configs:
             raise ValueError(f"Unknown GUI type: {gui_type}")
             
@@ -203,7 +216,11 @@ class WalrioBuildScript:
             return False
 
     def create_build_info(self, built_guis):
-        """Create build information file."""
+        """Create build information file.
+        
+        Args:
+            built_guis (list): List of successfully built GUI applications.
+        """
         build_info = {
             "timestamp": str(subprocess.check_output(["date"], text=True).strip()),
             "platform": self.platform,

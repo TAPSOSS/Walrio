@@ -36,7 +36,11 @@ class CreditsView(BaseView):
     """Credits view widget showing project information and contributors."""
     
     def __init__(self, parent=None):
-        """Initialize the credits view."""
+        """Initialize the credits view.
+        
+        Args:
+            parent: Parent widget for this view.
+        """
         super().__init__(parent)
     
     def setup_ui(self):
