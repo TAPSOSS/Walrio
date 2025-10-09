@@ -19,10 +19,15 @@ permissions:
 jobs:
   build:
     # Run on "bot, build" comments (on PRs/issues) or on release publish or manual dispatch
+    # Contributors with read access or higher can trigger builds
     if: |
       (github.event_name == 'issue_comment' && 
        github.event.issue.pull_request && 
-       contains(github.event.comment.body, 'bot, build')) ||
+       contains(github.event.comment.body, 'bot, build') &&
+       (github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.comment.author_association == 'CONTRIBUTOR')) ||
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch'
     
