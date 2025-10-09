@@ -59,30 +59,45 @@ jobs:
     # macOS-specific setup  
     - name: Install macOS dependencies
       if: runner.os == 'macOS'
-      continue-on-error: true
       run: |
         echo "Installing macOS dependencies..."
         
-        # Try to update brew (non-blocking)
-        brew update || echo "Brew update failed, continuing..."
+        # Update homebrew
+        brew update
         
-        # Install core GStreamer (retry on failure)
+        # Install core system dependencies first (required for PyGObject compilation)
+        echo "Installing core system dependencies..."
+        brew install python3 gobject-introspection libffi pkg-config cairo glib gtk+3
+        
+        # Install GStreamer and plugins
         echo "Installing GStreamer..."
-        if ! brew install gstreamer gst-plugins-base; then
-          echo "Core GStreamer installation failed, retrying once..."
-          sleep 10
-          brew install gstreamer gst-plugins-base || echo "GStreamer installation failed, continuing..."
-        fi
+        brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly
         
-        # Install additional plugins (optional, non-blocking)
-        echo "Installing GStreamer plugins..."
-        brew install gst-plugins-good gst-plugins-bad gst-plugins-ugly || echo "Some GStreamer plugins failed to install"
+        # Set up essential environment variables for PyGObject
+        echo "Setting up environment variables..."
         
-        # Install Python/GTK dependencies (optional, non-blocking)  
-        echo "Installing Python/GTK dependencies..."
-        brew install gobject-introspection gtk+3 || echo "GTK dependencies failed to install"
+        # Get Homebrew prefix (handles both Intel and Apple Silicon)
+        BREW_PREFIX=$(brew --prefix)
         
-        echo "macOS dependency installation completed (some failures may be non-critical)"
+        # Set PKG_CONFIG_PATH for libffi and other libraries
+        echo "PKG_CONFIG_PATH=${BREW_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/libffi/lib/pkgconfig:\$PKG_CONFIG_PATH" >> $GITHUB_ENV
+        
+        # Set library paths for dynamic linking
+        echo "DYLD_LIBRARY_PATH=${BREW_PREFIX}/lib:\$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+        echo "LD_LIBRARY_PATH=${BREW_PREFIX}/lib:\$LD_LIBRARY_PATH" >> $GITHUB_ENV
+        
+        # Set GI typelib path
+        echo "GI_TYPELIB_PATH=${BREW_PREFIX}/lib/girepository-1.0:\$GI_TYPELIB_PATH" >> $GITHUB_ENV
+        
+        # Set GST plugin path  
+        echo "GST_PLUGIN_PATH=${BREW_PREFIX}/lib/gstreamer-1.0:\$GST_PLUGIN_PATH" >> $GITHUB_ENV
+        
+        # Export for current shell session
+        export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/libffi/lib/pkgconfig:$PKG_CONFIG_PATH"
+        export DYLD_LIBRARY_PATH="${BREW_PREFIX}/lib:$DYLD_LIBRARY_PATH"
+        export GI_TYPELIB_PATH="${BREW_PREFIX}/lib/girepository-1.0:$GI_TYPELIB_PATH"
+        
+        echo "macOS dependency installation completed successfully"
         
     # Windows-specific setup
     - name: Install Windows dependencies  
@@ -148,7 +163,23 @@ jobs:
     - name: Install additional build dependencies (macOS)
       if: runner.os == 'macOS'
       run: |
-        pip install PySide6 mutagen PyGObject
+        # Install Python dependencies
+        pip install PySide6 mutagen
+        
+        # Install PyGObject with proper environment
+        echo "Installing PyGObject with proper environment setup..."
+        
+        # Ensure environment variables are available
+        BREW_PREFIX=$(brew --prefix)
+        export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/libffi/lib/pkgconfig:$PKG_CONFIG_PATH"
+        export DYLD_LIBRARY_PATH="${BREW_PREFIX}/lib:$DYLD_LIBRARY_PATH"
+        
+        # Install PyGObject
+        pip install PyGObject
+        
+        # Verify installation
+        python3 -c "import gi; print('PyGObject import successful')"
+        python3 -c "import gi; gi.require_version('GLib', '2.0'); from gi.repository import GLib; print('GLib import successful')"
         
     - name: Install additional build dependencies (Windows)
       if: runner.os == 'Windows'
