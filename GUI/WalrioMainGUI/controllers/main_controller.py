@@ -82,7 +82,7 @@ class MainController(QObject):
         
         # Add tabs to the main window
         self.main_window.add_tab(self.queue_view, "Queue")
-        self.main_window.add_tab(self.playlist_view, "Playlist")
+        self.main_window.add_tab(self.playlist_content_view, "Playlist")
         self.main_window.add_tab(self.credits_view, "Credits")
         
         # Set default tab to Queue (index 0)
