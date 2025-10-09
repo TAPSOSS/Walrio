@@ -67,7 +67,7 @@ class CreditsView(BaseView):
         
         # Version/Description section
         desc_text = """
-        Walrio Music Player is an open source music player. Built with Python and PySide6, 
+        Walrio Music Player Lite is an open source music player. Built with Python and PySide6, 
         it provides a clean and intuitive interface for managing and playing your music collection.
         """
         

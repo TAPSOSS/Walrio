@@ -56,7 +56,7 @@ class QueueView(BaseView):
         
         # Set up columns: Title, Album, Album Artist, Artist, Year
         self.queue_table.setColumnCount(7)
-        self.queue_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Duration', 'Filepath'])
+        self.queue_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Length', 'Filepath'])
         
         # Enable resizable columns
         header = self.queue_table.horizontalHeader()
@@ -65,7 +65,7 @@ class QueueView(BaseView):
         header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
         header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
         header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
-        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Duration - fixed width
+        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Length - fixed width
         header.setSectionResizeMode(6, QHeaderView.Interactive)  # Filepath - manual resize
         self.queue_table.setColumnWidth(4, 60)
         self.queue_table.setColumnWidth(5, 80)
@@ -145,7 +145,7 @@ class QueueView(BaseView):
     def _show_column_context_menu(self, position):
         """Show context menu for column visibility."""
         header = self.queue_table.horizontalHeader()
-        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Duration", "Filepath"]
+        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Length", "Filepath"]
         
         menu = QMenu(self)
         

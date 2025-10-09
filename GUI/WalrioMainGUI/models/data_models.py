@@ -46,7 +46,7 @@ class Song:
         """Convert song to dictionary format.
         
         Returns:
-            dict: Dictionary containing song metadata with keys: url, title, artist, album, albumartist, year, duration
+            dict: Dictionary containing song metadata with keys: url, title, artist, album, albumartist, year, length
         """
         return {
             'url': self.url,
@@ -55,7 +55,7 @@ class Song:
             'album': self.album,
             'albumartist': self.albumartist,
             'year': self.year,
-            'duration': self.duration
+            'length': self.duration
         }
     
     @classmethod
@@ -75,7 +75,7 @@ class Song:
             album=data.get('album'),
             albumartist=data.get('albumartist'),
             year=data.get('year'),
-            duration=data.get('duration', 0)
+            duration=data.get('length', 0)  # Use 'length' field from metadata
         )
     
     def __str__(self):
