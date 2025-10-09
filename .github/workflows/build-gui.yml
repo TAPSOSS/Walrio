@@ -58,8 +58,14 @@ jobs:
           gstreamer1.0-libav \
           libgstreamer1.0-dev \
           libgirepository1.0-dev \
+          gobject-introspection \
+          libgobject-introspection-dev \
           libcairo2-dev \
-          libgtk-3-dev
+          libgtk-3-dev \
+          build-essential \
+          python3-dev \
+          pkg-config \
+          libffi-dev
           
     # macOS-specific setup  
     - name: Install macOS dependencies
@@ -90,7 +96,10 @@ jobs:
     - name: Install PyGObject (Linux)
       if: runner.os == 'Linux'  
       run: |
-        pip install PyGObject --no-binary PyGObject
+        # Try to install PyGObject from system packages first
+        sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
+        # If system packages don't work, try pip with pre-built wheels
+        pip install PyGObject || echo "PyGObject installation from pip failed, using system packages"
         
     - name: Run dependency check
       run: |
