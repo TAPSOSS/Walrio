@@ -50,9 +50,8 @@ jobs:
           
     # Setup GStreamer using marketplace action (works on all platforms)
     - name: Setup GStreamer
-      uses: marcpabst/setup-gstreamer@v1
+      uses: marcpabst/setup-gstreamer@main
       with:
-        version: '1.22.7'  # Recent stable version
         arch: 'x86_64'     # Standard architecture
 
     # Install PyGObject for Python integration (platform-specific)
