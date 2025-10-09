@@ -380,14 +380,18 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
             potential_paths = []
             
             # Add setup-gstreamer action path if available
-            if gst_root:
+            if gst_root and Path(gst_root).exists():
                 potential_paths.append(gst_root)
             
-            # Add common GStreamer installation paths
-            potential_paths.extend([
+            # Add common GStreamer installation paths (only if they exist)
+            common_paths = [
                 "C:/gstreamer/1.0/msvc_x86_64",
                 "C:/gstreamer"
-            ])
+            ]
+            
+            for path in common_paths:
+                if Path(path).exists():
+                    potential_paths.append(path)
             
             # Add MSYS2 paths for PyGObject integration
             potential_paths.extend([
@@ -395,20 +399,34 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                 "C:/tools/msys64/mingw64"
             ])
             
+            # Track which paths we've already added to avoid duplicates
+            added_gst_paths = set()
+            added_gi_paths = set()
+            added_bin_paths = set()
+            
             for base_path in potential_paths:
+                base_path_obj = Path(base_path)
+                if not base_path_obj.exists():
+                    continue
+                    
                 gst_path = f"{base_path}/lib/gstreamer-1.0"
                 gi_path = f"{base_path}/lib/girepository-1.0"
                 bin_path = f"{base_path}/bin"
                 
-                if Path(gst_path).exists():
+                if Path(gst_path).exists() and gst_path not in added_gst_paths:
                     cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
                     print(f"    Added GStreamer plugins from: {gst_path}")
-                if Path(gi_path).exists():
+                    added_gst_paths.add(gst_path)
+                    
+                if Path(gi_path).exists() and gi_path not in added_gi_paths:
                     cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
                     print(f"    Added GI typelibs from: {gi_path}")
-                if Path(bin_path).exists():
+                    added_gi_paths.add(gi_path)
+                    
+                if Path(bin_path).exists() and bin_path not in added_bin_paths:
                     cmd.append(f"--add-binary={bin_path}/*.dll:.")
                     print(f"    Added GStreamer binaries from: {bin_path}")
+                    added_bin_paths.add(bin_path)
         
         # Add entry point
         cmd.append(str(self.root_dir / config["entry_point"]))
