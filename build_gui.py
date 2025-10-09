@@ -113,7 +113,7 @@ class WalrioBuildScript:
             from gi.repository import Gst
             print("  [OK] GStreamer - installed")
         except (ImportError, ValueError):
-            print("  ⚠️  GStreamer - not found (audio playback may not work)")
+            print("  [WARNING] GStreamer - not found (audio playback may not work)")
             
         if missing_packages:
             print(f"\n[ERROR] Missing required packages: {', '.join(missing_packages)}")
