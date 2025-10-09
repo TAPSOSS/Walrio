@@ -177,11 +177,13 @@ class PlaylistContentView(BaseView):
             for item in items:
                 if is_missing:
                     item.setForeground(QColor(128, 128, 128))  # Gray text
+                    item.setBackground(QColor(255, 200, 200, 128))  # Light red background at 50% opacity
                     font = item.font()
                     font.setItalic(True)
                     item.setFont(font)
                 else:
                     item.setForeground(QColor(0, 0, 0))  # Normal black text
+                    item.setData(Qt.BackgroundRole, None)  # Clear background
                     font = item.font()
                     font.setItalic(False)
                     item.setFont(font)
