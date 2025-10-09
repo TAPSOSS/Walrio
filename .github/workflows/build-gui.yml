@@ -309,6 +309,25 @@ jobs:
           Get-ChildItem dist/ -ErrorAction SilentlyContinue | Format-Table
           exit 1
         }
+    
+    - name: Test PyGObject bundling
+      continue-on-error: true
+      run: |
+        echo "Testing PyGObject import capability in built environment..."
+        
+        # Test if gi can be imported in the current Python environment
+        if python -c "import gi; print('✓ gi import successful')"; then
+          echo "✓ PyGObject available in build environment"
+        else
+          echo "⚠️ PyGObject not available in build environment - executable may have import issues"
+        fi
+        
+        # Additional GStreamer test
+        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')"; then
+          echo "✓ GStreamer available in build environment"
+        else
+          echo "⚠️ GStreamer not available in build environment - audio may not work"
+        fi
         
     - name: Create artifact name
       id: artifact

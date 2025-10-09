@@ -65,6 +65,8 @@ class WalrioBuildScript:
                 "separator": ":",
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
+                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
+                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
                     "mutagen", "sqlite3", "pathlib", "json", "PIL", "PIL.Image"
                 ]
@@ -74,6 +76,8 @@ class WalrioBuildScript:
                 "separator": ":",
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
+                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
+                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
                     "mutagen", "sqlite3", "pathlib", "json", "Foundation", "AppKit", "PIL", "PIL.Image"
                 ]
@@ -83,6 +87,8 @@ class WalrioBuildScript:
                 "separator": ";",
                 "hidden_imports": [
                     "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
+                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
+                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
                     "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
                     "mutagen", "sqlite3", "pathlib", "json", "win32api", "win32gui", "PIL", "PIL.Image"
                 ]
@@ -142,6 +148,99 @@ class WalrioBuildScript:
         self.dist_dir.mkdir(exist_ok=True)
         self.build_dir.mkdir(exist_ok=True)
 
+    def create_gstreamer_hook(self, hook_path):
+        """Create GStreamer runtime hook for PyInstaller."""
+        hook_content = '''
+import os
+import sys
+import platform
+
+def pyi_rth_gstreamer():
+    """Runtime hook to properly initialize GStreamer in PyInstaller bundle."""
+    try:
+        # Set up GStreamer plugin paths relative to executable
+        if hasattr(sys, '_MEIPASS'):
+            # Running from PyInstaller bundle
+            base_path = sys._MEIPASS
+            
+            if platform.system() == 'Linux':
+                gst_plugin_path = os.path.join(base_path, 'gstreamer-1.0')
+                gi_typelib_path = os.path.join(base_path, 'girepository-1.0')
+                
+                if os.path.exists(gst_plugin_path):
+                    os.environ['GST_PLUGIN_PATH'] = gst_plugin_path
+                if os.path.exists(gi_typelib_path):
+                    os.environ['GI_TYPELIB_PATH'] = gi_typelib_path
+                    
+            elif platform.system() == 'Darwin':
+                gst_plugin_path = os.path.join(base_path, 'gstreamer-1.0')
+                gi_typelib_path = os.path.join(base_path, 'girepository-1.0')
+                
+                if os.path.exists(gst_plugin_path):
+                    os.environ['GST_PLUGIN_PATH'] = gst_plugin_path
+                if os.path.exists(gi_typelib_path):
+                    os.environ['GI_TYPELIB_PATH'] = gi_typelib_path
+                    
+            elif platform.system() == 'Windows':
+                gst_plugin_path = os.path.join(base_path, 'gstreamer-1.0')
+                gi_typelib_path = os.path.join(base_path, 'girepository-1.0')
+                
+                if os.path.exists(gst_plugin_path):
+                    os.environ['GST_PLUGIN_PATH'] = gst_plugin_path
+                if os.path.exists(gi_typelib_path):
+                    os.environ['GI_TYPELIB_PATH'] = gi_typelib_path
+    except Exception as e:
+        print(f"Warning: Failed to set up GStreamer environment: {e}")
+
+# Execute hook
+pyi_rth_gstreamer()
+'''
+        
+        with open(hook_path, 'w') as f:
+            f.write(hook_content)
+        print(f"Created GStreamer runtime hook: {hook_path}")
+
+    def create_fallback_gi_module(self):
+        """Create a fallback gi module stub in case bundling fails."""
+        gi_stub = self.root_dir / "gi_stub.py"
+        stub_content = '''
+"""
+Fallback gi module stub for when PyGObject bundling fails.
+This provides a helpful error message instead of a cryptic import error.
+"""
+
+class GiStub:
+    def __init__(self):
+        self.available = False
+    
+    def require_version(self, *args, **kwargs):
+        raise ImportError(
+            "GStreamer/PyGObject is not available in this build. "
+            "This may indicate a packaging issue. "
+            "Audio playback will not work. "
+            "Please use a system installation or report this issue."
+        )
+
+# Create stub repository module
+class RepositoryStub:
+    def __getattr__(self, name):
+        raise ImportError(
+            f"GStreamer module '{name}' is not available. "
+            "PyGObject/GStreamer was not properly bundled with this executable."
+        )
+
+# Replace the gi module functionality
+import sys
+sys.modules[__name__] = GiStub()
+sys.modules[__name__ + '.repository'] = RepositoryStub()
+'''
+        
+        with open(gi_stub, 'w') as f:
+            f.write(stub_content)
+        print(f"Created gi fallback stub: {gi_stub}")
+        
+        return gi_stub
+
     def build_gui(self, gui_type, debug=False):
         """Build a specific GUI with PyInstaller.
         
@@ -185,6 +284,20 @@ class WalrioBuildScript:
         # Add hidden imports
         for import_name in platform_config["hidden_imports"]:
             cmd.append(f"--hidden-import={import_name}")
+        
+        # Add PyInstaller collection options for better library bundling
+        cmd.extend([
+            "--collect-submodules=gi",
+            "--collect-all=gi", 
+            "--collect-binaries=gi",
+            "--collect-datas=gi"
+        ])
+        
+        # Add runtime hook for GStreamer initialization
+        hook_file = self.root_dir / "gst_runtime_hook.py"
+        if not hook_file.exists():
+            self.create_gstreamer_hook(hook_file)
+        cmd.append(f"--runtime-hook={hook_file}")
             
         # Add additional data
         for src, dst in config["additional_data"]:
@@ -192,16 +305,62 @@ class WalrioBuildScript:
             if src_path.exists():
                 cmd.append(f"--add-data={src_path}{platform_config['separator']}{dst}")
         
-        # Platform-specific options
-        if self.platform == "darwin":
+        # Platform-specific options and library collection
+        if self.platform == "linux":
+            # Try to find GStreamer plugin directories
+            gst_paths = [
+                "/usr/lib/x86_64-linux-gnu/gstreamer-1.0",
+                "/usr/lib/gstreamer-1.0", 
+                "/usr/local/lib/gstreamer-1.0"
+            ]
+            gi_paths = [
+                "/usr/lib/x86_64-linux-gnu/girepository-1.0",
+                "/usr/lib/girepository-1.0",
+                "/usr/local/lib/girepository-1.0"
+            ]
+            
+            for gst_path in gst_paths:
+                if Path(gst_path).exists():
+                    cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
+                    break
+                    
+            for gi_path in gi_paths:
+                if Path(gi_path).exists():
+                    cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
+                    break
+                    
+        elif self.platform == "darwin":
             cmd.extend([
                 "--osx-bundle-identifier=org.tapsoss.walrio",
                 f"--target-arch={self.arch}"
             ])
+            
+            # Try to find Homebrew GStreamer paths
+            homebrew_paths = ["/opt/homebrew", "/usr/local"]
+            for homebrew in homebrew_paths:
+                gst_path = f"{homebrew}/lib/gstreamer-1.0"
+                gi_path = f"{homebrew}/lib/girepository-1.0"
+                
+                if Path(gst_path).exists():
+                    cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
+                if Path(gi_path).exists():
+                    cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
+                    
         elif self.platform == "windows":
-            cmd.extend([
-                "--version-file=version_info.txt" if (self.root_dir / "version_info.txt").exists() else ""
-            ])
+            version_file_option = "--version-file=version_info.txt" if (self.root_dir / "version_info.txt").exists() else ""
+            if version_file_option:
+                cmd.append(version_file_option)
+                
+            # Try to find MSYS2 GStreamer paths
+            msys2_paths = ["C:/msys64/mingw64", "C:/tools/msys64/mingw64"]
+            for msys2 in msys2_paths:
+                gst_path = f"{msys2}/lib/gstreamer-1.0"
+                gi_path = f"{msys2}/lib/girepository-1.0"
+                
+                if Path(gst_path).exists():
+                    cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
+                if Path(gi_path).exists():
+                    cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
         
         # Add entry point
         cmd.append(str(self.root_dir / config["entry_point"]))
