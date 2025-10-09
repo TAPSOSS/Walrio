@@ -287,6 +287,22 @@ class PlaybackController(QObject):
         self.app_state.current_file = song.get('url') or song.get('filepath')
         self.app_state.current_queue_index = index
         
+        # Check if file exists and update file_missing status if needed
+        import os
+        if self.app_state.current_file and not os.path.exists(self.app_state.current_file):
+            # File is missing - update the song data
+            song['file_missing'] = True
+            print(f"File no longer exists: {self.app_state.current_file}")
+            
+            # Update queue display to show the missing file
+            self.update_queue_state()
+            
+            # Show error message and skip to next song
+            error_message = f"File not found:\n{self.app_state.current_file}\n\nSkipping to next song..."
+            self.controls_view.show_message("File Not Found", error_message, "warning")
+            self._skip_to_next_song_on_error()
+            return
+        
         # CRITICAL: Get duration immediately using metadata module
         # This prevents seekbar issues and ensures immediate duration availability
         
@@ -564,8 +580,17 @@ class PlaybackController(QObject):
         Args:
             error (str): Error message describing what went wrong during playback
         """
-        # Check if it's a file not found error
-        if "file not found" in error.lower() or "no such file" in error.lower() or "does not exist" in error.lower():
+        # Check if it's a file not found error or failed to load file
+        is_file_missing = ("file not found" in error.lower() or 
+                          "no such file" in error.lower() or 
+                          "does not exist" in error.lower() or
+                          "failed to load file" in error.lower() or
+                          "failed to start playback" in error.lower())
+        
+        if is_file_missing:
+            # Update the current song's file_missing status
+            self._mark_current_song_as_missing()
+            
             # Get the current file path
             current_file = self.app_state.current_file or "Unknown file"
             
@@ -580,6 +605,21 @@ class PlaybackController(QObject):
             self.controls_view.show_message("Playback Error", error, "error")
             self.stop_playback()
     
+    def _mark_current_song_as_missing(self):
+        """Mark the current song as missing and update the queue display."""
+        if (self.app_state.queue_songs and 
+            hasattr(self.app_state, 'current_queue_index') and 
+            0 <= self.app_state.current_queue_index < len(self.app_state.queue_songs)):
+            
+            # Update the file_missing flag for the current song
+            current_song = self.app_state.queue_songs[self.app_state.current_queue_index]
+            current_song['file_missing'] = True
+            
+            print(f"Marked song as missing: {current_song.get('title', 'Unknown')} - {current_song.get('url', 'No URL')}")
+            
+            # Emit signal to update queue display
+            self.update_queue_state()
+
     def _skip_to_next_song_on_error(self):
         """Skip to the next song when current song fails to load."""
         print(f"Skipping unplayable song: {self.app_state.current_file}")
