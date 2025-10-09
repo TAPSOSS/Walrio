@@ -230,11 +230,11 @@ jobs:
     - name: Run dependency check
       continue-on-error: true
       run: |
-        python build_gui.py --no-deps-check --gui both --clean
+        make deps-check
         
     - name: Build GUIs
       run: |
-        python build_gui.py --gui both --clean
+        make build
         
     - name: Test built executables (Linux/macOS)
       if: runner.os != 'Windows'
