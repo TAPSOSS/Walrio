@@ -36,23 +36,27 @@ class WalrioBuildScript:
             "walrio_main": {
                 "entry_point": "GUI/walrio_main.py",
                 "name": "WalrioMain",
-                "icon": "assets/walrio_icon.ico" if self.platform == "windows" else "assets/walrio_icon.png",
+                "icon": "walrio.png",  # Use new unified icon for all platforms
                 "console": False,
                 "additional_data": [
                     ("modules", "modules"),
                     ("testing_files", "testing_files"),
-                    ("assets", "assets")
+                    ("assets", "assets"),
+                    ("walrio.png", "."),  # Add icon to bundle for GUI credits
+                    ("walrio.svg", ".")   # Add SVG version for GUI credits
                 ]
             },
             "walrio_lite": {
                 "entry_point": "GUI/walrio_lite.py", 
                 "name": "WalrioLite",
-                "icon": "assets/walrio_lite_icon.ico" if self.platform == "windows" else "assets/walrio_lite_icon.png",
+                "icon": "walrio.png",  # Use new unified icon for all platforms
                 "console": False,
                 "additional_data": [
                     ("modules", "modules"),
                     ("testing_files", "testing_files"),
-                    ("assets", "assets")
+                    ("assets", "assets"),
+                    ("walrio.png", "."),  # Add icon to bundle for GUI credits
+                    ("walrio.svg", ".")   # Add SVG version for GUI credits
                 ]
             }
         }

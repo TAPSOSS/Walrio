@@ -56,6 +56,51 @@ class CreditsView(BaseView):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(15)
         
+        # Icon and Title section
+        header_layout = QVBoxLayout()
+        header_layout.setSpacing(10)
+        
+        # Walrio Icon
+        icon_label = QLabel()
+        icon_label.setAlignment(Qt.AlignCenter)
+        
+        # Try to load SVG first, fallback to PNG
+        try:
+            # Look for the icon in the bundled resources or current directory
+            icon_paths = [
+                Path.cwd() / "walrio.svg",  # When running from source
+                Path(__file__).parent.parent.parent.parent / "walrio.svg",  # When bundled
+                Path.cwd() / "walrio.png",  # PNG fallback when running from source
+                Path(__file__).parent.parent.parent.parent / "walrio.png",  # PNG fallback when bundled
+            ]
+            
+            icon_loaded = False
+            for icon_path in icon_paths:
+                if icon_path.exists():
+                    pixmap = QPixmap(str(icon_path))
+                    if not pixmap.isNull():
+                        # Scale the icon to a reasonable size
+                        scaled_pixmap = pixmap.scaled(64, 64, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        icon_label.setPixmap(scaled_pixmap)
+                        icon_loaded = True
+                        break
+            
+            if not icon_loaded:
+                # If no icon found, show a placeholder
+                icon_label.setText("🎵")
+                icon_font = QFont()
+                icon_font.setPointSize(48)
+                icon_label.setFont(icon_font)
+                
+        except Exception as e:
+            # Fallback to emoji if there's any error
+            icon_label.setText("🎵")
+            icon_font = QFont()
+            icon_font.setPointSize(48)
+            icon_label.setFont(icon_font)
+        
+        header_layout.addWidget(icon_label)
+        
         # Title
         title_label = QLabel("Walrio Music Player")
         title_font = QFont()
@@ -63,7 +108,9 @@ class CreditsView(BaseView):
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
-        content_layout.addWidget(title_label)
+        header_layout.addWidget(title_label)
+        
+        content_layout.addLayout(header_layout)
         
         # Version/Description section
         desc_text = """
