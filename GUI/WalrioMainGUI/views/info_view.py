@@ -46,17 +46,16 @@ class InfoView(BaseView):
         
     def setup_ui(self):
         """Setup the info view UI."""
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(10)
+        layout.setSpacing(15)
         
-        # Main horizontal layout for album art and song info
-        main_layout = QHBoxLayout()
-        main_layout.setSpacing(15)
+        # Left side - Album art (takes up half the width)
+        album_art_container = QWidget()
+        album_art_container_layout = QVBoxLayout(album_art_container)
+        album_art_container_layout.setContentsMargins(0, 0, 0, 0)
         
-        # Left side - Album art
         self.album_art_label = QLabel()
-        self.album_art_label.setFixedSize(200, 200)
         self.album_art_label.setAlignment(Qt.AlignCenter)
         self.album_art_label.setStyleSheet("""
             QLabel {
@@ -66,9 +65,19 @@ class InfoView(BaseView):
             }
         """)
         self.album_art_label.setText("No Album Art")
-        main_layout.addWidget(self.album_art_label)
+        self.album_art_label.setScaledContents(True)
+        self.album_art_label.setMinimumSize(200, 200)
         
-        # Right side - Song info
+        album_art_container_layout.addWidget(self.album_art_label)
+        layout.addWidget(album_art_container, 1)  # Takes up half the width
+        
+        # Right side - Song info and lyrics
+        right_side_widget = QWidget()
+        right_side_layout = QVBoxLayout(right_side_widget)
+        right_side_layout.setContentsMargins(0, 0, 0, 0)
+        right_side_layout.setSpacing(10)
+        
+        # Song info section
         info_widget = QWidget()
         info_layout = QVBoxLayout(info_widget)
         info_layout.setContentsMargins(0, 0, 0, 0)
@@ -112,12 +121,7 @@ class InfoView(BaseView):
         self.length_label.setFont(length_font)
         info_layout.addWidget(self.length_label)
         
-        # Add stretch to push info to top
-        info_layout.addStretch()
-        
-        main_layout.addWidget(info_widget, 1)  # Give more space to info
-        
-        layout.addLayout(main_layout)
+        right_side_layout.addWidget(info_widget)
         
         # Lyrics section
         lyrics_frame = QFrame()
@@ -135,10 +139,12 @@ class InfoView(BaseView):
         self.lyrics_text = QTextEdit()
         self.lyrics_text.setReadOnly(True)
         self.lyrics_text.setPlainText("No lyrics available")
-        self.lyrics_text.setMinimumHeight(150)
+        self.lyrics_text.setMinimumHeight(200)
         lyrics_layout.addWidget(self.lyrics_text)
         
-        layout.addWidget(lyrics_frame, 1)  # Give lyrics more space
+        right_side_layout.addWidget(lyrics_frame, 1)  # Give lyrics remaining space
+        
+        layout.addWidget(right_side_widget, 1)  # Takes up the other half
     
     def update_song_info(self, song_data):
         """Update the displayed song information.
@@ -253,12 +259,20 @@ class InfoView(BaseView):
                 pixmap.loadFromData(image_data)
                 
                 if not pixmap.isNull():
-                    # Scale to fit the label while maintaining aspect ratio
+                    # Get the current size of the album art container and make it square
+                    container_size = self.album_art_label.parent().size()
+                    square_size = min(container_size.width(), container_size.height()) - 20  # Leave some margin
+                    square_size = max(square_size, 200)  # Minimum size
+                    
+                    # Scale to square size while maintaining aspect ratio
                     scaled_pixmap = pixmap.scaled(
-                        self.album_art_label.size(), 
+                        square_size, square_size, 
                         Qt.KeepAspectRatio, 
                         Qt.SmoothTransformation
                     )
+                    
+                    # Update the label size to be square
+                    self.album_art_label.setFixedSize(square_size, square_size)
                     self.album_art_label.setPixmap(scaled_pixmap)
                     self.album_art_label.setText("")  # Clear text when showing image
                 else:
