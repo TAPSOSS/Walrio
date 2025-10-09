@@ -1,22 +1,11 @@
 name: Build Walrio GUIs
 
 on:
-  # Manual trigger via "bot, build" comment
   issue_comment:
     types: [created]
-  # Also trigger on PR events so workflow is available
-  pull_request:
-    types: [opened, synchronize, reopened]
-  # Automatic builds when releases are published
   release:
     types: [published]
-  # Manual workflow dispatch  
   workflow_dispatch:
-    inputs:
-      test_build:
-        description: 'Test build trigger'
-        required: false
-        default: 'true'
 
 permissions:
   contents: read
@@ -26,11 +15,9 @@ permissions:
 
 jobs:
   build:
-    # Run on "bot, build" comments or release publish or manual dispatch
-    # PR events register workflow but don't trigger builds
+    # Only run on pull request comments with "bot, build" OR on releases OR manual dispatch
     if: |
-      (github.event_name == 'issue_comment' && 
-       contains(github.event.comment.body, 'bot, build')) ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, 'bot, build')) ||
       github.event_name == 'release' ||
       github.event_name == 'workflow_dispatch'
     
@@ -598,7 +585,7 @@ jobs:
 
   # Summary job for comment-triggered builds
   build-summary:
-    if: github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, 'bot, build')
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'bot, build')
     needs: build
     runs-on: ubuntu-latest
     
