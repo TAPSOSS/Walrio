@@ -88,16 +88,31 @@ jobs:
     - name: Install Windows dependencies  
       if: runner.os == 'Windows'
       run: |
-        # Install latest GStreamer via Chocolatey (most reliable method)
+        # Install GStreamer
         choco install gstreamer -y
         
-    - name: Setup Windows build environment
-      if: runner.os == 'Windows'
-      run: |
-        # Install Microsoft Visual C++ build tools which are needed for compiling Python extensions
-        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
-        # Install pkg-config for Windows
-        choco install pkgconfiglite -y
+        # Download and install pre-built PyGObject wheels for Windows
+        # These are official builds from the GNOME project
+        $pygobjectUrl = "https://download.gnome.org/binaries/win64/pygobject/3.46/pygobject-3.46.0-py3.11-win-amd64.whl"
+        try {
+          Invoke-WebRequest -Uri $pygobjectUrl -OutFile "pygobject.whl"
+          pip install pygobject.whl
+          Write-Host "PyGObject installed from GNOME binaries"
+        } catch {
+          Write-Host "GNOME binaries failed, trying alternative sources..."
+          
+          # Try alternative: use conda-forge which has Windows PyGObject builds
+          try {
+            # Install conda if not present
+            choco install miniconda3 -y
+            $env:PATH = "C:\tools\miniconda3;C:\tools\miniconda3\Scripts;" + $env:PATH
+            conda install -c conda-forge pygobject -y
+            Write-Host "PyGObject installed via conda-forge"
+          } catch {
+            Write-Host "All PyGObject installation methods failed"
+            exit 1
+          }
+        }
         
     - name: Install Python dependencies (non-Linux)
       if: runner.os != 'Linux'
@@ -114,10 +129,17 @@ jobs:
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
         
-    - name: Install additional build dependencies (non-Linux)
-      if: runner.os != 'Linux'
+    - name: Install additional build dependencies (macOS)
+      if: runner.os == 'macOS'
       run: |
         pip install PySide6 mutagen PyGObject
+        
+    - name: Install additional build dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        # Install PySide6 and mutagen via regular pip
+        pip install PySide6 mutagen
+        # PyGObject should already be installed in the Windows dependencies step
         
     # Linux: Install PyGObject via system packages (more reliable)
     - name: Install PyGObject (Linux)
