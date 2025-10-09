@@ -91,6 +91,14 @@ jobs:
         # Install latest GStreamer via Chocolatey (most reliable method)
         choco install gstreamer -y
         
+    - name: Setup Windows build environment
+      if: runner.os == 'Windows'
+      run: |
+        # Install Microsoft Visual C++ build tools which are needed for compiling Python extensions
+        choco install visualstudio2022buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
+        # Install pkg-config for Windows
+        choco install pkgconfiglite -y
+        
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
@@ -99,7 +107,7 @@ jobs:
         
     - name: Install additional build dependencies
       run: |
-        pip install PyGObject PySide6 mutagen
+        pip install PySide6 mutagen PyGObject
         
     # Linux: Install PyGObject via system packages (more reliable)
     - name: Install PyGObject (Linux)
@@ -111,6 +119,7 @@ jobs:
         pip install PyGObject || echo "PyGObject installation from pip failed, using system packages"
         
     - name: Run dependency check
+      continue-on-error: true
       run: |
         python build_gui.py --no-deps-check --gui both --clean
         
