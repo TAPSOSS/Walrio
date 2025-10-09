@@ -250,7 +250,7 @@ class QueueWorker(QThread):
                 # Get metadata for the file
                 metadata = self._get_file_metadata(filepath)
                 song = {
-                    'url': self.file_url,
+                    'url': filepath,
                     'title': metadata['title'],
                     'artist': metadata['artist'],
                     'album': metadata['album'],

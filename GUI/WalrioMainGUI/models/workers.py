@@ -263,7 +263,7 @@ class QueueWorker(QThread):
                     'album': metadata['album'],
                     'albumartist': metadata['albumartist'],
                     'year': metadata['year'],
-                    'duration': metadata['duration']
+                    'length': metadata['length']
                 }
                 
                 # Debug: Print the song data
