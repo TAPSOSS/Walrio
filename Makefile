@@ -2,6 +2,7 @@
 # Copyright (c) 2025 TAPS OSS
 # Project: https://github.com/TAPSOSS/Walrio
 # Licensed under the BSD-3-Clause License (see LICENSE file for details)
+# Makefile primarily built for GUIs
 
 MAKEFLAGS = --warn-undefined-variables
 # make sort behave sanely
