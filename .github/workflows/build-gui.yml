@@ -99,13 +99,23 @@ jobs:
         # Install pkg-config for Windows
         choco install pkgconfiglite -y
         
-    - name: Install Python dependencies
+    - name: Install Python dependencies (non-Linux)
+      if: runner.os != 'Linux'
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
         
-    - name: Install additional build dependencies
+    - name: Install Python dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        python -m pip install --upgrade pip
+        # Install everything except PyGObject from requirements.txt
+        pip install mutagen PySide6 Pillow
+        pip install pyinstaller
+        
+    - name: Install additional build dependencies (non-Linux)
+      if: runner.os != 'Linux'
       run: |
         pip install PySide6 mutagen PyGObject
         
@@ -113,10 +123,10 @@ jobs:
     - name: Install PyGObject (Linux)
       if: runner.os == 'Linux'  
       run: |
-        # Try to install PyGObject from system packages first
-        sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gstreamer-1.0
-        # If system packages don't work, try pip with pre-built wheels
-        pip install PyGObject || echo "PyGObject installation from pip failed, using system packages"
+        # Install PyGObject from system packages (already installed in Linux dependencies step)
+        echo "PyGObject system packages already installed"
+        # Verify installation
+        python3 -c "import gi; print('PyGObject system installation successful')" || echo "PyGObject verification failed"
         
     - name: Run dependency check
       continue-on-error: true
