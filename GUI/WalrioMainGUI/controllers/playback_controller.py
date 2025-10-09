@@ -3,7 +3,36 @@
 Playback controller for Walrio GUI
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
+Licensed under the BSD-3-Clau                # Fast track switching using existing PlayerWorker
+                if was_playing and self.player_worker:
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from ..models import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_inf            # If no current file is loaded, load the first song from queue (but don't start playing)
+            if not self.app_state.current_file and self.app_state.queue_songs:
+                # Load first song without starting playback
+                self.load_and_play_song(0, auto_play=False)                        new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for next button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for next button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
+                elif was_playing:
+                    self._start_playback()e LICENSE file for details)
 
 Controller for managing audio playback operations.
 """
@@ -50,6 +79,11 @@ class PlaybackController(QObject):
         self.app_state = app_state
         self.controls_view = controls_view
         self.player_worker = None
+        
+        # Create position timer in main thread
+        self.position_timer = QTimer(self)
+        self.position_timer.timeout.connect(self._update_position)
+        self.position_timer.setInterval(100)  # Update every 100ms
         
         self._setup_connections()
     
@@ -107,7 +141,30 @@ class PlaybackController(QObject):
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
-                    self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from modules.core import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_info:
+                            new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for previous button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for previous button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
                 elif was_playing:
                     self._start_playback()
     
@@ -134,7 +191,30 @@ class PlaybackController(QObject):
                 
                 # Fast track switching using existing PlayerWorker
                 if was_playing and self.player_worker:
-                    self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+                    # Extract duration from the new file
+                    new_duration = 0.0
+                    try:
+                        from modules.core import metadata
+                        metadata_info = metadata.extract_metadata(self.app_state.current_file)
+                        if metadata_info and 'length' in metadata_info:
+                            new_duration = float(metadata_info['length'])
+                            print(f"DEBUG: Extracted duration {new_duration}s for next button navigation")
+                    except Exception as e:
+                        print(f"DEBUG: Failed to extract duration for navigation: {e}")
+                    
+                    # Update app state with correct duration
+                    self.app_state.duration = new_duration
+                    
+                    self.player_worker.play_new_song(self.app_state.current_file, new_duration)
+                    # Manually emit song_starting signal for button navigation
+                    song_info = {
+                        'filepath': self.app_state.current_file,
+                        'duration': new_duration,
+                        'title': Path(self.app_state.current_file).name,
+                        'position': 0.0
+                    }
+                    print(f"DEBUG: Manually emitting song_starting for next button (duration: {new_duration})")
+                    self._on_song_starting(song_info)
                 elif was_playing:
                     self._start_playback()
     
@@ -193,41 +273,81 @@ class PlaybackController(QObject):
         if self.player_worker:
             self.player_worker.set_volume(volume / 100.0)
     
-    def load_and_play_song(self, index):
-        """Load and play a song from the queue by index.
+    def load_and_play_song(self, index, auto_play=True):
+        """Load and optionally play a song by index.
         
         Args:
-            index (int): Index of the song in the queue to load and play
+            index (int): Index of the song in the queue
+            auto_play (bool): Whether to automatically start playback (default: True)
         """
-        if 0 <= index < len(self.app_state.queue_songs):
-            song = self.app_state.queue_songs[index]
-            self.app_state.current_queue_index = index
-            self.app_state.current_file = song['url']
+        if not self.app_state.queue_songs or index < 0 or index >= len(self.app_state.queue_songs):
+            return
             
-            # Get metadata and update duration
-            metadata = self._get_file_metadata(song['url'])
-            self.app_state.duration = metadata.get('duration', 0)
+        song = self.app_state.queue_songs[index]
+        self.app_state.current_file = song.get('url') or song.get('filepath')
+        self.app_state.current_queue_index = index
+        
+        # CRITICAL: Get duration immediately using metadata module
+        # This prevents seekbar issues and ensures immediate duration availability
+        
+        duration = 0.0
+        
+        # Method 1: Try song metadata first (fastest)
+        if 'length' in song:
+            duration = float(song['length'])
+        elif 'duration' in song:
+            duration = float(song['duration'])
+        
+        # Method 2: If no duration in song metadata, try fast metadata extraction
+        if duration <= 0:
+            try:
+                from modules.core import metadata
+                file_path = song.get('url') or song.get('filepath')
+                print(f"DEBUG: Attempting to extract metadata from: {file_path}")
+                if file_path:
+                    metadata_info = metadata.extract_metadata(file_path)
+                    print(f"DEBUG: Metadata extraction result: {metadata_info}")
+                    if metadata_info and 'length' in metadata_info:
+                        duration = float(metadata_info['length'])
+                        print(f"DEBUG: Extracted duration {duration}s from file metadata")
+                    else:
+                        print(f"DEBUG: No length field in metadata: {metadata_info}")
+            except Exception as e:
+                print(f"DEBUG: Failed to extract duration from file: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        # Always update duration (use extracted duration or 0)
+        self.app_state.duration = duration
+        
+        if duration > 0:
+            # We have duration - use it immediately
+            self.controls_view.set_time_total(self._format_time(duration))
+            self.controls_view.set_duration(duration)
+            print(f"DEBUG: Set duration {duration}s for {song.get('title', 'unknown')}")
+        else:
+            # No duration available - set to 0 and let GStreamer update it
+            self.controls_view.set_time_total("00:00") 
+            self.controls_view.set_duration(0.0)
+            print(f"DEBUG: No duration available for {song.get('title', 'unknown')}, waiting for GStreamer...")
             
-            # Update controls
-            self.controls_view.set_duration(self.app_state.duration)
-            if self.app_state.duration > 0:
-                self.controls_view.set_time_total(self._format_time(self.app_state.duration))
-            else:
-                self.controls_view.set_time_total("--:--")
+        # Always reset completion trigger for new song
+        if hasattr(self, '_completion_triggered'):
+            delattr(self, '_completion_triggered')
+        
+        # Enable controls once we have a song loaded
+        self.controls_view.set_play_pause_enabled(True)
+        
+        # Enable navigation if we have multiple songs
+        if self.app_state.queue_songs and len(self.app_state.queue_songs) > 1:
+            self.controls_view.set_navigation_enabled(True)
+            self.controls_view.set_shuffle_enabled(True)
             
-            # Reset position
-            self.app_state.reset_playback_state()
-            self.controls_view.set_position(0)
-            self.controls_view.set_time_current("00:00")
-            
-            # Enable controls
-            self.controls_view.set_play_pause_enabled(True)
-            self.controls_view.set_stop_enabled(True)
-            
-            # Emit track changed signal
-            self.track_changed.emit(song)
-            
-            # Start playback
+        # Emit track changed signal
+        self.track_changed.emit(song)
+        
+        # Start playback only if auto_play is True
+        if auto_play:
             self._start_playback()
     
     def _start_playback(self):
@@ -249,6 +369,7 @@ class PlaybackController(QObject):
             self.player_worker.playback_finished.connect(self._on_playback_finished)
             self.player_worker.error.connect(self._on_playback_error)
             self.player_worker.position_updated.connect(self._on_position_updated)
+            self.player_worker.song_starting.connect(self._on_song_starting)
             self.player_worker.start()
         else:
             # Ensure signals are connected for existing worker
@@ -257,6 +378,7 @@ class PlaybackController(QObject):
                 self.player_worker.position_updated.disconnect()
                 self.player_worker.playback_finished.disconnect()
                 self.player_worker.error.disconnect()
+                self.player_worker.song_starting.disconnect()
             except:
                 pass  # Signals might not be connected
             
@@ -264,9 +386,20 @@ class PlaybackController(QObject):
             self.player_worker.playback_finished.connect(self._on_playback_finished)
             self.player_worker.error.connect(self._on_playback_error)
             self.player_worker.position_updated.connect(self._on_position_updated)
+            self.player_worker.song_starting.connect(self._on_song_starting)
             
             # Switch to new song
             self.player_worker.play_new_song(self.app_state.current_file, self.app_state.duration)
+            
+            # Always manually emit song_starting signal for reused PlayerWorker to ensure UI updates
+            song_info = {
+                'filepath': self.app_state.current_file,
+                'duration': self.app_state.duration,
+                'title': Path(self.app_state.current_file).name,
+                'position': 0.0
+            }
+            print(f"DEBUG: Manually emitting song_starting signal for reused PlayerWorker (duration: {self.app_state.duration}) - from load_and_play_song")
+            self._on_song_starting(song_info)
         
         # Update queue manager
         self.app_state.update_queue_manager()
@@ -277,16 +410,17 @@ class PlaybackController(QObject):
         
         # Set daemon loop mode to 'none' for queue-controlled progression
         if self.player_worker:
-            QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none"))
+            QTimer.singleShot(200, lambda: self.player_worker.send_command("loop none") if self.player_worker else None)
             
             # Restore volume from app state (important after stop/play cycle)
-            QTimer.singleShot(300, lambda: self.player_worker.set_volume(self.app_state.volume / 100.0))
+            QTimer.singleShot(300, lambda: self.player_worker.set_volume(self.app_state.volume / 100.0) if self.player_worker else None)
             
         # Ensure UI volume slider matches app state volume
         self.controls_view.set_volume(self.app_state.volume)
         
         self.app_state.is_playing = True
         self.controls_view.set_play_pause_text("⏸ Pause")
+        self.controls_view.set_play_pause_enabled(True)
         self.controls_view.set_stop_enabled(True)
     
     def _pause_playback(self):
@@ -316,6 +450,11 @@ class PlaybackController(QObject):
         # Set state first
         self.app_state.is_playing = False
         self.controls_view.set_play_pause_text("▶ Play")
+        
+        # Stop position timer
+        if self.position_timer.isActive():
+            self.position_timer.stop()
+            print("DEBUG: Stopped position timer")
         
         # Immediately disable the stop button to prevent multiple clicks
         self.controls_view.set_stop_enabled(False)
@@ -350,6 +489,29 @@ class PlaybackController(QObject):
         # Re-enable play button
         self.controls_view.set_play_pause_enabled(True)
     
+    def _update_position(self):
+        """Update position from player worker (main thread timer)."""
+        if not self.app_state.is_playing or not self.player_worker:
+            return
+            
+        # Get position directly from player worker's audio player
+        if hasattr(self.player_worker, 'audio_player') and self.player_worker.audio_player:
+            try:
+                position = self.player_worker.audio_player.get_position()
+                if position >= 0:
+                    self._on_position_updated(position)
+                    
+                    # Check if we're very close to the end (within 0.2 seconds)
+                    duration = self.app_state.duration
+                    if duration > 0 and position >= (duration - 0.2):
+                        if not hasattr(self, '_completion_triggered'):
+                            self._completion_triggered = True
+                            print(f"DEBUG: Song completion triggered at position {position:.2f}/{duration:.2f}")
+                            # Trigger playback finished manually
+                            self._on_playback_finished()
+            except Exception as e:
+                print(f"DEBUG: Position update error: {e}")
+    
     def _on_position_updated(self, position):
         """Handle position updates from player worker.
         
@@ -379,6 +541,7 @@ class PlaybackController(QObject):
     
     def _on_playback_finished(self):
         """Handle when playback finishes."""
+        print("DEBUG: PlaybackController._on_playback_finished() called")
         print("Playback finished - song has ended")
         
         # Prevent multiple calls
@@ -388,7 +551,9 @@ class PlaybackController(QObject):
         self.app_state.is_processing_finish = True
         
         # Emit signal to main controller
+        print("DEBUG: PlaybackController emitting playback_finished signal")
         self.playback_finished.emit()
+        print("DEBUG: PlaybackController playback_finished signal emitted")
         
         # Reset the flag
         self.app_state.is_processing_finish = False
@@ -425,10 +590,69 @@ class PlaybackController(QObject):
         # Emit signal to main controller to handle next song
         self.playback_finished.emit()
     
+    def _on_song_starting(self, song_info):
+        """Handle song starting signal with updated duration.
+        
+        Args:
+            song_info (dict): Dictionary with filepath, duration, title, position
+        """
+        duration = song_info.get('duration', 0.0)
+        print(f"DEBUG: _on_song_starting called with song_info: {song_info}")
+        print(f"DEBUG: _on_song_starting called with duration: {duration}")
+        
+        # Always update duration when we get it from GStreamer (most accurate)
+        current_duration = self.app_state.duration
+        if duration > 0:
+            if abs(duration - current_duration) > 0.1:
+                print(f"Song starting - updating duration from {current_duration:.1f}s to {duration:.1f}s")
+            else:
+                print(f"Song starting - confirming duration {duration:.1f}s")
+                
+            # Always update with GStreamer's detected duration (most accurate)
+            self.app_state.duration = duration
+            # Update the UI with the new duration
+            self.controls_view.set_time_total(self._format_time(duration))
+            # Set the seekbar maximum
+            self.controls_view.set_duration(duration)
+            print(f"DEBUG: Updated UI with duration {duration}, seekbar max: {int(duration)}")
+            
+            # Reset completion trigger for accurate duration
+            if hasattr(self, '_completion_triggered'):
+                delattr(self, '_completion_triggered')
+        else:
+            print("Song starting but no duration provided from GStreamer")
+            
+        # Start position timer when song starts
+        if not self.position_timer.isActive():
+            self.position_timer.start()
+            print("DEBUG: Started position timer in main thread")
+            
+        # Reset completion trigger for new song
+        if hasattr(self, '_completion_triggered'):
+            delattr(self, '_completion_triggered')
+    
     def update_queue_state(self):
         """Update internal state when queue changes."""
         # Update queue manager
         self.app_state.update_queue_manager()
+    
+    def on_queue_has_songs(self, has_songs):
+        """Handle when queue gets songs or becomes empty.
+        
+        Args:
+            has_songs (bool): True if queue has songs, False if empty
+        """
+        if has_songs:
+            # Enable play/pause button when we have songs
+            self.controls_view.set_play_pause_enabled(True)
+            
+            # If no current file is loaded, load the first song from queue (but don't start playing)
+            if not self.app_state.current_file and self.app_state.queue_songs:
+                # Load first song without starting playback
+                self.load_and_play_song(0, auto_play=False)
+        else:
+            # Disable play/pause button when queue is empty
+            self.controls_view.set_play_pause_enabled(False)
     
     def _get_file_metadata(self, filepath):
         """Get metadata for an audio file.

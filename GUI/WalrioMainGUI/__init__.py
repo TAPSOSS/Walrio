@@ -1,10 +1,10 @@
-# WalrioMainGUI package initialization
+# WalrioLiteGUI package initialization
 """
-WalrioMainGUI - Model-View-Controller architecture for Walrio Music Player GUI
+WalrioLiteGUI - Model-View-Controller architecture for Walrio Lite Music Player GUI
 Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A music player GUI built with PySide that uses as many Walrio music library modules as possible to
-play, modify, display, and do other things relating to audio files.
+A lightweight music player GUI built with PySide that focuses on simple playback functionality
+using Walrio music library modules without the complexity of the full-featured player.
 """
