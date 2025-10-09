@@ -170,12 +170,16 @@ jobs:
         
         Write-Host "Verifying PyGObject installation..."
         # Test PyGObject import with system Python using MSYS2 libraries
+        # Set UTF-8 encoding to handle Unicode output properly
+        $env:PYTHONIOENCODING = "utf-8"
+        $env:PYTHONLEGACYWINDOWSSTDIO = "0"
+        
         try {
-          python -c "import gi; print('✓ PyGObject import successful')"
-          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')"
-          Write-Host "✓ PyGObject and GStreamer successfully available"
+          python -c "import gi; print('SUCCESS: PyGObject import successful')"
+          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+          Write-Host "SUCCESS: PyGObject and GStreamer successfully available"
         } catch {
-          Write-Host "⚠️ PyGObject import test failed: $($_.Exception.Message)"
+          Write-Host "WARNING: PyGObject import test failed: $($_.Exception.Message)"
           Write-Host "Will attempt conda-forge fallback..."
           
           # Install conda as fallback
@@ -287,13 +291,13 @@ jobs:
         python -c "import sys; print('Python version:', sys.version)"
         
         echo "Testing PyGObject import..."
-        python -c "import gi; print('✓ gi import successful')" || echo "❌ gi import failed"
+        python -c "import gi; print('SUCCESS: gi import successful')" || echo "ERROR: gi import failed"
         
         echo "Testing GStreamer import..."
-        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')" || echo "❌ GStreamer import failed"
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
         
         echo "Testing GStreamer initialization..."
-        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('✓ GStreamer initialization successful' if result else '⚠️ GStreamer initialization failed')" || echo "❌ GStreamer initialization test failed"
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
         
         echo "Verification completed."
         
@@ -318,9 +322,9 @@ jobs:
         fi
         
         if [ -f "$EXPECTED_FILE" ]; then
-          echo "✓ $EXPECTED_FILE found"
+          echo "SUCCESS: $EXPECTED_FILE found"
         else
-          echo "✗ $EXPECTED_FILE not found"
+          echo "ERROR: $EXPECTED_FILE not found"
           ls -la dist/ || echo "dist/ directory not found"
           exit 1
         fi
@@ -336,9 +340,9 @@ jobs:
         }
         
         if (Test-Path $expectedFile) {
-          Write-Host "✓ $expectedFile found"
+          Write-Host "SUCCESS: $expectedFile found"
         } else {
-          Write-Host "✗ $expectedFile not found"
+          Write-Host "ERROR: $expectedFile not found"
           Get-ChildItem dist/ -ErrorAction SilentlyContinue | Format-Table
           exit 1
         }
@@ -349,17 +353,17 @@ jobs:
         echo "Testing PyGObject import capability in built environment..."
         
         # Test if gi can be imported in the current Python environment
-        if python -c "import gi; print('✓ gi import successful')"; then
-          echo "✓ PyGObject available in build environment"
+        if python -c "import gi; print('SUCCESS: gi import successful')"; then
+          echo "SUCCESS: PyGObject available in build environment"
         else
-          echo "⚠️ PyGObject not available in build environment - executable may have import issues"
+          echo "WARNING: PyGObject not available in build environment - executable may have import issues"
         fi
         
         # Additional GStreamer test
-        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('✓ GStreamer import successful')"; then
-          echo "✓ GStreamer available in build environment"
+        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
+          echo "SUCCESS: GStreamer available in build environment"
         else
-          echo "⚠️ GStreamer not available in build environment - audio may not work"
+          echo "WARNING: GStreamer not available in build environment - audio may not work"
         fi
         
     - name: Create artifact name
