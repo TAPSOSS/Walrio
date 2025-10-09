@@ -280,6 +280,7 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
             "--onefile" if not debug else "--onedir",
             f"--name={config['name']}",
             "--windowed" if not config["console"] else "",
+            "--log-level=WARN"  # Reduce verbose output, only show warnings and errors
         ]
         
         # Add platform-specific icon if it exists
@@ -300,13 +301,25 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
         for import_name in platform_config["hidden_imports"]:
             cmd.append(f"--hidden-import={import_name}")
         
-        # Add PyInstaller collection options for better library bundling
+        # Add targeted PyInstaller collection options to reduce warnings
         cmd.extend([
-            "--collect-submodules=gi",
-            "--collect-all=gi", 
-            "--collect-binaries=gi",
-            "--collect-datas=gi"
+            "--collect-submodules=gi.repository",
+            "--collect-binaries=gi"
         ])
+        
+        # Exclude problematic modules that cause warnings
+        problematic_modules = [
+            "charset_normalizer.md__mypyc",
+            "xxsubtype", 
+            "gi._error",
+            "gi._gi_cairo",
+            "gi._gtktemplate",
+            "gi._option",
+            "gi._ossighelper"
+        ]
+        
+        for module in problematic_modules:
+            cmd.append(f"--exclude-module={module}")
         
         # Add runtime hook for GStreamer initialization
         hook_file = self.root_dir / ".github" / "scripts" / "gst_runtime_hook.py"
