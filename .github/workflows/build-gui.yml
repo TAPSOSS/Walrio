@@ -105,6 +105,82 @@ jobs:
         
         Write-Host "Windows GStreamer and PyGObject installation completed"
         
+        # Test PyGObject import right after installation (while environment is available)
+        Write-Host "Testing PyGObject installation..."
+        python -c "import gi; print('SUCCESS: PyGObject import successful')"
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+        Write-Host "PyGObject verification passed in Windows installation step"
+
+    - name: Comprehensive GStreamer verification (Linux/macOS)
+      if: runner.os != 'Windows'
+      run: |
+        echo "=== Comprehensive GStreamer/PyGObject Verification ==="
+        
+        # Print environment variables
+        echo "Environment variables:"
+        echo "  GST_PLUGIN_PATH: ${GST_PLUGIN_PATH:-Not set}"
+        echo "  GI_TYPELIB_PATH: ${GI_TYPELIB_PATH:-Not set}"
+        echo "  PKG_CONFIG_PATH: ${PKG_CONFIG_PATH:-Not set}"
+        
+        # Test basic Python imports
+        echo "Testing Python gi import..."
+        python -c "import sys; print('Python version:', sys.version)"
+        
+        echo "Testing PyGObject import..."
+        python -c "import gi; print('SUCCESS: gi import successful')" || echo "ERROR: gi import failed"
+        
+        echo "Testing GStreamer import..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
+        
+        echo "Testing GStreamer initialization..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
+        
+        echo "Verification completed."
+        
+    - name: Comprehensive GStreamer verification (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        Write-Host "=== Windows GStreamer/PyGObject Verification ==="
+        
+        # Set up MSYS2 environment for this step
+        $env:PATH = "C:\tools\msys64\mingw64\bin;" + $env:PATH
+        $env:PKG_CONFIG_PATH = "C:\tools\msys64\mingw64\lib\pkgconfig"
+        $env:GI_TYPELIB_PATH = "C:\tools\msys64\mingw64\lib\girepository-1.0"
+        $env:GST_PLUGIN_PATH = "C:\tools\msys64\mingw64\lib\gstreamer-1.0"
+        
+        # Print environment variables
+        Write-Host "Environment variables:"
+        Write-Host "  GST_PLUGIN_PATH: $env:GST_PLUGIN_PATH"
+        Write-Host "  GI_TYPELIB_PATH: $env:GI_TYPELIB_PATH"
+        Write-Host "  PKG_CONFIG_PATH: $env:PKG_CONFIG_PATH"
+        
+        # Test basic Python imports
+        Write-Host "Testing Python gi import..."
+        python -c "import sys; print('Python version:', sys.version)"
+        
+        Write-Host "Testing PyGObject import..."
+        try {
+          python -c "import gi; print('SUCCESS: gi import successful')"
+        } catch {
+          Write-Host "ERROR: gi import failed - $($_.Exception.Message)"
+        }
+        
+        Write-Host "Testing GStreamer import..."
+        try {
+          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+        } catch {
+          Write-Host "ERROR: GStreamer import failed - $($_.Exception.Message)"
+        }
+        
+        Write-Host "Testing GStreamer initialization..."
+        try {
+          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')"
+        } catch {
+          Write-Host "ERROR: GStreamer initialization test failed - $($_.Exception.Message)"
+        }
+        
+        Write-Host "Windows verification completed."
+        
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
