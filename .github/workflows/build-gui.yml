@@ -52,7 +52,7 @@ jobs:
     - name: Setup GStreamer
       uses: marcpabst/setup-gstreamer@main
       with:
-        version: '1.27.2'   # Bleeding edge version with latest features
+        version: '1.26.6'   # Latest stable version (more reliable than bleeding edge)
         arch: 'x86_64'      # Standard architecture
 
     # Install PyGObject for Python integration (platform-specific)
