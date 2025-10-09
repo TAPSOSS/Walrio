@@ -14,6 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ['3.11']  # Use latest compatible Python version
+        gui-variant: ['main', 'lite']
     
     runs-on: ${{ matrix.os }}
     
@@ -232,31 +233,45 @@ jobs:
       run: |
         make deps-check
         
-    - name: Build GUIs
+    - name: Build GUI (${{ matrix.gui-variant }})
       run: |
-        make build
+        make build-${{ matrix.gui-variant }}
         
-    - name: Test built executables (Linux/macOS)
+    - name: Test built executable (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
-        # Test that executables were created and can show help
-        if [ -f "dist/WalrioMain" ]; then
-          echo "WalrioMain executable found"
-          # Could add: timeout 10s ./dist/WalrioMain --help || true
-        fi
-        if [ -f "dist/WalrioLite" ]; then
-          echo "WalrioLite executable found" 
-          # Could add: timeout 10s ./dist/WalrioLite --help || true
+        # Test that the specific executable was created
+        VARIANT="${{ matrix.gui-variant }}"
+        if [ "$VARIANT" = "main" ]; then
+          EXPECTED_FILE="dist/WalrioMain"
+        else
+          EXPECTED_FILE="dist/WalrioLite"
         fi
         
-    - name: Test built executables (Windows)
+        if [ -f "$EXPECTED_FILE" ]; then
+          echo "✓ $EXPECTED_FILE found"
+        else
+          echo "✗ $EXPECTED_FILE not found"
+          ls -la dist/ || echo "dist/ directory not found"
+          exit 1
+        fi
+        
+    - name: Test built executable (Windows)
       if: runner.os == 'Windows'
       run: |
-        if (Test-Path "dist/WalrioMain.exe") {
-          Write-Host "WalrioMain.exe found"
+        $variant = "${{ matrix.gui-variant }}"
+        if ($variant -eq "main") {
+          $expectedFile = "dist/WalrioMain.exe"
+        } else {
+          $expectedFile = "dist/WalrioLite.exe"
         }
-        if (Test-Path "dist/WalrioLite.exe") {
-          Write-Host "WalrioLite.exe found"
+        
+        if (Test-Path $expectedFile) {
+          Write-Host "✓ $expectedFile found"
+        } else {
+          Write-Host "✗ $expectedFile not found"
+          Get-ChildItem dist/ -ErrorAction SilentlyContinue | Format-Table
+          exit 1
         }
         
     - name: Create artifact name
@@ -270,7 +285,7 @@ jobs:
         elif [ "$OS_NAME" = "macOS" ]; then
           OS_NAME="macos"
         fi
-        echo "name=walrio-${OS_NAME}" >> $GITHUB_OUTPUT
+        echo "name=walrio-${{ matrix.gui-variant }}-${OS_NAME}" >> $GITHUB_OUTPUT
       shell: bash
       
     - name: Upload build artifacts
@@ -292,19 +307,33 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         pattern: walrio-*
-        merge-multiple: true
+        merge-multiple: false
       
     - name: Create release archives
       run: |
-        for dir in walrio-*; do
-          if [ -d "$dir" ]; then
-            if [[ "$dir" == *"windows"* ]]; then
-              zip -r "${dir}.zip" "$dir"
+        # Create archives for each variant and platform
+        for artifact_dir in walrio-*/; do
+          if [ -d "$artifact_dir" ]; then
+            # Remove trailing slash
+            dir_name="${artifact_dir%/}"
+            
+            # Create appropriate archive format
+            if [[ "$dir_name" == *"windows"* ]]; then
+              # Windows: create .zip files
+              cd "$artifact_dir"
+              zip -r "../${dir_name}.zip" .
+              cd ..
             else
-              tar -czf "${dir}.tar.gz" "$dir"
+              # Linux/macOS: create .tar.gz files  
+              tar -czf "${dir_name}.tar.gz" -C "$artifact_dir" .
             fi
+            
+            echo "Created archive for $dir_name"
           fi
         done
+        
+        # List created archives
+        ls -la *.zip *.tar.gz 2>/dev/null || echo "No archives created"
         
     - name: Create Release
       uses: softprops/action-gh-release@v1
