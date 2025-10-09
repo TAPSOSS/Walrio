@@ -48,38 +48,53 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
           
-    # Linux-specific setup
-    - name: Install Linux dependencies
+    # Setup GStreamer using marketplace action (works on all platforms)
+    - name: Setup GStreamer
+      uses: marcpabst/setup-gstreamer@v1
+      with:
+        version: '1.22.7'  # Recent stable version
+        arch: 'x86_64'     # Standard architecture
+
+    # Install PyGObject for Python integration (platform-specific)
+    - name: Install PyGObject (Linux)
       if: runner.os == 'Linux'
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          gstreamer1.0-tools \
-          gstreamer1.0-plugins-base \
-          gstreamer1.0-plugins-good \
-          gstreamer1.0-plugins-bad \
-          gstreamer1.0-plugins-ugly \
-          gstreamer1.0-libav \
-          libgstreamer1.0-dev \
+        echo "Installing PyGObject for Linux..."
+        sudo apt update
+        sudo apt install -y \
+          python3-gi \
+          python3-gi-dev \
           libgirepository1.0-dev \
-          gobject-introspection \
           libcairo2-dev \
-          libgtk-3-dev \
-          build-essential \
-          python3-dev \
           pkg-config \
-          libffi-dev
-        
-        echo "Setting up Linux environment variables for GStreamer..."
-        # Set up GStreamer environment variables
-        echo "GST_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/gstreamer-1.0" >> $GITHUB_ENV
-        echo "GI_TYPELIB_PATH=/usr/lib/x86_64-linux-gnu/girepository-1.0" >> $GITHUB_ENV
-        
-        # Export for current session
-        export GST_PLUGIN_PATH="/usr/lib/x86_64-linux-gnu/gstreamer-1.0"
-        export GI_TYPELIB_PATH="/usr/lib/x86_64-linux-gnu/girepository-1.0"
+          python3-dev
           
-    # macOS-specific setup  
+    - name: Install PyGObject (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        echo "Installing PyGObject for macOS..."
+        # Ensure we have the latest homebrew
+        brew update
+        # Install PyGObject dependencies
+        brew install gobject-introspection libffi pkg-config cairo glib gtk+3
+        
+    - name: Install PyGObject (Windows)  
+      if: runner.os == 'Windows'
+      run: |
+        Write-Host "Installing PyGObject for Windows..."
+        
+        # Install MSYS2 for PyGObject (GStreamer is already installed by setup-gstreamer)
+        Write-Host "Installing MSYS2..."
+        choco install msys2 -y --force
+        Start-Sleep -Seconds 10
+        
+        # Install PyGObject via MSYS2
+        Write-Host "Installing PyGObject via MSYS2..."
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -Syu --noconfirm"
+        C:\tools\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm mingw-w64-x86_64-python-gobject"
+        
+        # Add MSYS2 Python bindings to PATH for current session
+        $env:PATH = "C:\tools\msys64\mingw64\bin;" + $env:PATH    # macOS-specific setup  
     - name: Install macOS dependencies
       if: runner.os == 'macOS'
       run: |
@@ -194,87 +209,34 @@ jobs:
         
         Write-Host "Windows dependencies installation completed"
         
-    - name: Install Python dependencies (non-Linux)
-      if: runner.os != 'Linux'
+    - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pyinstaller
-        
-    - name: Install Python dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        python -m pip install --upgrade pip
-        # Install everything except PyGObject from requirements.txt
+        # Install everything except PyGObject from requirements.txt (PyGObject handled separately)
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
         
-    - name: Install additional build dependencies (macOS)
-      if: runner.os == 'macOS'
+    - name: Install PyGObject Python package (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
-        # Install Python dependencies
-        pip install PySide6 mutagen
-        
-        # Install PyGObject with proper environment
-        echo "Installing PyGObject with proper environment setup..."
-        
-        # Ensure environment variables are available
-        BREW_PREFIX=$(brew --prefix)
-        export PKG_CONFIG_PATH="${BREW_PREFIX}/lib/pkgconfig:${BREW_PREFIX}/libffi/lib/pkgconfig:$PKG_CONFIG_PATH"
-        export DYLD_LIBRARY_PATH="${BREW_PREFIX}/lib:$DYLD_LIBRARY_PATH"
-        
-        # Install PyGObject
+        echo "Installing PyGObject Python package..."
+        # Install PyGObject through pip (works with system libraries from setup-gstreamer action)
         pip install PyGObject
         
-        # Verify installation
-        python3 -c "import gi; print('PyGObject import successful')"
-        python3 -c "import gi; gi.require_version('GLib', '2.0'); from gi.repository import GLib; print('GLib import successful')"
-        
-    - name: Install additional build dependencies (Windows)
+    - name: Setup PyGObject for Windows
       if: runner.os == 'Windows'
       run: |
-        # Check if MSYS2 Python is available
-        $msys2Python = "C:\tools\msys64\ucrt64\bin\python.exe"
-        if (Test-Path $msys2Python) {
-          Write-Host "MSYS2 Python found, setting up environment for system Python to access MSYS2 PyGObject"
-          
-          # Add MSYS2 paths to system PATH for library discovery
-          $env:PATH = "C:\tools\msys64\ucrt64\bin;C:\tools\msys64\usr\bin;" + $env:PATH
-          
-          # Set up library paths for PyGObject
-          $env:PKG_CONFIG_PATH = "C:\tools\msys64\ucrt64\lib\pkgconfig"
-          $env:GI_TYPELIB_PATH = "C:\tools\msys64\ucrt64\lib\girepository-1.0"
-          
-          # Add MSYS2 Python site-packages to system Python path
-          $msys2SitePackages = "C:\tools\msys64\ucrt64\lib\python3.11\site-packages"
-          $env:PYTHONPATH = "$msys2SitePackages;" + $env:PYTHONPATH
-          
-          # Persist environment variables for subsequent steps
-          echo "PATH=C:\tools\msys64\ucrt64\bin;C:\tools\msys64\usr\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "PKG_CONFIG_PATH=C:\tools\msys64\ucrt64\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "GI_TYPELIB_PATH=C:\tools\msys64\ucrt64\lib\girepository-1.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "PYTHONPATH=$msys2SitePackages;$env:PYTHONPATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          
-          # Use system Python with access to MSYS2 libraries
-          pip install PySide6 mutagen pyinstaller
-          
-          # Test PyGObject import
-          python -c "import gi; print('PyGObject import successful via MSYS2 path')"
-          
-          Write-Host "Configured system Python to use MSYS2 PyGObject"
-        } else {
-          Write-Host "Using system Python (conda fallback was used)"
-          pip install PySide6 mutagen pyinstaller
-        }
+        Write-Host "Setting up PyGObject for Windows with MSYS2 integration..."
         
-    # Linux: Install PyGObject via system packages (more reliable)
-    - name: Install PyGObject (Linux)
-      if: runner.os == 'Linux'  
-      run: |
-        # Install PyGObject from system packages (already installed in Linux dependencies step)
-        echo "PyGObject system packages already installed"
-        # Verify installation
-        python3 -c "import gi; print('PyGObject system installation successful')" || echo "PyGObject verification failed"
+        # Add MSYS2 paths to environment for PyGObject library discovery
+        $env:PATH = "C:\tools\msys64\mingw64\bin;" + $env:PATH
+        $env:PKG_CONFIG_PATH = "C:\tools\msys64\mingw64\lib\pkgconfig"
+        $env:GI_TYPELIB_PATH = "C:\tools\msys64\mingw64\lib\girepository-1.0"
+        
+        # Save environment variables for future steps
+        echo "PATH=C:\tools\msys64\mingw64\bin;${env:PATH}" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        echo "PKG_CONFIG_PATH=C:\tools\msys64\mingw64\lib\pkgconfig" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append  
+        echo "GI_TYPELIB_PATH=C:\tools\msys64\mingw64\lib\girepository-1.0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Comprehensive GStreamer verification
       run: |

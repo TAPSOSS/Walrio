@@ -349,7 +349,15 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                 f"--target-arch={self.arch}"
             ])
             
-            # Try to find Homebrew GStreamer paths
+            # Check for GStreamer framework (setup-gstreamer action)
+            framework_path = "/Library/Frameworks/GStreamer.framework"
+            if Path(framework_path).exists():
+                gst_lib_path = f"{framework_path}/Libraries"
+                if Path(gst_lib_path).exists():
+                    cmd.append(f"--add-binary={gst_lib_path}/*:.")
+                    print(f"    Added GStreamer framework libraries from: {gst_lib_path}")
+            
+            # Try to find Homebrew GStreamer paths (fallback)
             homebrew_paths = ["/opt/homebrew", "/usr/local"]
             for homebrew in homebrew_paths:
                 gst_path = f"{homebrew}/lib/gstreamer-1.0"
@@ -357,24 +365,50 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                 
                 if Path(gst_path).exists():
                     cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
+                    print(f"    Added GStreamer plugins from: {gst_path}")
                 if Path(gi_path).exists():
                     cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
+                    print(f"    Added GI typelibs from: {gi_path}")
                     
         elif self.platform == "windows":
             version_file_option = "--version-file=version_info.txt" if (self.root_dir / "version_info.txt").exists() else ""
             if version_file_option:
                 cmd.append(version_file_option)
                 
-            # Try to find MSYS2 GStreamer paths
-            msys2_paths = ["C:/msys64/mingw64", "C:/tools/msys64/mingw64"]
-            for msys2 in msys2_paths:
-                gst_path = f"{msys2}/lib/gstreamer-1.0"
-                gi_path = f"{msys2}/lib/girepository-1.0"
+            # Try to find GStreamer paths (setup-gstreamer action and MSYS2)
+            gst_root = os.environ.get('GSTREAMER_1_0_ROOT_MSVC_X86_64')
+            potential_paths = []
+            
+            # Add setup-gstreamer action path if available
+            if gst_root:
+                potential_paths.append(gst_root)
+            
+            # Add common GStreamer installation paths
+            potential_paths.extend([
+                "C:/gstreamer/1.0/msvc_x86_64",
+                "C:/gstreamer"
+            ])
+            
+            # Add MSYS2 paths for PyGObject integration
+            potential_paths.extend([
+                "C:/msys64/mingw64", 
+                "C:/tools/msys64/mingw64"
+            ])
+            
+            for base_path in potential_paths:
+                gst_path = f"{base_path}/lib/gstreamer-1.0"
+                gi_path = f"{base_path}/lib/girepository-1.0"
+                bin_path = f"{base_path}/bin"
                 
                 if Path(gst_path).exists():
                     cmd.append(f"--add-binary={gst_path}/*:gstreamer-1.0/")
+                    print(f"    Added GStreamer plugins from: {gst_path}")
                 if Path(gi_path).exists():
                     cmd.append(f"--add-binary={gi_path}/*:girepository-1.0/")
+                    print(f"    Added GI typelibs from: {gi_path}")
+                if Path(bin_path).exists():
+                    cmd.append(f"--add-binary={bin_path}/*.dll:.")
+                    print(f"    Added GStreamer binaries from: {bin_path}")
         
         # Add entry point
         cmd.append(str(self.root_dir / config["entry_point"]))
