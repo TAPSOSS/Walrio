@@ -7,8 +7,11 @@ on:
   # Automatic builds when releases are published
   release:
     types: [published]
-  # Manual workflow dispatch
+  # Manual workflow dispatch  
   workflow_dispatch:
+  # Trigger on pushes to any branch so workflow is available for PR comments
+  push:
+    branches: ['**']
 
 permissions:
   contents: read
@@ -20,6 +23,7 @@ jobs:
   build:
     # Run on "bot, build" comments (on PRs/issues) or on release publish or manual dispatch
     # Contributors with read access or higher can trigger builds
+    # Push events register the workflow but don't trigger builds (unless it's a release)
     if: |
       (github.event_name == 'issue_comment' && 
        github.event.issue.pull_request && 
