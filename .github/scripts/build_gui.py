@@ -65,33 +65,27 @@ class WalrioBuildScript:
                 "extension": "",
                 "separator": ":",
                 "hidden_imports": [
-                    "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
-                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
-                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
-                    "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json", "PIL", "PIL.Image"
+                    "gi.repository.Gst", "gi.repository.GLib", "gi.repository.GObject",
+                    "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
+                    "mutagen", "sqlite3", "PIL.Image"
                 ]
             },
             "darwin": {  # macOS
                 "extension": ".app",
                 "separator": ":",
                 "hidden_imports": [
-                    "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
-                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
-                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
-                    "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json", "Foundation", "AppKit", "PIL", "PIL.Image"
+                    "gi.repository.Gst", "gi.repository.GLib", "gi.repository.GObject", 
+                    "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
+                    "mutagen", "sqlite3", "Foundation", "AppKit", "PIL.Image"
                 ]
             },
             "windows": {
                 "extension": ".exe",
                 "separator": ";",
                 "hidden_imports": [
-                    "gi", "gi.repository", "gi.repository.Gst", "gi.repository.GLib",
-                    "gi.repository.GObject", "gi.repository.Gio", "gi.repository.GstAudio",
-                    "gi.repository.GstPbutils", "gi.repository.GstVideo", "gi.repository.GstBase",
-                    "PySide6", "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui",
-                    "mutagen", "sqlite3", "pathlib", "json", "win32api", "win32gui", "PIL", "PIL.Image"
+                    "gi.repository.Gst", "gi.repository.GLib", "gi.repository.GObject",
+                    "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui", 
+                    "mutagen", "sqlite3", "PIL.Image"
                 ]
             }
         }
@@ -279,8 +273,7 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
             "pyinstaller",
             "--onefile" if not debug else "--onedir",
             f"--name={config['name']}",
-            "--windowed" if not config["console"] else "",
-            "--log-level=WARN"  # Reduce verbose output, only show warnings and errors
+            "--windowed" if not config["console"] else ""
         ]
         
         # Add platform-specific icon if it exists
@@ -301,25 +294,11 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
         for import_name in platform_config["hidden_imports"]:
             cmd.append(f"--hidden-import={import_name}")
         
-        # Add targeted PyInstaller collection options to reduce warnings
+        # Use minimal PyInstaller collection to reduce warnings
+        # Only collect what we absolutely need
         cmd.extend([
-            "--collect-submodules=gi.repository",
             "--collect-binaries=gi"
         ])
-        
-        # Exclude problematic modules that cause warnings
-        problematic_modules = [
-            "charset_normalizer.md__mypyc",
-            "xxsubtype", 
-            "gi._error",
-            "gi._gi_cairo",
-            "gi._gtktemplate",
-            "gi._option",
-            "gi._ossighelper"
-        ]
-        
-        for module in problematic_modules:
-            cmd.append(f"--exclude-module={module}")
         
         # Add runtime hook for GStreamer initialization
         hook_file = self.root_dir / ".github" / "scripts" / "gst_runtime_hook.py"
