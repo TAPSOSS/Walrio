@@ -48,26 +48,27 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
           
-    # Install VLC using system package managers
-    - name: Install VLC (Linux)
+    # Install GStreamer using system package managers
+    - name: Install GStreamer (Linux)
       if: runner.os == 'Linux'
       run: |
-        echo "Installing VLC for Linux..."
+        echo "Installing GStreamer for Linux..."
         sudo apt update
-        sudo apt install -y vlc
+        sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad python3-gi gir1.2-gstreamer-1.0
 
-    - name: Install VLC (macOS)
+    - name: Install GStreamer (macOS)
       if: runner.os == 'macOS'
       run: |
-        echo "Installing VLC for macOS..."
+        echo "Installing GStreamer for macOS..."
         brew update
-        brew install vlc
+        brew install gstreamer pygobject3
 
-    - name: Install VLC (Windows)
+    - name: Install GStreamer (Windows)
       if: runner.os == 'Windows'
       run: |
-        Write-Host "Installing VLC for Windows via Chocolatey..."
-        choco install vlc -y --force
+        Write-Host "Installing GStreamer for Windows via MSYS2..."
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm mingw-w64-x86_64-gstreamer mingw-w64-x86_64-python-gobject
 
     - name: Comprehensive GStreamer verification (Linux/macOS)
       if: runner.os != 'Windows'
