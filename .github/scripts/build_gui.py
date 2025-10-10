@@ -404,15 +404,25 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
             added_gi_paths = set()
             added_bin_paths = set()
             
-            for base_path in potential_paths:
+            print(f"    Total potential paths to check: {len(potential_paths)}")
+            for i, base_path in enumerate(potential_paths):
+                print(f"    [{i+1}/{len(potential_paths)}] Checking: {base_path}")
+                
                 # Normalize path for Windows
                 base_path_normalized = str(Path(base_path))
                 base_path_obj = Path(base_path_normalized)
                 
-                print(f"    Checking base path: {base_path_normalized} - {'exists' if base_path_obj.exists() else 'not found'}")
+                # Multiple existence checks
+                exists_check1 = base_path_obj.exists()
+                exists_check2 = os.path.exists(base_path_normalized)
                 
-                if not base_path_obj.exists():
+                print(f"    Path existence: Path.exists()={exists_check1}, os.path.exists()={exists_check2}")
+                
+                if not (exists_check1 and exists_check2):
+                    print(f"    SKIPPING: {base_path_normalized} - does not exist")
                     continue
+                
+                print(f"    PROCESSING: {base_path_normalized} - confirmed exists")
                     
                 gst_path = base_path_obj / "lib" / "gstreamer-1.0"
                 gi_path = base_path_obj / "lib" / "girepository-1.0"
@@ -451,6 +461,33 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                             print(f"    SAFETY CHECK FAILED: Path or DLLs not found at {bin_path_str}")
                     else:
                         print(f"    Skipped {bin_path_str} - no DLL files found")
+        
+        # Final validation: Check all --add-binary arguments before execution
+        validated_cmd = []
+        for arg in cmd:
+            if arg.startswith("--add-binary="):
+                # Extract the path part before the colon
+                binary_spec = arg.split("=", 1)[1]
+                if ":" in binary_spec:
+                    path_part = binary_spec.split(":", 1)[0]
+                    # Remove the /* or /*.dll part to get the base directory
+                    if "/*" in path_part:
+                        base_dir = path_part.split("/*")[0]
+                    else:
+                        base_dir = path_part
+                    
+                    # Validate the directory exists
+                    if os.path.exists(base_dir):
+                        validated_cmd.append(arg)
+                        print(f"    VALIDATED: {arg}")
+                    else:
+                        print(f"    REJECTED: {arg} (path {base_dir} does not exist)")
+                else:
+                    validated_cmd.append(arg)
+            else:
+                validated_cmd.append(arg)
+        
+        cmd = validated_cmd
         
         # Add entry point
         cmd.append(str(self.root_dir / config["entry_point"]))
