@@ -185,19 +185,29 @@ class SimpleWalrioBuilder:
             raise WalrioBuildError(f"PyInstaller failed for {gui_name} (exit code {result.returncode})")
 
     def bundle_gstreamer_libraries(self):
-        """Copy GStreamer shared libraries and plugins into dist/ directory."""
-        print("[Walrio Build] Bundling GStreamer shared libraries and plugins...")
+        """Copy only essential GStreamer audio plugins and libraries into dist/ directory."""
+        print("[Walrio Build] Bundling essential GStreamer audio plugins and libraries...")
         import glob
         gst_plugin_dirs = ["/usr/lib64/gstreamer-1.0", "/usr/lib/gstreamer-1.0"]
         gst_lib_dirs = ["/usr/lib64", "/usr/lib"]
         dist_dir = self.dist_dir
+        essential_plugins = [
+            "libgstcoreelements.so", "libgstplayback.so", "libgstdecodebin.so", "libgstogg.so", "libgstflac.so",
+            "libgstmp3.so", "libgstaac.so", "libgstwavparse.so", "libgstvorbis.so", "libgstopus.so",
+            "libgstmad.so", "libgstfaad.so", "libgstwavpack.so", "libgsttag.so", "libgstvolume.so",
+            "libgstalsa.so", "libgstpulseaudio.so", "libgstapp.so", "libgstresample.so", "libgstsegmentclip.so"
+        ]
         copied = False
         for plugin_dir in gst_plugin_dirs:
             if os.path.isdir(plugin_dir):
                 dest = dist_dir / "gstreamer-1.0"
-                shutil.copytree(plugin_dir, dest, dirs_exist_ok=True)
-                print(f"  Copied plugins from {plugin_dir} to {dest}")
-                copied = True
+                os.makedirs(dest, exist_ok=True)
+                for plugin in essential_plugins:
+                    src_plugin = os.path.join(plugin_dir, plugin)
+                    if os.path.isfile(src_plugin):
+                        shutil.copy2(src_plugin, dest)
+                        print(f"  Copied {plugin} to {dest}")
+                        copied = True
         for lib_dir in gst_lib_dirs:
             if os.path.isdir(lib_dir):
                 for sofile in glob.glob(os.path.join(lib_dir, "libgst*so*")):
@@ -205,9 +215,9 @@ class SimpleWalrioBuilder:
                     print(f"  Copied {sofile} to {dist_dir}")
                     copied = True
         if not copied:
-            print("  WARNING: No GStreamer libraries/plugins found to bundle.")
+            print("  WARNING: No essential GStreamer audio plugins/libraries found to bundle.")
         else:
-            print("[Walrio Build] GStreamer libraries and plugins bundled.")
+            print("[Walrio Build] Essential GStreamer audio plugins and libraries bundled.")
     
     def create_launcher_scripts(self):
         """Create desktop launcher files."""
