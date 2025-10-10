@@ -9,18 +9,25 @@ If you're interested in contributing to Walrio check out our [Contributing Guide
 ## Requirements
 `requirements.txt` is an up to date list of all Python packages that can simply be installed with `pip install -r requirements.txt` on any system with python installed.
 
-### List of Non-Pip Requirements
-- Python 3.6+ (and pip installs using pip with python and requirements.txt)
-- GStreamer (for audio playback)
-- FFmpeg (for most audio analysis and conversion)
-- rsgain (for ReplayGain LUFS analysis)
-- ImageMagick (for image conversion and processing)
+### Third-Party Credits
+Walrio uses and bundles the following open-source projects:
 
-### Dependency install commands
+- **GStreamer** ([LGPL](https://github.com/GStreamer/gstreamer/blob/main/LICENSE)) — [github.com/GStreamer/gstreamer](https://github.com/GStreamer/gstreamer)
+	- Modular multimedia framework for audio playback and processing.
+- **FFmpeg** ([LGPL/GPL](https://github.com/FFmpeg/FFmpeg/blob/master/LICENSE.md)) — [github.com/FFmpeg/FFmpeg](https://github.com/FFmpeg/FFmpeg)
+	- Audio/video conversion and codec support.
+- **rsgain** ([MIT](https://github.com/complexlogic/rsgain/blob/master/LICENSE)) — [github.com/complexlogic/rsgain](https://github.com/complexlogic/rsgain)
+	- ReplayGain LUFS analysis for audio normalization.
+- **ImageMagick** ([Apache/MIT](https://github.com/ImageMagick/ImageMagick/blob/main/LICENSE)) — [github.com/ImageMagick/ImageMagick](https://github.com/ImageMagick/ImageMagick)
+	- Image conversion and processing.
+
+Please see each project's repository and license for details. All trademarks and copyrights are property of their respective owners.
+
+#### Dependency install commands
 I only have the developer environment set up properly for my OS of choice (fedora).
 *Contributions for installation instructions on other platforms are welcome.*
 
-#### Fedora/RHEL/CentOS:
+##### Fedora/RHEL/CentOS:
 ```bash
 # Install GStreamer, FFmpeg, ImageMagick, and rsgain system packages
 sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
