@@ -198,8 +198,16 @@ jobs:
         make deps-check
         
     - name: Build GUI (${{ matrix.gui-variant }})
+      if: runner.os != 'Windows'
       run: |
         make build-${{ matrix.gui-variant }}
+
+    - name: Build GUI (${{ matrix.gui-variant }}) [Windows]
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Write-Host "Building GUI with MSYS2 Python..."
+        C:\tools\msys64\mingw64\bin\python.exe .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
         
     - name: Test built executable (Linux/macOS)
       if: runner.os != 'Windows'
@@ -222,6 +230,7 @@ jobs:
         
     - name: Test built executable (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
         $variant = "${{ matrix.gui-variant }}"
         if ($variant -eq "main") {
@@ -229,7 +238,6 @@ jobs:
         } else {
           $expectedFile = "dist/WalrioLite.exe"
         }
-        
         if (Test-Path $expectedFile) {
           Write-Host "SUCCESS: $expectedFile found"
         } else {
@@ -260,15 +268,15 @@ jobs:
       continue-on-error: true
       shell: pwsh
       run: |
-        Write-Host "Testing PyGObject import capability in built environment..."
+        Write-Host "Testing PyGObject import capability in built environment (MSYS2 Python)..."
         try {
-          python -c "import gi; print('SUCCESS: gi import successful')"
+          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; print('SUCCESS: gi import successful')"
           Write-Host "SUCCESS: PyGObject available in build environment"
         } catch {
           Write-Host "WARNING: PyGObject not available in build environment - executable may have import issues"
         }
         try {
-          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
           Write-Host "SUCCESS: GStreamer available in build environment"
         } catch {
           Write-Host "WARNING: GStreamer not available in build environment - audio may not work"
