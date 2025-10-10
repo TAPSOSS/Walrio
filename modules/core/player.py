@@ -20,134 +20,20 @@ import socket
 import tempfile
 from pathlib import Path
 
-# GStreamer Python bindings
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GLib
+# VLC Python bindings
+import vlc
 
 class AudioPlayer:
     """
-    A GStreamer Python bindings based audio player with real-time control.
-    
-    This class provides audio playback functionality using GStreamer Python
-    bindings for real-time volume control, seeking, and playback management.
+    VLC-based audio player with real-time control.
     """
-    
-    def __init__(self):
-        """
-        Initialize the AudioPlayer with GStreamer Python bindings.
-        
-        Raises:
-            RuntimeError: If GStreamer initialization fails.
-        """
-        # Initialize GStreamer
-        Gst.init(None)
-        
-        # Create pipeline elements
-        self.pipeline = None
-        self.source = None
-        self.decodebin = None
-        self.volume = None
-        self.audioconvert = None
-        self.audioresample = None
-        self.audiosink = None
-        
-        # Player state
-        self.is_playing = False
-        self.is_paused = False
-        self.current_file = None
-        self.duration = 0
-        self.position = 0
-        self.volume_value = 1.0
-        self.should_quit = False
-        self.loop_mode = 'none'  # 'none', number (e.g. '3'), or 'infinite'
-        self.repeat_count = 0
-        self.interactive_mode = False  # Track if we're in interactive mode
-        
-        # Position update callback
-        self.position_callback = None
-        self.position_update_interval = 100  # ms
-        
-        # Event notification system for daemon mode
-        self.event_listeners = []  # List of sockets to send events to
-        
-        # GLib main loop for handling messages
-        self.loop = GLib.MainLoop()
-        self.loop_thread = None
-        
-        # Position tracking
-        self.position_thread = None
-        
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
-    
-    def signal_handler(self, signum, frame):
-        """
-        Handle termination signals gracefully.
-        
-        Args:
-            signum (int): Signal number received.
-            frame: Current stack frame (unused).
-        """
-        print(f"\nReceived signal {signum}, stopping playback...")
-        self.stop()
-        self.should_quit = True
-        if self.loop.is_running():
-            self.loop.quit()
-        # Clean up daemon resources on signal
-        if hasattr(self, '_cleanup_daemon'):
-            self._cleanup_daemon()
-    
-    def _create_pipeline(self):
-        """Create and configure the GStreamer pipeline."""
-        # Create pipeline
-        self.pipeline = Gst.Pipeline.new("audio-player")
-        
-        # Create elements
-        self.source = Gst.ElementFactory.make("filesrc", "source")
-        self.decodebin = Gst.ElementFactory.make("decodebin", "decoder")
-        self.volume = Gst.ElementFactory.make("volume", "volume")
-        self.audioconvert = Gst.ElementFactory.make("audioconvert", "convert")
-        self.audioresample = Gst.ElementFactory.make("audioresample", "resample")
-        self.audiosink = Gst.ElementFactory.make("autoaudiosink", "sink")
-        
-        if not all([self.source, self.decodebin, self.volume, self.audioconvert, 
-                   self.audioresample, self.audiosink]):
-            raise RuntimeError("Failed to create GStreamer elements")
-        
-        # Add elements to pipeline
-        self.pipeline.add(self.source)
-        self.pipeline.add(self.decodebin)
-        self.pipeline.add(self.volume)
-        self.pipeline.add(self.audioconvert)
-        self.pipeline.add(self.audioresample)
-        self.pipeline.add(self.audiosink)
-        
-        # Link static elements
-        self.source.link(self.decodebin)
-        self.audioconvert.link(self.volume)
-        self.volume.link(self.audioresample)
-        self.audioresample.link(self.audiosink)
-        
-        # Connect dynamic pad for decodebin
-        self.decodebin.connect("pad-added", self._on_pad_added)
-        
-        # Set up message bus
-        bus = self.pipeline.get_bus()
-        bus.add_signal_watch()
-        bus.connect("message", self._on_bus_message)
-        
-        # Position update timer (will be set when playback starts)
-        self.position_timeout_id = None
-    
-    def set_position_callback(self, callback):
+    # VLC does not require pipeline creation; handled in load_file
         """Set callback function for position updates.
         
         Args:
             callback: Function to call with position updates (seconds as float)
         """
-        self.position_callback = callback
+        # Not needed for VLC
     
     def _start_position_updates(self):
         """Start sending position updates via callback."""
@@ -181,76 +67,9 @@ class AudioPlayer:
                 return True  # Keep trying
         return False  # Stop timeout
     
-    def _on_pad_added(self, decodebin, pad):
-        """
-        Handle dynamic pad addition from decodebin.
-        
-        Args:
-            decodebin: The GStreamer decodebin element that added the pad.
-            pad: The newly added pad from decodebin.
-        """
-        caps = pad.query_caps(None)
-        structure = caps.get_structure(0)
-        
-        if structure and structure.get_name().startswith("audio/"):
-            # Link to audioconvert first for format conversion, then to volume
-            sink_pad = self.audioconvert.get_static_pad("sink")
-            if not sink_pad.is_linked():
-                try:
-                    result = pad.link(sink_pad)
-                    if result != Gst.PadLinkReturn.OK:
-                        print(f"DEBUG: Pad linking failed with result: {result}")
-                    else:
-                        print("DEBUG: Successfully linked decodebin pad to audioconvert")
-                except Exception as e:
-                    print(f"DEBUG: Exception during pad linking: {e}")
+    # Not needed for VLC
     
-    def _on_bus_message(self, bus, message):
-        """
-        Handle GStreamer bus messages.
-        
-        Args:
-            bus: The GStreamer bus that sent the message.
-            message: The GStreamer message to process.
-        """
-        # Only log important bus messages
-        if message.type == Gst.MessageType.EOS:
-            print(f"DEBUG: Bus message received: {message.type}")  
-            # End of stream - handle looping
-            print("DEBUG: EOS message received - calling _handle_eos()")
-            self._handle_eos()
-        elif message.type == Gst.MessageType.ERROR:
-            error, debug = message.parse_error()
-            print(f"GStreamer Error: {error}, Debug: {debug}")
-            self.stop()
-        elif message.type == Gst.MessageType.WARNING:
-            warning, debug = message.parse_warning()
-            print(f"GStreamer Warning: {warning}, Debug: {debug}")
-        elif message.type == Gst.MessageType.INFO:
-            info, debug = message.parse_info()
-            print(f"GStreamer Info: {info}, Debug: {debug}")
-        elif message.type == Gst.MessageType.STATE_CHANGED:
-            if message.src == self.pipeline:
-                old_state, new_state, pending_state = message.parse_state_changed()
-                print(f"DEBUG: State changed from {old_state} to {new_state}")
-                if new_state == Gst.State.PLAYING:
-                    self.is_playing = True
-                    self.is_paused = False
-                    print("DEBUG: Set is_playing=True")
-                    # Start position updates when playback begins
-                    self._start_position_updates()
-                elif new_state == Gst.State.PAUSED:
-                    self.is_playing = False
-                    self.is_paused = True
-                    print("DEBUG: Set is_playing=False (paused)")
-                    # Stop position updates when paused
-                    self._stop_position_updates()
-                elif new_state in [Gst.State.READY, Gst.State.NULL]:
-                    self.is_playing = False
-                    self.is_paused = False
-                    print(f"DEBUG: Set is_playing=False ({new_state})")
-                    # Stop position updates when stopped
-                    self._stop_position_updates()
+    # Not needed for VLC
     
     def _handle_eos(self):
         """Handle end of stream for looping."""
@@ -309,44 +128,22 @@ class AudioPlayer:
     def load_file(self, filepath):
         """
         Load an audio file for playback.
-        
-        Args:
-            filepath (str): Path to the audio file.
-            
-        Returns:
-            bool: True if file loaded successfully, False otherwise.
         """
         absolute_path = os.path.abspath(filepath)
-        
-        # Check if file exists
         if not os.path.exists(absolute_path):
             print(f"Error: File '{filepath}' not found.")
             return False
-        
-        # Check that it's a file and not directory
         if not os.path.isfile(absolute_path):
             print(f"Error: '{filepath}' is not a file.")
             return False
-        
-        # Stop any existing playback
-        if self.pipeline:
+        if self.player:
             self.stop()
-        
-        # Store the file path for playback
         self.current_file = absolute_path
-        
-        # Reset position for new file
         self.position = 0
-        
-        # Create new pipeline
-        self._create_pipeline()
-        
-        # Set file source
-        self.source.set_property("location", absolute_path)
-        
-        # Get the duration of the file
+        self.media = self.instance.media_new(absolute_path)
+        self.player = self.instance.media_player_new()
+        self.player.set_media(self.media)
         self.duration = self._get_file_duration(absolute_path)
-        
         print(f"Loaded: {filepath}")
         if self.duration > 0:
             print(f"Duration: {self.duration:.1f} seconds")
@@ -355,56 +152,28 @@ class AudioPlayer:
     def play(self, seek_position=None):
         """
         Start or resume playback.
-        
-        Args:
-            seek_position (float, optional): Position in seconds to start playback from
-        
-        Returns:
-            bool: True if playback started successfully, False otherwise.
         """
         if not self.current_file:
             print("Error: No file loaded")
             return False
-        
-        if not self.pipeline:
+        if not self.player:
             if not self.load_file(self.current_file):
                 return False
-        
-        # Start GLib main loop in separate thread if not running
-        if not self.loop_thread or not self.loop_thread.is_alive():
-            self.loop_thread = threading.Thread(target=self._run_loop, daemon=True)
-            self.loop_thread.start()
-        
-        # Set volume
-        self.volume.set_property("volume", self.volume_value)
-        
-        # Seek to position if specified
+        self.player.audio_set_volume(int(self.volume_value * 100))
         if seek_position is not None:
-            self.pipeline.set_state(Gst.State.PAUSED)
-            self.pipeline.get_state(Gst.CLOCK_TIME_NONE)
             self.seek(seek_position)
-        
-        # Start playback
-        ret = self.pipeline.set_state(Gst.State.PLAYING)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Failed to start playback")
-            return False
-        
-        # Reset repeat count for new playback
+        self.player.play()
+        self.is_playing = True
+        self.is_paused = False
         if seek_position is None or seek_position == 0:
             self.repeat_count = 0
-        
-        # Send song starting event
         self._send_event("song_starting", {
             "file": self.current_file,
             "duration": self.duration,
             "seek_position": seek_position or 0,
             "is_repeat": False
         })
-        
-        # Start position tracking
         self._start_position_tracking()
-        
         print("Playback started")
         return True
     
@@ -414,83 +183,56 @@ class AudioPlayer:
     
     def pause(self):
         """
-        Pause playback using GStreamer's pipeline state control.
-        
-        Returns:
-            bool: True if paused successfully, False otherwise.
+        Pause playback.
         """
-        if not self.is_playing or not self.pipeline:
+        if not self.is_playing or not self.player:
             print("Player is not currently playing")
             return False
-        
-        ret = self.pipeline.set_state(Gst.State.PAUSED)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Failed to pause playback")
-            return False
-        
+        self.player.pause()
+        self.is_playing = False
+        self.is_paused = True
         print("Playback paused")
         return True
     
     def resume(self):
         """
         Resume paused playback.
-        
-        Returns:
-            bool: True if resumed successfully, False otherwise.
         """
-        if not self.is_paused or not self.pipeline:
+        if not self.is_paused or not self.player:
             print("Player is not currently paused")
             return False
-        
-        ret = self.pipeline.set_state(Gst.State.PLAYING)
-        if ret == Gst.StateChangeReturn.FAILURE:
-            print("Error: Failed to resume playback")
-            return False
-        
+        self.player.play()
+        self.is_playing = True
+        self.is_paused = False
         print("Playback resumed")
         return True
     
     def stop(self):
         """
         Stop playback.
-        
-        Returns:
-            bool: True if stopped successfully, False otherwise.
         """
-        if self.pipeline:
-            self.pipeline.set_state(Gst.State.NULL)
-            self.pipeline = None
-        
+        if self.player:
+            self.player.stop()
+            self.player = None
         self.is_playing = False
         self.is_paused = False
         self._stop_position_tracking()
-        
         print("Playback stopped")
         return True
     
     def set_volume(self, volume):
         """
         Set playback volume in real-time.
-        
-        Args:
-            volume (float): Volume level between 0.0 and 1.0.
-            
-        Returns:
-            bool: True if volume set successfully, False otherwise.
         """
         if volume < 0.0 or volume > 1.0:
             print("Error: Volume must be between 0.0 and 1.0")
             return False
-        
         self.volume_value = volume
-        
-        # Apply volume immediately to the GStreamer pipeline
-        if self.volume and self.pipeline:
-            self.volume.set_property("volume", volume)
+        if self.player:
+            self.player.audio_set_volume(int(volume * 100))
             print(f"Volume set to {volume:.2f}")
         else:
             print(f"Volume will be set to {volume:.2f} when playback starts")
-        
         return True
     
     def get_volume(self):
@@ -504,109 +246,61 @@ class AudioPlayer:
     
     def seek(self, position_seconds):
         """
-        Seek to a specific position in the audio using GStreamer.
-        
-        Args:
-            position_seconds (float): Position to seek to in seconds.
-            
-        Returns:
-            bool: True if seek successful, False otherwise.
+        Seek to a specific position in the audio using VLC.
         """
         if not self.current_file:
             print("Error: No file loaded")
             return False
-
-        # Convert to float and validate input
         try:
             position_seconds = float(position_seconds)
         except (ValueError, TypeError) as e:
             print(f"Error: Invalid seek position: {position_seconds}, error: {e}")
             return False
-
         if position_seconds < 0:
             print("Error: Seek position cannot be negative")
             return False
-
         if self.duration > 0 and position_seconds > self.duration:
             print(f"Error: Seek position {position_seconds:.1f}s exceeds duration {self.duration:.1f}s")
             return False
-
-        if not self.pipeline:
-            print("Error: No pipeline available for seeking")
+        if not self.player:
+            print("Error: No player available for seeking")
             return False
-        
         try:
-            # Ensure position_seconds is within safe bounds
-            position_seconds = max(0.0, min(float(position_seconds), 86400.0))  # Cap at 24 hours
-            
-            # Convert position to nanoseconds for GStreamer
-            GST_SECOND = 1000000000
-            position_ns = int(position_seconds * GST_SECOND)
-            
-            # Ensure the nanosecond value is within acceptable range
-            if position_ns < 0:
-                position_ns = 0
-            
-            # Use simpler seek approach that avoids GStreamer constant issues
-            result = self.pipeline.seek_simple(
-                Gst.Format.TIME,
-                Gst.SeekFlags.FLUSH | Gst.SeekFlags.ACCURATE,
-                position_ns
-            )
-            
-            if result:
-                self.position = position_seconds
-                print(f"Seeked to {position_seconds:.1f} seconds")
-                return True
-            else:
-                print(f"Failed to seek to {position_seconds:.1f} seconds")
-                return False
-                
+            self.player.set_time(int(position_seconds * 1000))
+            self.position = position_seconds
+            print(f"Seeked to {position_seconds:.1f} seconds")
+            return True
         except Exception as e:
             print(f"Error seeking to {position_seconds} seconds: {e}")
             return False
     
     def get_position(self):
         """
-        Get current playback position from GStreamer pipeline.
-        
-        Returns:
-            float: Current position in seconds.
+        Get current playback position from VLC player.
         """
-        if self.pipeline:
+        if self.player:
             try:
-                # Query current position from pipeline regardless of is_playing flag
-                # This is more reliable for position tracking
-                success, position = self.pipeline.query_position(Gst.Format.TIME)
-                if success and position != Gst.CLOCK_TIME_NONE:
-                    # Convert from nanoseconds to seconds
-                    self.position = position / Gst.SECOND
+                ms = self.player.get_time()
+                if ms >= 0:
+                    self.position = ms / 1000.0
                     return self.position
                 else:
-                    # Pipeline exists but no valid position yet (still starting)
                     return self.position
             except Exception as e:
-                # Debug: Exception in position query (less frequent logging)
-                import time
-                current_time = time.time()
-                if not hasattr(self, '_last_exception_debug') or current_time - self._last_exception_debug > 5:
-                    print(f"DEBUG: Position query exception: {e}")
-                    self._last_exception_debug = current_time
-        else:
-            # No pipeline available
-            if not hasattr(self, '_no_pipeline_warned'):
-                print("DEBUG: No pipeline available for position query")
-                self._no_pipeline_warned = True
-        
+                print(f"DEBUG: Position query exception: {e}")
         return self.position
     
     def get_duration(self):
         """
         Get total duration of the current audio file.
-        
-        Returns:
-            float: Total duration in seconds.
         """
+        if self.player:
+            try:
+                ms = self.player.get_length()
+                if ms > 0:
+                    self.duration = ms / 1000.0
+            except Exception:
+                pass
         return self.duration
     
     def set_loop_mode(self, mode):
@@ -987,12 +681,11 @@ class AudioPlayer:
             print(f"Error cleaning up daemon: {e}")
     
     def _update_position(self):
-        """Update position tracking using GStreamer pipeline queries."""
+        """Update position tracking using VLC player queries."""
         while self.is_playing and not self.should_quit:
-            if self.pipeline and not self.is_paused:
-                # Query position from GStreamer pipeline
+            if self.player and not self.is_paused:
                 self.get_position()
-            time.sleep(0.1)  # Update every 100ms
+            time.sleep(0.1)
     
     def _start_position_tracking(self):
         """Start position tracking in a separate thread."""
@@ -1049,22 +742,12 @@ class AudioPlayer:
     def _get_file_duration(self, filepath):
         """
         Get the duration of an audio file using the centralized metadata module.
-        
-        Args:
-            filepath (str): Path to the audio file.
-            
-        Returns:
-            float: Duration in seconds, or 0 if unable to determine.
         """
-        # Method 1: Use centralized metadata module (preferred)
         try:
-            # Import the metadata module from the same package
             import sys
             import os
             sys.path.append(os.path.dirname(os.path.dirname(__file__)))
             from . import metadata
-            
-            # Extract metadata which includes duration
             metadata_info = metadata.extract_metadata(filepath)
             if metadata_info and metadata_info.get('length', 0) > 0:
                 duration = float(metadata_info['length'])
@@ -1072,27 +755,6 @@ class AudioPlayer:
                 return duration
         except Exception as e:
             print(f"DEBUG: Metadata module duration detection failed: {e}")
-        
-        # Method 2: Try GStreamer discoverer as fallback
-        try:
-            # Create a temporary pipeline to discover duration
-            uri = f"file://{os.path.abspath(filepath)}"
-            discoverer = Gst.PbUtilsDiscoverer.new(10 * Gst.SECOND)
-            
-            try:
-                info = discoverer.discover_uri(uri)
-                duration = info.get_duration()
-                if duration != Gst.CLOCK_TIME_NONE:
-                    duration_secs = duration / Gst.SECOND
-                    print(f"DEBUG: GStreamer discoverer detected duration: {duration_secs:.1f}s")
-                    return duration_secs
-            except Exception as e:
-                print(f"DEBUG: GStreamer discoverer failed: {e}")
-                
-        except Exception as e:
-            print(f"DEBUG: GStreamer discoverer unavailable: {e}")
-        
-        print(f"DEBUG: Could not detect duration for {os.path.basename(filepath)}")
         return 0.0
 
 def play_audio(filepath):

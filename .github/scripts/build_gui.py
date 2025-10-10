@@ -122,9 +122,8 @@ class SimpleWalrioBuilder:
             "mutagen", "mutagen.mp3", "mutagen.flac", "mutagen.oggvorbis", 
             "mutagen.mp4", "mutagen.wave", "mutagen.opus",
             
-            # GStreamer - let PyInstaller handle the rest
-            "gi", "gi.repository.Gst", "gi.repository.GstBase", 
-            "gi.repository.GstAudio", "gi.repository.GObject",
+            # VLC - let PyInstaller handle the rest
+            "vlc",
             
             # Walrio modules (ensure package hierarchy is bundled)
             "modules", "modules.core",
@@ -208,14 +207,14 @@ Categories=AudioVideo;Audio;Player;
         readme_content = """# Walrio Music Player - Portable Distribution
 
 ## System Requirements
-- GStreamer 1.0 with plugins (gstreamer1.0-plugins-base, gstreamer1.0-plugins-good)
+- VLC media player (libvlc) installed on your system
 - Audio system (PulseAudio, PipeWire, or ALSA)
 
 ## Installation
-1. Install GStreamer on your system:
-   - Ubuntu/Debian: `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`
-   - Fedora: `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good`
-   - Arch: `sudo pacman -S gstreamer gst-plugins-base gst-plugins-good`
+1. Install VLC on your system:
+   - Ubuntu/Debian: `sudo apt install vlc`
+   - Fedora: `sudo dnf install vlc`
+   - Arch: `sudo pacman -S vlc`
 
 2. Run the executable directly - no additional installation needed
 
@@ -223,7 +222,7 @@ Categories=AudioVideo;Audio;Player;
 - WalrioMain: Full-featured music player
 - WalrioLite: Lightweight version
 
-The applications will automatically use your system's GStreamer installation.
+The applications will automatically use your system's VLC installation.
 """
         readme_file = self.dist_dir / "README.txt"
         readme_file.write_text(readme_content)

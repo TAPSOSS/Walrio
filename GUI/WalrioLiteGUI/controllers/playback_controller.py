@@ -342,10 +342,10 @@ class PlaybackController(QObject):
             self.controls_view.set_duration(duration)
             print(f"DEBUG: Set duration {duration}s for {song.get('title', 'unknown')}")
         else:
-            # No duration available - set to 0 and let GStreamer update it
+            # No duration available - set to 0 and let VLC update it
             self.controls_view.set_time_total("00:00") 
             self.controls_view.set_duration(0.0)
-            print(f"DEBUG: No duration available for {song.get('title', 'unknown')}, waiting for GStreamer...")
+            print(f"DEBUG: No duration available for {song.get('title', 'unknown')}, waiting for VLC...")
             
         # Always reset completion trigger for new song
         if hasattr(self, '_completion_triggered'):
@@ -640,7 +640,7 @@ class PlaybackController(QObject):
         print(f"DEBUG: _on_song_starting called with song_info: {song_info}")
         print(f"DEBUG: _on_song_starting called with duration: {duration}")
         
-        # Always update duration when we get it from GStreamer (most accurate)
+    # Always update duration when we get it from VLC (most accurate)
         current_duration = self.app_state.duration
         if duration > 0:
             if abs(duration - current_duration) > 0.1:
@@ -648,7 +648,7 @@ class PlaybackController(QObject):
             else:
                 print(f"Song starting - confirming duration {duration:.1f}s")
                 
-            # Always update with GStreamer's detected duration (most accurate)
+            # Always update with VLC's detected duration (most accurate)
             self.app_state.duration = duration
             # Update the UI with the new duration
             self.controls_view.set_time_total(self._format_time(duration))
@@ -660,7 +660,7 @@ class PlaybackController(QObject):
             if hasattr(self, '_completion_triggered'):
                 delattr(self, '_completion_triggered')
         else:
-            print("Song starting but no duration provided from GStreamer")
+            print("Song starting but no duration provided from VLC")
             
         # Start position timer when song starts
         if not self.position_timer.isActive():

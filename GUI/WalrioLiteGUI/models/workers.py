@@ -436,8 +436,6 @@ class PlayerWorker(QThread):
                     return
             
             # Position tracking now handled by main thread
-            # Set up position callback for GStreamer-native updates
-            self.audio_player.set_position_callback(self._on_position_update_from_gstreamer)
             
             # Main loop - monitor playback state from modules/core/player.py
             while not self.should_stop and not self.thread_should_exit:
@@ -689,27 +687,7 @@ class PlayerWorker(QThread):
             self.position_timer.stop()
             self.position_timer = None
     
-    def _on_position_update_from_gstreamer(self, position):
-        """Handle position updates from GStreamer callback.
-        
-        Args:
-            position (float): Current position in seconds from GStreamer
-        """
-        if not self.should_stop:
-            try:
-                # Debug: Print first few position updates and occasionally after
-                if not hasattr(self, '_pos_update_count'):
-                    self._pos_update_count = 0
-                self._pos_update_count += 1
-                
-                if self._pos_update_count <= 5 or self._pos_update_count % 50 == 0:  # First 5 then every 5 seconds
-                    print(f"DEBUG: GStreamer position update #{self._pos_update_count}: position={position}")
-                
-                # Emit position updates via Qt signal
-                self.position_updated.emit(position)
-                
-            except Exception as e:
-                print(f"DEBUG: Position callback error: {e}")
+    # Not needed for VLC
     
     def _update_position(self):
         """Update position and emit signal."""

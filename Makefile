@@ -56,7 +56,7 @@ deps-check:
 
 install-deps:
 	pip install -r requirements.txt
-	pip install pyinstaller PySide6 mutagen PyGObject
+	pip install pyinstaller PySide6 mutagen python-vlc
 
 test:
 	@echo "Running basic syntax checks..."
