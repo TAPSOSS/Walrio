@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Walrio GUI Build Script
 Copyright (c) 2025 TAPS OSS
@@ -8,6 +9,373 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 Automated PyInstaller build script for Walrio Main and Lite GUIs.
 Supports building for Linux, macOS, and Windows with proper dependency handling.
 """
+
+import os
+import sys
+import subprocess
+import shutil
+import platform
+from pathlib import Path
+
+
+class WalrioBuildError(Exception):
+    """Custom exception for build errors."""
+    pass
+
+
+def run_command(cmd, check=True, capture_output=False):
+    """Execute shell command with proper error handling."""
+    print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+    
+    if isinstance(cmd, str):
+        cmd = cmd.split()
+    
+    try:
+        if capture_output:
+            result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+            if result.stdout and check:
+                print(f"Output: {result.stdout.strip()}")
+            return result
+        else:
+            subprocess.run(cmd, check=check)
+    except subprocess.CalledProcessError as e:
+        if check:  # Only raise error if check=True
+            error_msg = f"Command failed: {' '.join(cmd)}"
+            if hasattr(e, 'stderr') and e.stderr:
+                error_msg += f"\nError: {e.stderr}"
+            raise WalrioBuildError(error_msg) from e
+        else:
+            # Return result even on failure when check=False
+            return e
+
+
+def find_gstreamer_paths():
+    """
+    Detect GStreamer installation paths for different platforms.
+    Returns dict with paths for binaries, plugins, and typelibs.
+    """
+    system = platform.system().lower()
+    
+    if system == "windows":
+        # Check Windows-specific paths (MSYS2, official installer)
+        possible_roots = [
+            Path("C:/tools/msys64/mingw64"),
+            Path("C:/msys64/mingw64"), 
+            Path("C:/gstreamer/1.0/msvc_x86_64"),
+            Path("C:/gstreamer/1.0/mingw_x86_64")
+        ]
+        
+        for root in possible_roots:
+            if root.exists():
+                bin_path = root / "bin"
+                lib_path = root / "lib"
+                
+                # Validate critical GStreamer files exist
+                gst_inspect = bin_path / "gst-inspect-1.0.exe"
+                gst_launch = bin_path / "gst-launch-1.0.exe"
+                
+                if gst_inspect.exists() and gst_launch.exists():
+                    print(f"Found GStreamer installation at: {root}")
+                    return {
+                        'root': root,
+                        'bin': bin_path,
+                        'lib': lib_path,
+                        'plugins': lib_path / "gstreamer-1.0",
+                        'typelibs': lib_path / "girepository-1.0"
+                    }
+        
+        raise WalrioBuildError("GStreamer installation not found on Windows")
+    
+    elif system == "darwin":
+        # macOS paths (Homebrew)
+        homebrew_root = Path("/opt/homebrew") if Path("/opt/homebrew").exists() else Path("/usr/local")
+        gst_root = homebrew_root / "lib"
+        
+        if (gst_root / "gstreamer-1.0").exists():
+            print(f"Found GStreamer installation at: {gst_root}")
+            return {
+                'root': gst_root.parent,
+                'bin': homebrew_root / "bin",
+                'lib': gst_root,
+                'plugins': gst_root / "gstreamer-1.0",
+                'typelibs': gst_root / "girepository-1.0"
+            }
+        
+        raise WalrioBuildError("GStreamer installation not found on macOS")
+    
+    else:
+        # Linux - try multiple detection methods
+        # Method 1: pkg-config (if available)
+        try:
+            result = run_command(['pkg-config', '--variable=pluginsdir', 'gstreamer-1.0'], 
+                               capture_output=True, check=False)
+            if result.returncode == 0:
+                plugins_dir = Path(result.stdout.strip())
+                
+                if plugins_dir.exists():
+                    lib_root = plugins_dir.parent
+                    root = lib_root.parent
+                    
+                    print(f"Found GStreamer via pkg-config at: {root}")
+                    return {
+                        'root': root,
+                        'bin': root / "bin",
+                        'lib': lib_root,
+                        'plugins': plugins_dir,
+                        'typelibs': lib_root / "girepository-1.0"
+                    }
+        except (subprocess.CalledProcessError, FileNotFoundError, WalrioBuildError):
+            pass
+        
+        # Method 2: Common Linux paths
+        common_lib_paths = [
+            Path("/usr/lib64"),
+            Path("/usr/lib"),
+            Path("/usr/local/lib64"),
+            Path("/usr/local/lib")
+        ]
+        
+        for lib_path in common_lib_paths:
+            plugins_dir = lib_path / "gstreamer-1.0"
+            typelibs_dir = lib_path / "girepository-1.0"
+            
+            if plugins_dir.exists() and typelibs_dir.exists():
+                root = lib_path.parent
+                
+                print(f"Found GStreamer at: {root}")
+                return {
+                    'root': root,
+                    'bin': root / "bin",
+                    'lib': lib_path,
+                    'plugins': plugins_dir,
+                    'typelibs': typelibs_dir
+                }
+        
+        raise WalrioBuildError("GStreamer installation not found on Linux. Please install gstreamer1.0-plugins-base and gir1.2-gst-* packages.")
+
+
+def validate_paths(paths_dict):
+    """Validate that required GStreamer paths exist."""
+    critical_paths = ['plugins', 'typelibs']
+    
+    for key in critical_paths:
+        if key not in paths_dict:
+            raise WalrioBuildError(f"Missing {key} path in GStreamer configuration")
+        
+        path = paths_dict[key]
+        if not path.exists():
+            raise WalrioBuildError(f"GStreamer {key} directory not found: {path}")
+        
+        # Check if directory has content
+        if not any(path.iterdir()):
+            print(f"Warning: {key} directory is empty: {path}")
+    
+    print("GStreamer paths validation passed")
+
+
+def get_hidden_imports():
+    """Return streamlined list of essential hidden imports."""
+    return [
+        # Core PyGObject (essential only)
+        'gi',
+        'gi.repository.Gtk',
+        'gi.repository.GObject', 
+        'gi.repository.Gio',
+        'gi.repository.GLib',
+        
+        # GStreamer core (essential only)
+        'gi.repository.Gst',
+        'gi.repository.GstBase',
+        'gi.repository.GstAudio',
+        'gi.repository.GstPbutils',
+        
+        # Critical dynamic modules
+        '_gi',
+        'cairo'
+    ]
+
+
+def build_pyinstaller_command():
+    """
+    Build streamlined PyInstaller command with environment-based GStreamer setup.
+    Follows Strawberry's approach - no --add-binary, runtime environment configuration only.
+    """
+    system = platform.system().lower()
+    
+    # Minimal PyInstaller command - let runtime hook handle everything
+    cmd = [
+        sys.executable, '-m', 'PyInstaller',
+        '--onefile',
+        '--windowed' if system == 'windows' else '--console',
+        '--name', 'walrio-gui',
+        
+        # Essential data files
+        '--add-data', 'modules:modules',
+        '--add-data', 'testing_files:testing_files',
+        
+        # Runtime hook for environment setup (Strawberry-style)
+        '--runtime-hook', '.github/scripts/gst_runtime_hook.py',
+    ]
+    
+    # Add essential hidden imports only
+    for import_name in get_hidden_imports():
+        cmd.extend(['--hidden-import', import_name])
+    
+    # Exclude unnecessary modules to reduce size and warnings
+    excludes = [
+        'tkinter', 'matplotlib', 'numpy', 'scipy', 'pandas',
+        'IPython', 'jupyter', 'sphinx', 'pytest'
+    ]
+    
+    for exclude in excludes:
+        cmd.extend(['--exclude-module', exclude])
+    
+    # Add the main script
+    cmd.append('GUI/walrio_main.py')
+    
+    print("Built streamlined PyInstaller command with runtime environment setup")
+    return cmd
+
+
+def create_gstreamer_bundle(output_dir, gst_paths):
+    """
+    Create GStreamer bundle structure following Strawberry's proven layout.
+    Places files in platform-appropriate locations for runtime discovery.
+    """
+    system = platform.system().lower()
+    
+    # Determine bundle structure based on Strawberry's approach
+    if system == "windows":
+        # Windows: plugins in application directory 
+        bundle_root = output_dir
+        plugins_dest = bundle_root / "gstreamer-plugins"
+        typelibs_dest = bundle_root / "girepository-1.0"
+        
+    elif system == "darwin":
+        # macOS: Use .app bundle structure (../PlugIns relative to executable)
+        bundle_root = output_dir / "walrio-gui.app" / "Contents"
+        plugins_dest = bundle_root / "PlugIns" / "gstreamer"
+        typelibs_dest = bundle_root / "PlugIns" / "girepository-1.0"
+        
+        # Create bundle directories
+        for path in [bundle_root / "MacOS", bundle_root / "PlugIns", bundle_root / "Resources"]:
+            path.mkdir(parents=True, exist_ok=True)
+            
+    else:
+        # Linux: plugins directory relative to executable directory
+        # Runtime hook expects: bundle_root / "plugins" / "gstreamer"
+        bundle_root = output_dir
+        plugins_dest = bundle_root / "plugins" / "gstreamer" 
+        typelibs_dest = bundle_root / "plugins" / "girepository-1.0"
+    
+    # Create bundle directories
+    plugins_dest.parent.mkdir(parents=True, exist_ok=True)
+    typelibs_dest.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Copy GStreamer plugins
+    if plugins_dest.exists():
+        shutil.rmtree(plugins_dest)
+    
+    print(f"Bundling GStreamer plugins: {gst_paths['plugins']} -> {plugins_dest}")
+    shutil.copytree(gst_paths['plugins'], plugins_dest, 
+                   ignore=shutil.ignore_patterns('*.a', '*.la', 'static'))
+    
+    # Copy GI typelibs
+    if typelibs_dest.exists():
+        shutil.rmtree(typelibs_dest)
+    
+    print(f"Bundling GI typelibs: {gst_paths['typelibs']} -> {typelibs_dest}")
+    shutil.copytree(gst_paths['typelibs'], typelibs_dest)
+    
+    # Create configuration file for runtime hook
+    config_file = bundle_root / "gstreamer_config.txt" 
+    with open(config_file, 'w') as f:
+        f.write(f"plugins_path={plugins_dest}\n")
+        f.write(f"typelibs_path={typelibs_dest}\n")
+        f.write(f"system={system}\n")
+    
+    print(f"Created {system} bundle structure with {len(list(plugins_dest.glob('*.dll' if system == 'windows' else '*.so')))} plugins")
+    
+    return {
+        'plugins_path': plugins_dest,
+        'typelibs_path': typelibs_dest,
+        'config_path': config_file
+    }
+
+
+def cleanup_build_artifacts():
+    """Remove temporary build artifacts."""
+    artifacts = ['build', 'dist', '*.spec']
+    
+    for pattern in artifacts:
+        if '*' in pattern:
+            import glob
+            for path in glob.glob(pattern):
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
+        else:
+            if os.path.exists(pattern):
+                if os.path.isdir(pattern):
+                    shutil.rmtree(pattern)
+                else:
+                    os.remove(pattern)
+    
+    print("Build artifacts cleaned up")
+
+
+def main():
+    """Main build process using Strawberry-inspired environment-based approach."""
+    print("Building Walrio GUI with Strawberry-inspired GStreamer bundling...")
+    print("Using environment-based setup instead of PyInstaller --add-binary")
+    
+    try:
+        # Detect GStreamer installation
+        print("\n1. Detecting GStreamer installation...")
+        gst_paths = find_gstreamer_paths()
+        
+        # Validate installation
+        print("\n2. Validating GStreamer installation...")
+        validate_paths(gst_paths)
+        
+        # Clean previous builds
+        print("\n3. Cleaning previous build artifacts...")
+        cleanup_build_artifacts()
+        
+        # Build with streamlined command
+        print("\n4. Building executable with PyInstaller...")
+        cmd = build_pyinstaller_command()
+        
+        print("PyInstaller command:")
+        print(' '.join(cmd))
+        print()
+        
+        run_command(cmd)
+        
+        # Create GStreamer bundle
+        print("\n5. Creating GStreamer bundle structure...")
+        bundle_info = create_gstreamer_bundle(Path("dist"), gst_paths)
+        
+        print(f"\n✅ Build completed successfully!")
+        print(f"📁 Executable location: dist/")
+        print(f"🎵 GStreamer plugins: {bundle_info['plugins_path']}")
+        print(f"📚 TypeLib files: {bundle_info['typelibs_path']}")
+        print(f"⚙️  Configuration: {bundle_info['config_path']}")
+        print("\nThe application will configure GStreamer environment at runtime.")
+        
+    except WalrioBuildError as e:
+        print(f"\n❌ Build failed: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n💥 Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 
 import os
 import sys
