@@ -172,37 +172,84 @@ def create_gstreamer_bundle(dist_dir, gst_paths):
     bundle_plugins_dir.mkdir(parents=True, exist_ok=True)
     bundle_typelibs_dir.mkdir(parents=True, exist_ok=True)
     
-    # Copy GStreamer plugins
-    plugin_count = 0
-    for plugin_file in plugins_src.glob("*.so" if system != "windows" else "*.dll"):
-        shutil.copy2(plugin_file, bundle_plugins_dir)
-        plugin_count += 1
+    # Define problematic plugins to skip (these cause loading errors)
+    skip_plugins = {
+        # Qt/QML related plugins that have version conflicts
+        "libgstqml6.so", "libgstqmlgl.so", "libgstqt6.so",
+        # Samba plugins with undefined symbols
+        "libsamba-cluster-support-private-samba.so",
+        # Other potentially problematic plugins
+        "libgstopencv.so",  # OpenCV dependencies might be missing
+        "libgstvaapi.so",   # Hardware acceleration, might not work in containers
+        "libgstgl.so",      # OpenGL, might cause issues
+    }
     
-    # Copy GI typelib files
+    # Copy GStreamer plugins (with filtering)
+    plugin_count = 0
+    skipped_count = 0
+    plugin_extension = "*.dll" if system == "windows" else "*.so"
+    
+    for plugin_file in plugins_src.glob(plugin_extension):
+        plugin_name = plugin_file.name
+        
+        # Skip problematic plugins
+        if plugin_name in skip_plugins:
+            print(f"Skipping problematic plugin: {plugin_name}")
+            skipped_count += 1
+            continue
+            
+        # Only copy essential audio plugins for better compatibility
+        if any(essential in plugin_name.lower() for essential in [
+            "gstcoreelements", "gstplayback", "gstaudioconvert", "gstaudioresample",
+            "gstaudiotestsrc", "gstvolume", "gstalsa", "gstpulseaudio", "gstautodetect",
+            "gstflac", "gstogg", "gstvorbis", "gstopus", "gstlame", "gstmpg123",
+            "gstmpeg", "gstid3", "gstisomp4", "gstmatroska", "gstavi", "gstwav",
+            "gstdecodebin", "gstplaybin", "gsttypefind", "gstapp"
+        ]):
+            shutil.copy2(plugin_file, bundle_plugins_dir)
+            plugin_count += 1
+        else:
+            # Skip non-essential plugins to reduce size and compatibility issues
+            skipped_count += 1
+    
+    # Copy essential GI typelib files
     typelib_count = 0
+    essential_typelibs = [
+        "Gst-1.0.typelib", "GstBase-1.0.typelib", "GstAudio-1.0.typelib",
+        "GstPbutils-1.0.typelib", "GstVideo-1.0.typelib", "GLib-2.0.typelib",
+        "GObject-2.0.typelib", "Gio-2.0.typelib"
+    ]
+    
     for typelib_file in typelibs_src.glob("*.typelib"):
-        shutil.copy2(typelib_file, bundle_typelibs_dir)
-        typelib_count += 1
+        typelib_name = typelib_file.name
+        
+        # Always include essential typelibs, skip others to reduce size
+        if typelib_name in essential_typelibs or "Gst" in typelib_name:
+            shutil.copy2(typelib_file, bundle_typelibs_dir)
+            typelib_count += 1
     
     # Create configuration file for runtime
     config_file = dist_dir / "gstreamer_config.txt"
     config_content = f"""plugins_path=dist/plugins/gstreamer
 typelibs_path=dist/plugins/girepository-1.0
-system={system}"""
+system={system}
+filtered_build=true
+essential_plugins_only=true"""
     
     with open(config_file, 'w') as f:
         f.write(config_content)
     
     print(f"Bundling GStreamer plugins: {plugins_src} -> {bundle_plugins_dir}")
     print(f"Bundling GI typelibs: {typelibs_src} -> {bundle_typelibs_dir}")
-    print(f"Created {system} bundle structure with {plugin_count} plugins")
+    print(f"Created {system} bundle structure with {plugin_count} essential plugins ({skipped_count} skipped)")
     
     return {
         "plugins_path": f"dist/plugins/gstreamer",
         "typelibs_path": f"dist/plugins/girepository-1.0", 
         "config_path": f"dist/gstreamer_config.txt",
         "plugin_count": plugin_count,
-        "typelib_count": typelib_count
+        "typelib_count": typelib_count,
+        "skipped_plugins": skipped_count
     }
 
 
@@ -215,32 +262,57 @@ def build_pyinstaller_command(gui_name, entry_point, debug=False):
         f"--name={gui_name}",
     ]
     
-    # Add data files
+    # Add data files that the GUI applications need
     data_dirs = ["modules", "testing_files"]
     for data_dir in data_dirs:
-        cmd.extend(["--add-data", f"{data_dir}:{data_dir}"])
+        if Path(data_dir).exists():
+            cmd.extend(["--add-data", f"{data_dir}:{data_dir}"])
     
     # Add runtime hook for GStreamer environment setup
     hook_path = Path(".github/scripts/gst_runtime_hook.py")
     cmd.extend(["--runtime-hook", str(hook_path)])
     
-    # Essential hidden imports (streamlined to reduce warnings)
+    # Essential hidden imports for GUI applications
     essential_imports = [
-        "gi", "gi.repository.Gtk", "gi.repository.GObject", "gi.repository.Gio",
-        "gi.repository.GLib", "gi.repository.Gst", "gi.repository.GstBase", 
-        "gi.repository.GstAudio", "gi.repository.GstPbutils", "_gi", "cairo"
+        # Core PyGObject and GStreamer
+        "gi", "_gi", "gi.repository.GLib", "gi.repository.GObject", "gi.repository.Gio",
+        "gi.repository.Gst", "gi.repository.GstBase", "gi.repository.GstAudio", 
+        "gi.repository.GstPbutils", "gi.repository.GstVideo",
+        
+        # PySide6 GUI framework 
+        "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui", 
+        
+        # Audio metadata libraries
+        "mutagen", "mutagen.mp3", "mutagen.flac", "mutagen.oggvorbis", 
+        "mutagen.mp4", "mutagen.wave", "mutagen.opus",
+        
+        # Python standard library modules that might not be auto-detected
+        "sqlite3", "json", "threading", "pathlib", "tempfile", "socket",
+        
+        # Additional graphics support
+        "cairo", "PIL", "PIL.Image",
     ]
     
     for import_name in essential_imports:
         cmd.extend(["--hidden-import", import_name])
     
-    # Exclude unnecessary modules to reduce build size and warnings
+    # Exclude unnecessary modules to reduce build size and warnings  
     excludes = [
         "tkinter", "matplotlib", "numpy", "scipy", "pandas", 
         "IPython", "jupyter", "sphinx", "pytest"
+        # Note: Not excluding setuptools/pkg_resources as they're needed by some PyInstaller hooks
     ]
     for exclude in excludes:
         cmd.extend(["--exclude-module", exclude])
+    
+    # Add paths to find the GUI modules during build
+    gui_paths = [
+        str(Path("GUI").absolute()),
+        str(Path("modules").absolute())
+    ]
+    for path in gui_paths:
+        if Path(path).exists():
+            cmd.extend(["--paths", path])
     
     # Add entry point
     cmd.append(str(entry_point))
