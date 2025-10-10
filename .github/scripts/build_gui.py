@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
 """
-Walrio GUI Build Script
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-Clean implementation using Strawberry Music Player-inspired environment-based GStreamer bundling.
-Builds 6 executables total: 2 GUIs (Main/Lite) × 3 platforms (Linux/macOS/Windows).
+Simplified Walrio GUI Build Script
+Let PyInstaller handle GStreamer, we only manage essential dependencies.
 """
 
-import os
-import sys
-import subprocess
-import shutil
-import platform
 import argparse
-import json
+import sys
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -24,7 +16,7 @@ class WalrioBuildError(Exception):
     pass
 
 
-def run_command(cmd, check=True, capture_output=False):
+def run_command(cmd, check=True):
     """Execute shell command with proper error handling."""
     if isinstance(cmd, list):
         cmd_str = ' '.join(cmd)
@@ -35,587 +27,223 @@ def run_command(cmd, check=True, capture_output=False):
     print(f"Running: {cmd_str}")
     
     try:
-        if capture_output:
-            result = subprocess.run(cmd, check=check, capture_output=True, text=True)
-            return result
-        else:
-            subprocess.run(cmd, check=check)
-            return None
+        result = subprocess.run(cmd, check=check, capture_output=True, text=True)
+        if result.stdout.strip():
+            print(result.stdout)
+        return result
     except subprocess.CalledProcessError as e:
+        print(f"Command failed: {e}")
+        if e.stderr:
+            print(f"Error output: {e.stderr}")
         if check:
-            error_msg = f"Command failed: {cmd_str}"
-            if hasattr(e, 'stderr') and e.stderr:
-                error_msg += f"\nError: {e.stderr}"
-            raise WalrioBuildError(error_msg) from e
+            raise WalrioBuildError(f"Command failed: {e}")
         return e
 
 
-def find_gstreamer_paths():
-    """Find GStreamer installation paths using multiple detection methods."""
-    system = platform.system().lower()
+class SimpleWalrioBuilder:
+    """Simplified builder that lets PyInstaller handle everything properly."""
     
-    # Try pkg-config first
-    try:
-        result = run_command(
-            ["pkg-config", "--variable=pluginsdir", "gstreamer-1.0"], 
-            capture_output=True, check=False
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            plugins_dir = result.stdout.strip()
-            gst_base = Path(plugins_dir).parent
-            print(f"Found GStreamer via pkg-config at: {gst_base}")
-            
-            # Find typelibs directory
-            if system == "linux":
-                typelib_dir = gst_base / "girepository-1.0"
-                if not typelib_dir.exists():
-                    # Try alternate locations
-                    alt_paths = [
-                        Path("/usr/lib/girepository-1.0"),
-                        Path("/usr/lib/x86_64-linux-gnu/girepository-1.0"), 
-                        Path("/usr/local/lib/girepository-1.0")
-                    ]
-                    for alt_path in alt_paths:
-                        if alt_path.exists():
-                            typelib_dir = alt_path
-                            break
-            else:
-                typelib_dir = gst_base / "girepository-1.0"
-            
-            return {
-                "plugins_dir": Path(plugins_dir),
-                "typelibs_dir": typelib_dir,
-                "system": system
-            }
-    except:
-        pass
-    
-    # Fallback to common installation paths
-    print("pkg-config not available, trying common GStreamer paths...")
-    
-    if system == "linux":
-        # Common Linux paths
-        common_paths = [
-            ("/usr/lib64/gstreamer-1.0", "/usr/lib64/girepository-1.0"),
-            ("/usr/lib/gstreamer-1.0", "/usr/lib/girepository-1.0"),
-            ("/usr/lib/x86_64-linux-gnu/gstreamer-1.0", "/usr/lib/x86_64-linux-gnu/girepository-1.0"),
-            ("/usr/local/lib/gstreamer-1.0", "/usr/local/lib/girepository-1.0")
-        ]
-    elif system == "darwin":
-        # macOS paths (Homebrew)
-        common_paths = [
-            ("/opt/homebrew/lib/gstreamer-1.0", "/opt/homebrew/lib/girepository-1.0"),
-            ("/usr/local/lib/gstreamer-1.0", "/usr/local/lib/girepository-1.0")
-        ]
-    elif system == "windows":
-        # Windows MSYS2 paths
-        common_paths = [
-            ("C:/msys64/mingw64/lib/gstreamer-1.0", "C:/msys64/mingw64/lib/girepository-1.0"),
-            ("C:/tools/msys64/mingw64/lib/gstreamer-1.0", "C:/tools/msys64/mingw64/lib/girepository-1.0")
-        ]
-    else:
-        raise WalrioBuildError(f"Unsupported platform: {system}")
-    
-    # Try each path combination
-    for plugins_path, typelibs_path in common_paths:
-        plugins_dir = Path(plugins_path)
-        typelibs_dir = Path(typelibs_path)
-        
-        if plugins_dir.exists() and typelibs_dir.exists():
-            print(f"Found GStreamer at: {plugins_dir.parent}")
-            return {
-                "plugins_dir": plugins_dir,
-                "typelibs_dir": typelibs_dir,
-                "system": system
-            }
-    
-    raise WalrioBuildError(f"GStreamer installation not found on {system}. Please install GStreamer development packages.")
-
-
-def validate_gstreamer_paths(gst_paths):
-    """Validate that GStreamer paths exist and contain required files."""
-    plugins_dir = gst_paths["plugins_dir"]
-    typelibs_dir = gst_paths["typelibs_dir"]
-    
-    if not plugins_dir.exists():
-        raise WalrioBuildError(f"GStreamer plugins directory not found: {plugins_dir}")
-        
-    if not typelibs_dir.exists():
-        raise WalrioBuildError(f"GI typelib directory not found: {typelibs_dir}")
-    
-    # Count available plugins and typelibs
-    plugin_files = list(plugins_dir.glob("*.so" if gst_paths["system"] != "windows" else "*.dll"))
-    typelib_files = list(typelibs_dir.glob("*.typelib"))
-    
-    if len(plugin_files) == 0:
-        raise WalrioBuildError(f"No GStreamer plugins found in {plugins_dir}")
-        
-    if len(typelib_files) == 0:
-        raise WalrioBuildError(f"No GI typelib files found in {typelibs_dir}")
-    
-    print(f"GStreamer validation passed:")
-    print(f"  Plugins: {len(plugin_files)} files in {plugins_dir}")
-    print(f"  TypeLibs: {len(typelib_files)} files in {typelibs_dir}")
-
-
-def create_gstreamer_bundle(dist_dir, gst_paths):
-    """Create GStreamer bundle structure using Strawberry's approach."""
-    system = gst_paths["system"]
-    plugins_src = gst_paths["plugins_dir"]
-    typelibs_src = gst_paths["typelibs_dir"]
-    
-    # Create bundle directories based on platform
-    bundle_plugins_dir = dist_dir / "plugins" / "gstreamer"
-    bundle_typelibs_dir = dist_dir / "plugins" / "girepository-1.0"
-    
-    # Create directories
-    bundle_plugins_dir.mkdir(parents=True, exist_ok=True)
-    bundle_typelibs_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Define problematic plugins to skip (these cause loading errors)
-    skip_plugins = {
-        # Qt/QML related plugins that have version conflicts
-        "libgstqml6.so", "libgstqmlgl.so", "libgstqt6.so",
-        # Samba plugins with undefined symbols
-        "libsamba-cluster-support-private-samba.so",
-        # Other potentially problematic plugins
-        "libgstopencv.so",  # OpenCV dependencies might be missing
-        "libgstvaapi.so",   # Hardware acceleration, might not work in containers
-        "libgstgl.so",      # OpenGL, might cause issues
-    }
-    
-    # Copy GStreamer plugins (with filtering)
-    plugin_count = 0
-    skipped_count = 0
-    plugin_extension = "*.dll" if system == "windows" else "*.so"
-    
-    for plugin_file in plugins_src.glob(plugin_extension):
-        plugin_name = plugin_file.name
-        
-        # Skip problematic plugins
-        if plugin_name in skip_plugins:
-            print(f"Skipping problematic plugin: {plugin_name}")
-            skipped_count += 1
-            continue
-            
-        # Only copy essential audio plugins for better compatibility
-        if any(essential in plugin_name.lower() for essential in [
-            "gstcoreelements", "gstplayback", "gstaudioconvert", "gstaudioresample",
-            "gstaudiotestsrc", "gstvolume", "gstalsa", "gstpulseaudio", "gstautodetect",
-            "gstflac", "gstogg", "gstvorbis", "gstopus", "gstlame", "gstmpg123",
-            "gstmpeg", "gstid3", "gstisomp4", "gstmatroska", "gstavi", "gstwav",
-            "gstdecodebin", "gstplaybin", "gsttypefind", "gstapp"
-        ]):
-            shutil.copy2(plugin_file, bundle_plugins_dir)
-            plugin_count += 1
-        else:
-            # Skip non-essential plugins to reduce size and compatibility issues
-            skipped_count += 1
-    
-    # Copy essential GI typelib files
-    typelib_count = 0
-    essential_typelibs = [
-        "Gst-1.0.typelib", "GstBase-1.0.typelib", "GstAudio-1.0.typelib",
-        "GstPbutils-1.0.typelib", "GstVideo-1.0.typelib", "GLib-2.0.typelib",
-        "GObject-2.0.typelib", "Gio-2.0.typelib"
-    ]
-    
-    for typelib_file in typelibs_src.glob("*.typelib"):
-        typelib_name = typelib_file.name
-        
-        # Always include essential typelibs, skip others to reduce size
-        if typelib_name in essential_typelibs or "Gst" in typelib_name:
-            shutil.copy2(typelib_file, bundle_typelibs_dir)
-            typelib_count += 1
-    
-    # Create configuration file for runtime
-    config_file = dist_dir / "gstreamer_config.txt"
-    config_content = f"""plugins_path=dist/plugins/gstreamer
-typelibs_path=dist/plugins/girepository-1.0
-system={system}
-filtered_build=true
-essential_plugins_only=true"""
-    
-    with open(config_file, 'w') as f:
-        f.write(config_content)
-    
-    print(f"Bundling GStreamer plugins: {plugins_src} -> {bundle_plugins_dir}")
-    print(f"Bundling GI typelibs: {typelibs_src} -> {bundle_typelibs_dir}")
-    print(f"Created {system} bundle structure with {plugin_count} essential plugins ({skipped_count} skipped)")
-    
-    return {
-        "plugins_path": f"dist/plugins/gstreamer",
-        "typelibs_path": f"dist/plugins/girepository-1.0", 
-        "config_path": f"dist/gstreamer_config.txt",
-        "plugin_count": plugin_count,
-        "typelib_count": typelib_count,
-        "skipped_plugins": skipped_count
-    }
-
-
-def build_pyinstaller_command(gui_name, entry_point, debug=False):
-    """Build streamlined PyInstaller command without --add-binary."""
-    cmd = [
-        sys.executable, "-m", "PyInstaller",
-        "--onefile" if not debug else "--onedir",
-        "--console",  # Use console mode for better debugging
-        f"--name={gui_name}",
-    ]
-    
-    # Add data files that the GUI applications need
-    data_dirs = ["modules", "testing_files"]
-    for data_dir in data_dirs:
-        if Path(data_dir).exists():
-            cmd.extend(["--add-data", f"{data_dir}:{data_dir}"])
-    
-    # Add runtime hook for GStreamer environment setup
-    hook_path = Path(".github/scripts/gst_runtime_hook.py")
-    cmd.extend(["--runtime-hook", str(hook_path)])
-    
-    # Essential hidden imports for GUI applications
-    essential_imports = [
-        # Core PyGObject and GStreamer
-        "gi", "_gi", "gi.repository.GLib", "gi.repository.GObject", "gi.repository.Gio",
-        "gi.repository.Gst", "gi.repository.GstBase", "gi.repository.GstAudio", 
-        "gi.repository.GstPbutils", "gi.repository.GstVideo",
-        
-        # PySide6 GUI framework 
-        "PySide6.QtCore", "PySide6.QtWidgets", "PySide6.QtGui", 
-        
-        # Audio metadata libraries
-        "mutagen", "mutagen.mp3", "mutagen.flac", "mutagen.oggvorbis", 
-        "mutagen.mp4", "mutagen.wave", "mutagen.opus",
-        
-        # Python standard library modules that might not be auto-detected
-        "sqlite3", "json", "threading", "pathlib", "tempfile", "socket",
-        
-        # Additional graphics support
-        "cairo", "PIL", "PIL.Image",
-    ]
-    
-    for import_name in essential_imports:
-        cmd.extend(["--hidden-import", import_name])
-    
-    # Exclude unnecessary modules to reduce build size and warnings  
-    excludes = [
-        "tkinter", "matplotlib", "numpy", "scipy", "pandas", 
-        "IPython", "jupyter", "sphinx", "pytest"
-        # Note: Not excluding setuptools/pkg_resources as they're needed by some PyInstaller hooks
-    ]
-    for exclude in excludes:
-        cmd.extend(["--exclude-module", exclude])
-    
-    # Add paths to find the GUI modules during build
-    gui_paths = [
-        str(Path("GUI").absolute()),
-        str(Path("modules").absolute())
-    ]
-    for path in gui_paths:
-        if Path(path).exists():
-            cmd.extend(["--paths", path])
-    
-    # Add entry point
-    cmd.append(str(entry_point))
-    
-    return cmd
-
-
-def cleanup_build_artifacts():
-    """Clean up previous build artifacts."""
-    artifacts_to_clean = [
-        "dist", "build", "*.spec",
-        "__pycache__", "*.pyc", "*.pyo"
-    ]
-    
-    for pattern in artifacts_to_clean:
-        for path in Path(".").glob(pattern):
-            if path.exists():
-                if path.is_dir():
-                    shutil.rmtree(path)
-                else:
-                    path.unlink()
-    
-    print("Build artifacts cleaned up")
-
-
-class WalrioBuilder:
-    """Main build coordinator for Walrio GUIs."""
-    
-    def __init__(self):
-        """Initialize builder with project structure."""
-        self.root_dir = Path(".").absolute()
+    def __init__(self, clean=False):
+        self.root_dir = Path.cwd()
         self.dist_dir = self.root_dir / "dist"
+        self.build_dir = self.root_dir / "build"
         
         # GUI configurations
         self.gui_configs = {
             "main": {
                 "name": "WalrioMain",
-                "entry_point": "GUI/walrio_main.py",
-                "description": "Full-featured Walrio music player"
+                "entry": "GUI/walrio_main.py",
+                "description": "Full-featured music player"
             },
             "lite": {
                 "name": "WalrioLite", 
-                "entry_point": "GUI/walrio_lite.py",
-                "description": "Lightweight Walrio music player"
+                "entry": "GUI/walrio_lite.py",
+                "description": "Lightweight music player"
             }
         }
         
-        # Platform detection
-        self.platform = platform.system().lower()
-        self.platform_extension = ".exe" if self.platform == "windows" else ""
+        if clean:
+            self.cleanup_build_artifacts()
+    
+    def cleanup_build_artifacts(self):
+        """Clean previous build artifacts."""
+        print("Cleaning previous build artifacts...")
         
-    def check_dependencies(self):
-        """Check that all required dependencies are available."""
-        print("Checking dependencies...")
+        for path in [self.dist_dir, self.build_dir]:
+            if path.exists():
+                shutil.rmtree(path)
+                print(f"Removed {path}")
         
-        # Check PyInstaller
-        try:
-            import PyInstaller
-            print("  [OK] PyInstaller - installed")
-        except ImportError:
-            print("  [ERROR] PyInstaller - not installed")
-            return False
+        # Remove spec files
+        for spec_file in self.root_dir.glob("*.spec"):
+            spec_file.unlink()
+            print(f"Removed {spec_file}")
+    
+    def build_gui(self, gui_name, debug=False):
+        """Build a GUI application using PyInstaller."""
+        if gui_name not in self.gui_configs:
+            raise WalrioBuildError(f"Unknown GUI: {gui_name}")
         
-        # Check PySide6
-        try:
-            import PySide6
-            print("  [OK] PySide6 - installed")
-        except ImportError:
-            print("  [ERROR] PySide6 - not installed")
-            return False
+        config = self.gui_configs[gui_name]
+        entry_point = self.root_dir / config["entry"]
+        
+        if not entry_point.exists():
+            raise WalrioBuildError(f"Entry point not found: {entry_point}")
+        
+        print(f"Building {config['name']} ({config['description']})...")
+        
+        # Build PyInstaller command - let it handle everything
+        cmd = [
+            "pyinstaller",
+            "--onefile",
+            f"--name={config['name']}",
+            f"--distpath={self.dist_dir}",
+            f"--workpath={self.build_dir}",
+        ]
+        
+        if not debug:
+            cmd.append("--windowed")  # No console on Windows
+        
+        # Essential hidden imports for GUI functionality
+        hidden_imports = [
+            # PySide6 essentials
+            "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets",
+            "PySide6.QtNetwork", "shiboken6",
             
-        # Check mutagen
-        try:
-            import mutagen
-            print("  [OK] mutagen - installed")
-        except ImportError:
-            print("  [ERROR] mutagen - not installed")
-            return False
+            # Audio metadata
+            "mutagen", "mutagen.mp3", "mutagen.flac", "mutagen.oggvorbis", 
+            "mutagen.mp4", "mutagen.wave", "mutagen.opus",
+            
+            # GStreamer - let PyInstaller handle the rest
+            "gi", "gi.repository.Gst", "gi.repository.GstBase", 
+            "gi.repository.GstAudio", "gi.repository.GObject",
+            
+            # Standard library essentials  
+            "sqlite3", "json", "threading", "pathlib", "tempfile",
+            "PIL", "PIL.Image"
+        ]
         
-        # Check GStreamer/PyGObject
-        try:
-            import gi
-            gi.require_version('Gst', '1.0')
-            from gi.repository import Gst
-            result = Gst.init_check(None)
-            if result:
-                print("  [OK] GStreamer - installed and initialized")
-            else:
-                print("  [WARNING] GStreamer - installed but failed to initialize")
-            return result
-        except Exception as e:
-            print(f"  [ERROR] GStreamer - {e}")
-            return False
-    
-    def build_gui(self, gui_type, debug=False):
-        """Build a specific GUI using the Strawberry approach."""
-        if gui_type not in self.gui_configs:
-            raise WalrioBuildError(f"Unknown GUI type: {gui_type}")
+        for import_name in hidden_imports:
+            cmd.extend(["--hidden-import", import_name])
         
-        config = self.gui_configs[gui_type]
-        entry_path = self.root_dir / config["entry_point"]
+        # Exclude unnecessary modules to reduce size
+        excludes = [
+            "tkinter", "matplotlib", "numpy", "scipy", "pandas",
+            "IPython", "jupyter", "sphinx", "pytest", "test"
+        ]
         
-        if not entry_path.exists():
-            raise WalrioBuildError(f"Entry point not found: {entry_path}")
+        for exclude in excludes:
+            cmd.extend(["--exclude-module", exclude])
         
-        print(f"\nBuilding {config['name']} ({config['description']})...")
+        # Add module paths
+        cmd.extend([
+            "--paths", str(self.root_dir / "GUI"),
+            "--paths", str(self.root_dir / "modules")
+        ])
         
-        # Build PyInstaller command
-        cmd = build_pyinstaller_command(config["name"], entry_path, debug)
+        # Entry point
+        cmd.append(str(entry_point))
         
-        print("Built streamlined PyInstaller command with runtime environment setup")
-        print("PyInstaller command:")
-        print(' '.join(cmd))
-        print()
+        # Run PyInstaller
+        result = run_command(cmd)
         
-        # Execute build
-        run_command(cmd)
-        
-        # Verify executable was created
-        exe_name = config["name"] + self.platform_extension
-        exe_path = self.dist_dir / exe_name
-        
-        if not exe_path.exists():
-            raise WalrioBuildError(f"Expected executable not found: {exe_path}")
-        
-        print(f"{config['name']} built successfully")
-        return True
-    
-    def create_build_info(self, built_guis, bundle_info):
-        """Create build information file."""
-        build_info = {
-            "build_timestamp": __import__("datetime").datetime.now().isoformat(),
-            "platform": self.platform,
-            "guis_built": built_guis,
-            "gstreamer_bundle": bundle_info,
-            "python_version": sys.version,
-            "builder_version": "2.0.0-strawberry"
-        }
-        
-        info_file = self.dist_dir / "build_info.json"
-        with open(info_file, 'w') as f:
-            json.dump(build_info, f, indent=2)
-        
-        print(f"Build info saved to {info_file}")
+        if result.returncode == 0:
+            print(f"{config['name']} built successfully")
+            return self.dist_dir / config['name']
+        else:
+            raise WalrioBuildError(f"PyInstaller failed for {gui_name}")
     
     def create_launcher_scripts(self):
-        """Create platform-specific launcher scripts."""
-        if self.platform == "linux":
-            # Create .desktop files for Linux
-            for gui_name, config in self.gui_configs.items():
-                desktop_content = f"""[Desktop Entry]
-Name={config["name"]}
-Comment={config["description"]}
-Exec={self.dist_dir / config["name"]}
-Icon=walrio
+        """Create desktop launcher files."""
+        print("Creating launcher scripts...")
+        
+        for gui_name, config in self.gui_configs.items():
+            # Desktop file for Linux
+            desktop_content = f"""[Desktop Entry]
+Name={config['name']}
+Comment={config['description']}
+Exec={config['name']}
+Icon=audio-player
 Terminal=false
 Type=Application
 Categories=AudioVideo;Audio;Player;
 """
-                desktop_file = self.dist_dir / f"{gui_name}.desktop"
-                with open(desktop_file, 'w') as f:
-                    f.write(desktop_content)
-                print(f"  Created {desktop_file}")
-        
-        elif self.platform == "windows":
-            # Create batch files for Windows
-            for gui_name, config in self.gui_configs.items():
-                batch_content = f"""@echo off
-cd /d "%~dp0"
-{config["name"]}.exe %*
-"""
-                batch_file = self.dist_dir / f"{config['name']}.bat"
-                with open(batch_file, 'w') as f:
-                    f.write(batch_content)
-                print(f"  Created {batch_file}")
+            desktop_file = self.dist_dir / f"{gui_name}.desktop"
+            desktop_file.write_text(desktop_content)
+            print(f"  Created {desktop_file}")
     
     def create_readme(self):
-        """Create README file for distribution."""
-        readme_content = f"""Walrio Music Player - Distribution Package
-=========================================
+        """Create a README for the distribution."""
+        readme_content = """# Walrio Music Player - Portable Distribution
 
-This package contains the Walrio music player executables built for {self.platform}.
+## System Requirements
+- GStreamer 1.0 with plugins (gstreamer1.0-plugins-base, gstreamer1.0-plugins-good)
+- Audio system (PulseAudio, PipeWire, or ALSA)
 
-Contents:
+## Installation
+1. Install GStreamer on your system:
+   - Ubuntu/Debian: `sudo apt install gstreamer1.0-plugins-base gstreamer1.0-plugins-good`
+   - Fedora: `sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good`
+   - Arch: `sudo pacman -S gstreamer gst-plugins-base gst-plugins-good`
+
+2. Run the executable directly - no additional installation needed
+
+## Usage
+- WalrioMain: Full-featured music player
+- WalrioLite: Lightweight version
+
+The applications will automatically use your system's GStreamer installation.
 """
-        
-        # List executables
-        for config in self.gui_configs.values():
-            exe_name = config["name"] + self.platform_extension
-            exe_path = self.dist_dir / exe_name
-            if exe_path.exists():
-                readme_content += f"  - {exe_name}: {config['description']}\n"
-        
-        readme_content += f"""
-GStreamer Configuration:
-  - Plugins bundled in: plugins/gstreamer/
-  - TypeLibs bundled in: plugins/girepository-1.0/
-  - Runtime configuration: gstreamer_config.txt
-
-Platform: {self.platform}
-Build Date: {__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
-
-For more information, visit: https://github.com/TAPSOSS/Walrio
-"""
-        
         readme_file = self.dist_dir / "README.txt"
-        with open(readme_file, 'w') as f:
-            f.write(readme_content)
-        
+        readme_file.write_text(readme_content)
         print(f"Created {readme_file}")
 
 
 def main():
-    """Main build script entry point."""
-    parser = argparse.ArgumentParser(
-        description="Build Walrio GUIs with Strawberry-inspired GStreamer bundling"
-    )
-    parser.add_argument(
-        "--gui", 
-        choices=["main", "lite", "both"], 
-        default="both",
-        help="Which GUI to build (default: both)"
-    )
-    parser.add_argument(
-        "--clean", 
-        action="store_true", 
-        help="Clean build directories before building"
-    )
-    parser.add_argument(
-        "--debug", 
-        action="store_true",
-        help="Build in debug mode (onedir instead of onefile)"
-    )
-    parser.add_argument(
-        "--no-deps-check", 
-        action="store_true",
-        help="Skip dependency checking"
-    )
+    parser = argparse.ArgumentParser(description="Build Walrio GUI applications")
+    parser.add_argument("--gui", choices=["main", "lite", "all"], default="all",
+                        help="Which GUI to build")
+    parser.add_argument("--clean", action="store_true", 
+                        help="Clean build artifacts first")
+    parser.add_argument("--debug", action="store_true",
+                        help="Build with debug console")
+    parser.add_argument("--no-deps-check", action="store_true",
+                        help="Skip dependency checks")
     
     args = parser.parse_args()
     
-    print("Walrio GUI Build Script")
-    print("Using Strawberry Music Player-inspired environment-based GStreamer bundling")
-    print("=" * 70)
-    
     try:
-        builder = WalrioBuilder()
+        # Create builder
+        builder = SimpleWalrioBuilder(clean=args.clean)
         
-        # Clean if requested  
-        if args.clean:
-            print("Cleaning previous build directories...")
-            cleanup_build_artifacts()
-        
-        # Check dependencies
-        if not args.no_deps_check:
-            if not builder.check_dependencies():
-                raise WalrioBuildError("Dependency check failed")
-        
-        # Detect and validate GStreamer
-        print("\nDetecting GStreamer installation...")
-        gst_paths = find_gstreamer_paths()
-        validate_gstreamer_paths(gst_paths)
-        
-        # Determine which GUIs to build
-        if args.gui == "both":
+        # Determine what to build
+        if args.gui == "all":
             guis_to_build = ["main", "lite"]
         else:
             guis_to_build = [args.gui]
         
-        # Build GUIs
-        built_guis = []
-        for gui_type in guis_to_build:
-            if builder.build_gui(gui_type, debug=args.debug):
-                built_guis.append(gui_type)
+        print(f"Building {len(guis_to_build)} GUI(s): {', '.join(guis_to_build)}")
         
-        # Create GStreamer bundle structure
-        print("\nCreating GStreamer bundle structure...")
-        bundle_info = create_gstreamer_bundle(builder.dist_dir, gst_paths)
+        # Build each GUI
+        built_executables = []
+        for gui_name in guis_to_build:
+            exe_path = builder.build_gui(gui_name, debug=args.debug)
+            built_executables.append(exe_path)
         
         # Create additional files
-        if built_guis:
-            builder.create_build_info(built_guis, bundle_info)
-            print("\nCreating launcher scripts...")
+        if len(built_executables) > 0:
             builder.create_launcher_scripts()
             builder.create_readme()
         
         # Summary
         print("\n" + "=" * 70)
-        print(f"Build completed successfully! ({len(built_guis)}/{len(guis_to_build)} GUIs built)")
+        print(f"Build completed successfully! ({len(built_executables)}/{len(guis_to_build)} GUIs built)")
         print(f"Executable location: {builder.dist_dir}/")
-        print(f"GStreamer plugins: {bundle_info['plugins_path']} ({bundle_info['plugin_count']} plugins)")
-        print(f"TypeLib files: {bundle_info['typelibs_path']} ({bundle_info['typelib_count']} files)")
-        print(f"Configuration: {bundle_info['config_path']}")
         print("\nBuilt applications:")
-        for gui_type in built_guis:
-            config = builder.gui_configs[gui_type]
-            exe_name = config["name"] + builder.platform_extension
-            print(f"  - {builder.dist_dir / exe_name}")
-        print("\nThe applications will configure GStreamer environment at runtime.")
+        for exe_path in built_executables:
+            print(f"  - {exe_path}")
+        print("\nGStreamer will be handled by PyInstaller and your system installation.")
         
-        if len(built_guis) != len(guis_to_build):
-            sys.exit(1)
-            
     except WalrioBuildError as e:
         print(f"\nBuild failed: {e}")
         sys.exit(1)
