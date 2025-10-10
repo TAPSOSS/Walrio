@@ -438,7 +438,7 @@ class WalrioBuilder:
         if not exe_path.exists():
             raise WalrioBuildError(f"Expected executable not found: {exe_path}")
         
-        print(f"✅ {config['name']} built successfully")
+        print(f"{config['name']} built successfully")
         return True
     
     def create_build_info(self, built_guis, bundle_info):
@@ -601,11 +601,11 @@ def main():
         
         # Summary
         print("\n" + "=" * 70)
-        print(f"✅ Build completed successfully! ({len(built_guis)}/{len(guis_to_build)} GUIs built)")
-        print(f"📁 Executable location: {builder.dist_dir}/")
-        print(f"🎵 GStreamer plugins: {bundle_info['plugins_path']} ({bundle_info['plugin_count']} plugins)")
-        print(f"📚 TypeLib files: {bundle_info['typelibs_path']} ({bundle_info['typelib_count']} files)")
-        print(f"⚙️  Configuration: {bundle_info['config_path']}")
+        print(f"Build completed successfully! ({len(built_guis)}/{len(guis_to_build)} GUIs built)")
+        print(f"Executable location: {builder.dist_dir}/")
+        print(f"GStreamer plugins: {bundle_info['plugins_path']} ({bundle_info['plugin_count']} plugins)")
+        print(f"TypeLib files: {bundle_info['typelibs_path']} ({bundle_info['typelib_count']} files)")
+        print(f"Configuration: {bundle_info['config_path']}")
         print("\nBuilt applications:")
         for gui_type in built_guis:
             config = builder.gui_configs[gui_type]
@@ -617,13 +617,13 @@ def main():
             sys.exit(1)
             
     except WalrioBuildError as e:
-        print(f"\n❌ Build failed: {e}")
+        print(f"\nBuild failed: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\n⚠️  Build interrupted by user")
+        print("\nBuild interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n💥 Unexpected error: {e}")
+        print(f"\nUnexpected error: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
