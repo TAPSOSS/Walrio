@@ -122,8 +122,8 @@ class SimpleWalrioBuilder:
             "mutagen", "mutagen.mp3", "mutagen.flac", "mutagen.oggvorbis", 
             "mutagen.mp4", "mutagen.wave", "mutagen.opus",
             
-            # VLC - let PyInstaller handle the rest
-            "vlc",
+            # GStreamer - ensure GStreamer backend is bundled
+            "gi", "gi.repository.Gst",
             
             # Walrio modules (ensure package hierarchy is bundled)
             "modules", "modules.core",
@@ -285,7 +285,7 @@ def main():
         print("\nBuilt applications:")
         for exe_path in built_executables:
             print(f"  - {exe_path}")
-        print("\nVLC will be handled by PyInstaller and your system installation.")
+        print("\nGStreamer libraries and plugins are bundled automatically.")
         
     except WalrioBuildError as e:
         print(f"\nBuild failed: {e}")
