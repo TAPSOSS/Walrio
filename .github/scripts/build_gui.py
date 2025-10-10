@@ -150,8 +150,8 @@ class SimpleWalrioBuilder:
 
         # Bundle the entire modules directory as data
         modules_dir = str(self.root_dir / "modules")
-        # PyInstaller expects src:dest format, dest is relative to bundle root
-        add_data_arg = f"{modules_dir}{os.pathsep}modules"
+        sep = ';' if sys.platform.startswith('win') else ':'
+        add_data_arg = f"{modules_dir}{sep}modules"
         print(f"Adding data: {add_data_arg}")
         cmd.extend(["--add-data", add_data_arg])
         
