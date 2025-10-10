@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
-Simplified Walrio GUI Build Script
-Let PyInstaller handle GStreamer, we only manage essential dependencies.
+Walrio Lite GUI - Standalone launcher
+Copyright (c) 2025 TAPS OSS  
+Project: https://github.com/TAPSOSS/Walrio
+Licensed under the BSD-3-Clause License (see LICENSE file for details)
+
+Simplified Walrio GUI Build Script.
 """
 
 import argparse

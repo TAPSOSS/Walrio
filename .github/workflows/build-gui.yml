@@ -72,9 +72,9 @@ jobs:
       run: |
         echo "Installing GStreamer and PyGObject for macOS..."
         brew update
-        # Install GStreamer and PyGObject together
-        brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly
-        brew install gobject-introspection libffi pkg-config cairo glib gtk+3
+        for pkg in gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gobject-introspection libffi pkg-config cairo glib gtk+3; do
+          brew list $pkg || brew install $pkg
+        done
         
     - name: Install GStreamer and PyGObject (Windows)  
       if: runner.os == 'Windows'
