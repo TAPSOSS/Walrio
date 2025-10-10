@@ -46,6 +46,7 @@ class AudioPlayer:
         self.position_timeout_id = None
         self.should_quit = False
         self.interactive_mode = False
+        self.position = 0.0
     
     def _start_position_updates(self):
         """Start sending position updates via callback."""
