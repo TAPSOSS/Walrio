@@ -10,5 +10,6 @@ docs/source/cli_usage.rst
 # ignore build files and distribution files (executables)
 build/
 dist/
+plugins/
 WalrioLite.spec
 WalrioMain.spec
