@@ -386,11 +386,18 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                 if Path(path).exists():
                     potential_paths.append(path)
             
-            # Add MSYS2 paths for PyGObject integration
-            potential_paths.extend([
+            # Add MSYS2 paths for PyGObject integration (only if they exist)
+            msys2_paths = [
                 "C:/msys64/mingw64", 
                 "C:/tools/msys64/mingw64"
-            ])
+            ]
+            
+            for msys2_path in msys2_paths:
+                if Path(msys2_path).exists():
+                    potential_paths.append(msys2_path)
+                    print(f"    Found MSYS2 installation: {msys2_path}")
+                else:
+                    print(f"    MSYS2 path not found: {msys2_path}")
             
             # Track which paths we've already added to avoid duplicates
             added_gst_paths = set()
@@ -427,12 +434,21 @@ sys.modules[__name__ + '.repository'] = RepositoryStub()
                     added_gi_paths.add(gi_path_str)
                     
                 if bin_path.exists() and bin_path_str not in added_bin_paths:
-                    # Verify DLL files actually exist before adding
+                    # Double-check path exists and verify DLL files actually exist before adding
+                    if not Path(bin_path_str).exists():
+                        print(f"    ERROR: Path existence check failed for {bin_path_str}")
+                        continue
+                        
                     dll_files = list(bin_path.glob("*.dll"))
                     if dll_files:
-                        cmd.append(f"--add-binary={bin_path_str}/*.dll:.")
-                        print(f"    Added GStreamer binaries from: {bin_path_str} ({len(dll_files)} DLL files)")
-                        added_bin_paths.add(bin_path_str)
+                        # Final safety check - verify the exact path PyInstaller will use
+                        final_check_path = Path(bin_path_str)
+                        if final_check_path.exists() and any(final_check_path.glob("*.dll")):
+                            cmd.append(f"--add-binary={bin_path_str}/*.dll:.")
+                            print(f"    Added GStreamer binaries from: {bin_path_str} ({len(dll_files)} DLL files)")
+                            added_bin_paths.add(bin_path_str)
+                        else:
+                            print(f"    SAFETY CHECK FAILED: Path or DLLs not found at {bin_path_str}")
                     else:
                         print(f"    Skipped {bin_path_str} - no DLL files found")
         
