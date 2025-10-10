@@ -11,7 +11,7 @@ If you're interested in contributing to Walrio check out our [Contributing Guide
 
 ### List of Non-Pip Requirements
 - Python 3.6+ (and pip installs using pip with python and requirements.txt)
-- GStreamer 1.0 (with gst-launch-1.0 command-line tool)
+- GStreamer (for audio playback)
 - FFmpeg (for most audio analysis and conversion)
 - rsgain (for ReplayGain LUFS analysis)
 - ImageMagick (for image conversion and processing)
