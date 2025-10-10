@@ -8,6 +8,7 @@ import argparse
 import sys
 import shutil
 import subprocess
+import os
 from pathlib import Path
 
 
@@ -118,12 +119,18 @@ class SimpleWalrioBuilder:
             "gi", "gi.repository.Gst", "gi.repository.GstBase", 
             "gi.repository.GstAudio", "gi.repository.GObject",
             
+            # Walrio modules (ensure package hierarchy is bundled)
+            "modules", "modules.core",
+            "modules.core.metadata", "modules.core.playlist", 
+            "modules.core.player", "modules.core.queue",
+            
             # Standard library essentials  
             "sqlite3", "json", "threading", "pathlib", "tempfile",
             "PIL", "PIL.Image"
         ]
         
         for import_name in hidden_imports:
+            print(f"Adding hidden import: {import_name}")
             cmd.extend(["--hidden-import", import_name])
         
         # Exclude unnecessary modules to reduce size
@@ -131,8 +138,8 @@ class SimpleWalrioBuilder:
             "tkinter", "matplotlib", "numpy", "scipy", "pandas",
             "IPython", "jupyter", "sphinx", "pytest", "test"
         ]
-        
         for exclude in excludes:
+            print(f"Excluding module: {exclude}")
             cmd.extend(["--exclude-module", exclude])
         
         # Add module paths
@@ -140,6 +147,13 @@ class SimpleWalrioBuilder:
             "--paths", str(self.root_dir / "GUI"),
             "--paths", str(self.root_dir / "modules")
         ])
+
+        # Bundle the entire modules directory as data
+        modules_dir = str(self.root_dir / "modules")
+        # PyInstaller expects src:dest format, dest is relative to bundle root
+        add_data_arg = f"{modules_dir}{os.pathsep}modules"
+        print(f"Adding data: {add_data_arg}")
+        cmd.extend(["--add-data", add_data_arg])
         
         # Entry point
         cmd.append(str(entry_point))
