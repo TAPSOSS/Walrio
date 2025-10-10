@@ -13,3 +13,5 @@ dist/
 plugins/
 WalrioLite.spec
 WalrioMain.spec
+walrio-gui.spec
+gstreamer_config.txt
