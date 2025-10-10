@@ -72,7 +72,8 @@ jobs:
       run: |
         echo "Installing GStreamer and PyGObject for macOS..."
         brew update
-        for pkg in gstreamer gobject-introspection libffi pkg-config cairo glib gtk+3; do
+        brew install libffi gstreamer
+        for pkg in gobject-introspection pkg-config cairo glib gtk+3; do
           brew list $pkg || brew install $pkg
         done
         
