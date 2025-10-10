@@ -24,6 +24,22 @@ from pathlib import Path
 import vlc
 
 class AudioPlayer:
+    def __init__(self):
+        self.instance = vlc.Instance()
+        self.player = None
+        self.media = None
+        self.current_file = None
+        self.position = 0.0
+        self.duration = 0.0
+        self.volume_value = 1.0
+        self.is_playing = False
+        self.is_paused = False
+        self.should_quit = False
+        self.repeat_count = 0
+        self.loop_mode = 'none'
+        self.interactive_mode = False
+        self.position_thread = None
+        self.event_listeners = []
     """
     VLC-based audio player with real-time control.
     """
