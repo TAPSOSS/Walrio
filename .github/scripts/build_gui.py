@@ -91,7 +91,10 @@ class SimpleWalrioBuilder:
         if not entry_point.exists():
             raise WalrioBuildError(f"Entry point not found: {entry_point}")
         
-        print(f"Building {config['name']} ({config['description']})...")
+    print(f"\n[Walrio Build] Building {config['name']} ({config['description']})...")
+    print(f"[Walrio Build] Entry point: {entry_point}")
+    print(f"[Walrio Build] Dist dir: {self.dist_dir}")
+    print(f"[Walrio Build] Build dir: {self.build_dir}")
         
         # Build PyInstaller command - let it handle everything
         cmd = [
@@ -129,8 +132,9 @@ class SimpleWalrioBuilder:
             "PIL", "PIL.Image"
         ]
         
+        print("[Walrio Build] Adding hidden imports:")
         for import_name in hidden_imports:
-            print(f"Adding hidden import: {import_name}")
+            print(f"  [hidden-import] {import_name}")
             cmd.extend(["--hidden-import", import_name])
         
         # Exclude unnecessary modules to reduce size
@@ -138,34 +142,43 @@ class SimpleWalrioBuilder:
             "tkinter", "matplotlib", "numpy", "scipy", "pandas",
             "IPython", "jupyter", "sphinx", "pytest", "test"
         ]
+        print("[Walrio Build] Excluding modules:")
         for exclude in excludes:
-            print(f"Excluding module: {exclude}")
+            print(f"  [exclude-module] {exclude}")
             cmd.extend(["--exclude-module", exclude])
         
         # Add module paths
+        gui_path = str(self.root_dir / "GUI")
+        modules_path = str(self.root_dir / "modules")
+        print(f"[Walrio Build] Adding paths: GUI={gui_path}, modules={modules_path}")
         cmd.extend([
-            "--paths", str(self.root_dir / "GUI"),
-            "--paths", str(self.root_dir / "modules")
+            "--paths", gui_path,
+            "--paths", modules_path
         ])
 
         # Bundle the entire modules directory as data
-        modules_dir = str(self.root_dir / "modules")
-        sep = ';' if sys.platform.startswith('win') else ':'
-        add_data_arg = f"{modules_dir}{sep}modules"
-        print(f"Adding data: {add_data_arg}")
-        cmd.extend(["--add-data", add_data_arg])
+    modules_dir = str(self.root_dir / "modules")
+    sep = ';' if sys.platform.startswith('win') else ':'
+    add_data_arg = f"{modules_dir}{sep}modules"
+    print(f"[Walrio Build] Adding data: {add_data_arg}")
+    cmd.extend(["--add-data", add_data_arg])
         
         # Entry point
         cmd.append(str(entry_point))
-        
-        # Run PyInstaller
-        result = run_command(cmd)
-        
+        print(f"[Walrio Build] Final PyInstaller command:")
+        print('  ' + ' '.join(cmd))
+        print("[Walrio Build] Running PyInstaller...")
+        result = run_command(cmd, check=False)
+        print(f"[Walrio Build] PyInstaller exited with code: {result.returncode}")
+        if result.stdout:
+            print(f"[Walrio Build] PyInstaller stdout:\n{result.stdout}")
+        if result.stderr:
+            print(f"[Walrio Build] PyInstaller stderr:\n{result.stderr}")
         if result.returncode == 0:
-            print(f"{config['name']} built successfully")
+            print(f"[Walrio Build] {config['name']} built successfully")
             return self.dist_dir / config['name']
         else:
-            raise WalrioBuildError(f"PyInstaller failed for {gui_name}")
+            raise WalrioBuildError(f"PyInstaller failed for {gui_name} (exit code {result.returncode})")
     
     def create_launcher_scripts(self):
         """Create desktop launcher files."""
