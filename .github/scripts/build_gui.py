@@ -272,7 +272,7 @@ def main():
         print("\nBuilt applications:")
         for exe_path in built_executables:
             print(f"  - {exe_path}")
-        print("\nGStreamer will be handled by PyInstaller and your system installation.")
+        print("\nVLC will be handled by PyInstaller and your system installation.")
         
     except WalrioBuildError as e:
         print(f"\nBuild failed: {e}")
