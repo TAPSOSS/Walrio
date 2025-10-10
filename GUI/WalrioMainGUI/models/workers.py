@@ -576,8 +576,37 @@ class PlayerWorker(QThread):
         Returns:
             bool: True if command was sent successfully, False otherwise
         """
-        success, response = self._send_player_command(command)
-        return success
+        # Directly handle supported commands
+        cmd_parts = command.split(' ', 1)
+        cmd = cmd_parts[0].lower()
+        args = cmd_parts[1] if len(cmd_parts) > 1 else None
+        if cmd == 'play':
+            return self.audio_player.play()
+        elif cmd == 'pause':
+            return self.audio_player.pause()
+        elif cmd == 'resume':
+            return self.audio_player.resume()
+        elif cmd == 'stop':
+            return self.audio_player.stop()
+        elif cmd == 'load' and args:
+            return self.audio_player.load_file(args)
+        elif cmd == 'volume' and args:
+            try:
+                volume = float(args)
+                return self.audio_player.set_volume(volume)
+            except ValueError:
+                return False
+        elif cmd == 'seek' and args:
+            try:
+                position = float(args)
+                return self.audio_player.seek(position)
+            except ValueError:
+                return False
+        elif cmd == 'loop' and args:
+            self.audio_player.set_loop_mode(args)
+            return True
+        else:
+            return False
     
     def _start_position_tracking(self):
         """Start position tracking timer."""

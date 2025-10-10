@@ -29,6 +29,9 @@ class AudioPlayer:
     GStreamer-based audio player with real-time control.
     """
     def __init__(self):
+        from gi.repository import Gst
+        if not Gst.is_initialized():
+            Gst.init(None)
         self.pipeline = None
         self.bus = None
         self.current_file = None
