@@ -51,21 +51,17 @@ clean:
 	python .github/scripts/build_gui.py --clean
 	@echo "Build directories cleaned"
 
-deps-check:
 	python .github/scripts/build_gui.py --no-deps-check --gui both 2>/dev/null || echo "Dependencies missing"
-
 install-deps:
 	pip install -r requirements.txt
-	pip install pyinstaller PySide6 mutagen python-vlc
 
 test:
-	@echo "Running basic syntax checks..."
 	python -m py_compile GUI/walrio_main.py
 	python -m py_compile GUI/walrio_lite.py
-	@echo "Syntax checks passed"
 
 # Development targets (existing)
 check_style:
+
 	python3 .github/scripts/enhanced_style_checker.py modules/*py modules/*/*py
 
 gen_doc:

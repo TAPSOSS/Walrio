@@ -109,7 +109,7 @@ class SimpleWalrioBuilder:
             f"--workpath={self.build_dir}",
         ]
         
-        if not debug:
+        def build_gui(self, gui_name, debug=False):
             cmd.append("--windowed")  # No console on Windows
         
         # Essential hidden imports for GUI functionality
@@ -179,55 +179,68 @@ class SimpleWalrioBuilder:
             print(f"[Walrio Build] PyInstaller stderr:\n{result.stderr}")
         if result.returncode == 0:
             print(f"[Walrio Build] {config['name']} built successfully")
+            self.bundle_gstreamer_libraries()
             return self.dist_dir / config['name']
         else:
             raise WalrioBuildError(f"PyInstaller failed for {gui_name} (exit code {result.returncode})")
+
+    def bundle_gstreamer_libraries(self):
+        """Copy GStreamer shared libraries and plugins into dist/ directory."""
+        print("[Walrio Build] Bundling GStreamer shared libraries and plugins...")
+        import glob
+        gst_plugin_dirs = ["/usr/lib64/gstreamer-1.0", "/usr/lib/gstreamer-1.0"]
+        gst_lib_dirs = ["/usr/lib64", "/usr/lib"]
+        dist_dir = self.dist_dir
+        copied = False
+        for plugin_dir in gst_plugin_dirs:
+            if os.path.isdir(plugin_dir):
+                dest = dist_dir / "gstreamer-1.0"
+                shutil.copytree(plugin_dir, dest, dirs_exist_ok=True)
+                print(f"  Copied plugins from {plugin_dir} to {dest}")
+                copied = True
+        for lib_dir in gst_lib_dirs:
+            if os.path.isdir(lib_dir):
+                for sofile in glob.glob(os.path.join(lib_dir, "libgst*so*")):
+                    shutil.copy2(sofile, dist_dir)
+                    print(f"  Copied {sofile} to {dist_dir}")
+                    copied = True
+        if not copied:
+            print("  WARNING: No GStreamer libraries/plugins found to bundle.")
+        else:
+            print("[Walrio Build] GStreamer libraries and plugins bundled.")
     
     def create_launcher_scripts(self):
         """Create desktop launcher files."""
         print("Creating launcher scripts...")
-        
         for gui_name, config in self.gui_configs.items():
             # Desktop file for Linux
             desktop_content = f"""[Desktop Entry]
 Name={config['name']}
 Comment={config['description']}
-Exec={config['name']}
-Icon=audio-player
-Terminal=false
-Type=Application
-Categories=AudioVideo;Audio;Player;
-"""
-            desktop_file = self.dist_dir / f"{gui_name}.desktop"
-            desktop_file.write_text(desktop_content)
-            print(f"  Created {desktop_file}")
-    
+Exec={config['name']}"""
+            # ... rest of launcher script code ...
+
     def create_readme(self):
         """Create a README for the distribution."""
-        readme_content = """# Walrio Music Player - Portable Distribution
-
-## System Requirements
-- VLC media player (libvlc) installed on your system
-- Audio system (PulseAudio, PipeWire, or ALSA)
-
-## Installation
-1. Install VLC on your system:
-   - Ubuntu/Debian: `sudo apt install vlc`
-   - Fedora: `sudo dnf install vlc`
-   - Arch: `sudo pacman -S vlc`
-
-2. Run the executable directly - no additional installation needed
-
-## Usage
-- WalrioMain: Full-featured music player
-- WalrioLite: Lightweight version
-
-The applications will automatically use your system's VLC installation.
-"""
+        readme_content = (
+            "# Walrio Music Player - Portable Distribution\n"
+            "\n"
+            "## System Requirements\n"
+            "- GStreamer (shared libraries bundled)\n"
+            "- Audio system (PulseAudio, PipeWire, or ALSA)\n"
+            "\n"
+            "## Installation\n"
+            "1. Run the executable directly - no additional installation needed\n"
+            "\n"
+            "## Usage\n"
+            "- WalrioMain: Full-featured music player\n"
+            "- WalrioLite: Lightweight version\n"
+            "\n"
+            "The applications will automatically use the bundled GStreamer libraries.\n"
+        )
         readme_file = self.dist_dir / "README.txt"
         readme_file.write_text(readme_content)
         print(f"Created {readme_file}")
-
 
 def main():
     parser = argparse.ArgumentParser(description="Build Walrio GUI applications")
