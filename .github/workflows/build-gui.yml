@@ -238,24 +238,41 @@ jobs:
           exit 1
         }
     
-    - name: Test PyGObject bundling
+    - name: Test PyGObject bundling (Linux/macOS)
+      if: runner.os != 'Windows'
       continue-on-error: true
+      shell: bash
       run: |
         echo "Testing PyGObject import capability in built environment..."
-        
-        # Test if gi can be imported in the current Python environment
         if python -c "import gi; print('SUCCESS: gi import successful')"; then
           echo "SUCCESS: PyGObject available in build environment"
         else
           echo "WARNING: PyGObject not available in build environment - executable may have import issues"
         fi
-        
-        # Additional GStreamer test
         if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
           echo "SUCCESS: GStreamer available in build environment"
         else
           echo "WARNING: GStreamer not available in build environment - audio may not work"
         fi
+
+    - name: Test PyGObject bundling (Windows)
+      if: runner.os == 'Windows'
+      continue-on-error: true
+      shell: pwsh
+      run: |
+        Write-Host "Testing PyGObject import capability in built environment..."
+        try {
+          python -c "import gi; print('SUCCESS: gi import successful')"
+          Write-Host "SUCCESS: PyGObject available in build environment"
+        } catch {
+          Write-Host "WARNING: PyGObject not available in build environment - executable may have import issues"
+        }
+        try {
+          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+          Write-Host "SUCCESS: GStreamer available in build environment"
+        } catch {
+          Write-Host "WARNING: GStreamer not available in build environment - audio may not work"
+        }
         
     - name: Create artifact name
       id: artifact
