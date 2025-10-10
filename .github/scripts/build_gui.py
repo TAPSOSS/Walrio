@@ -285,7 +285,6 @@ def main():
         print("\nBuilt applications:")
         for exe_path in built_executables:
             print(f"  - {exe_path}")
-        print("\nGStreamer libraries and plugins are bundled automatically.")
         
     except WalrioBuildError as e:
         print(f"\nBuild failed: {e}")
