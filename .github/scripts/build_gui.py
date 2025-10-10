@@ -91,10 +91,10 @@ class SimpleWalrioBuilder:
         if not entry_point.exists():
             raise WalrioBuildError(f"Entry point not found: {entry_point}")
         
-    print(f"\n[Walrio Build] Building {config['name']} ({config['description']})...")
-    print(f"[Walrio Build] Entry point: {entry_point}")
-    print(f"[Walrio Build] Dist dir: {self.dist_dir}")
-    print(f"[Walrio Build] Build dir: {self.build_dir}")
+        print(f"\n[Walrio Build] Building {config['name']} ({config['description']})...")
+        print(f"[Walrio Build] Entry point: {entry_point}")
+        print(f"[Walrio Build] Dist dir: {self.dist_dir}")
+        print(f"[Walrio Build] Build dir: {self.build_dir}")
         
         # Build PyInstaller command - let it handle everything
         cmd = [
@@ -157,11 +157,11 @@ class SimpleWalrioBuilder:
         ])
 
         # Bundle the entire modules directory as data
-    modules_dir = str(self.root_dir / "modules")
-    sep = ';' if sys.platform.startswith('win') else ':'
-    add_data_arg = f"{modules_dir}{sep}modules"
-    print(f"[Walrio Build] Adding data: {add_data_arg}")
-    cmd.extend(["--add-data", add_data_arg])
+        modules_dir = str(self.root_dir / "modules")
+        sep = ';' if sys.platform.startswith('win') else ':'
+        add_data_arg = f"{modules_dir}{sep}modules"
+        print(f"[Walrio Build] Adding data: {add_data_arg}")
+        cmd.extend(["--add-data", add_data_arg])
         
         # Entry point
         cmd.append(str(entry_point))
