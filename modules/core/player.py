@@ -28,12 +28,6 @@ class AudioPlayer:
     VLC-based audio player with real-time control.
     """
     # VLC does not require pipeline creation; handled in load_file
-        """Set callback function for position updates.
-        
-        Args:
-            callback: Function to call with position updates (seconds as float)
-        """
-        # Not needed for VLC
     
     def _start_position_updates(self):
         """Start sending position updates via callback."""
