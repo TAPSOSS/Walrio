@@ -128,9 +128,3 @@ jobs:
           dist/
           !dist/**/*.spec
         retention-days: 30
-      with:
-        name: ${{ steps.artifact.outputs.name }}
-        path: |
-          dist/
-          !dist/**/*.spec
-        retention-days: 30
