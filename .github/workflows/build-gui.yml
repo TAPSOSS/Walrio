@@ -102,48 +102,25 @@ jobs:
         
     - name: Comprehensive GStreamer verification (Windows)
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        Write-Host "=== Windows GStreamer/PyGObject Verification ==="
-        
-        # Set up MSYS2 environment for this step
-        $env:PATH = "C:\tools\msys64\mingw64\bin;" + $env:PATH
-        $env:PKG_CONFIG_PATH = "C:\tools\msys64\mingw64\lib\pkgconfig"
-        $env:GI_TYPELIB_PATH = "C:\tools\msys64\mingw64\lib\girepository-1.0"
-        $env:GST_PLUGIN_PATH = "C:\tools\msys64\mingw64\lib\gstreamer-1.0"
-        
-        # Print environment variables
-        Write-Host "Environment variables:"
-        Write-Host "  GST_PLUGIN_PATH: $env:GST_PLUGIN_PATH"
-        Write-Host "  GI_TYPELIB_PATH: $env:GI_TYPELIB_PATH"
-        Write-Host "  PKG_CONFIG_PATH: $env:PKG_CONFIG_PATH"
-        
-        # Test basic Python imports using MSYS2 Python
-        Write-Host "Testing Python gi import..."
-        C:\tools\msys64\mingw64\bin\python.exe -c "import sys; print('Python version:', sys.version)"
-        
-        Write-Host "Testing PyGObject import..."
-        try {
-          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; print('SUCCESS: gi import successful')"
-        } catch {
-          Write-Host "ERROR: gi import failed - $($_.Exception.Message)"
-        }
-        
-        Write-Host "Testing GStreamer import..."
-        try {
-          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
-        } catch {
-          Write-Host "ERROR: GStreamer import failed - $($_.Exception.Message)"
-        }
-        
-        Write-Host "Testing GStreamer initialization..."
-        try {
-          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')"
-        } catch {
-          Write-Host "ERROR: GStreamer initialization test failed - $($_.Exception.Message)"
-        }
-        
-        Write-Host "Windows verification completed."
+        echo "=== Windows GStreamer/PyGObject Verification ==="
+        export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+        export GI_TYPELIB_PATH="/mingw64/lib/girepository-1.0"
+        export GST_PLUGIN_PATH="/mingw64/lib/gstreamer-1.0"
+        echo "Environment variables:"
+        echo "  GST_PLUGIN_PATH: $GST_PLUGIN_PATH"
+        echo "  GI_TYPELIB_PATH: $GI_TYPELIB_PATH"
+        echo "  PKG_CONFIG_PATH: $PKG_CONFIG_PATH"
+        echo "Testing Python gi import..."
+        python -c "import sys; print('Python version:', sys.version)"
+        echo "Testing PyGObject import..."
+        python -c "import gi; print('SUCCESS: gi import successful')" || echo "ERROR: gi import failed"
+        echo "Testing GStreamer import..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
+        echo "Testing GStreamer initialization..."
+        python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
+        echo "Windows verification completed."
         
     - name: Install Python dependencies (Linux/macOS)
       if: runner.os != 'Windows'
@@ -153,11 +130,11 @@ jobs:
         pip install pyinstaller
     - name: Install Python dependencies (Windows)
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        C:\tools\msys64\mingw64\bin\python.exe -m pip install --upgrade pip
-        C:\tools\msys64\mingw64\bin\pip.exe install mutagen PySide6 Pillow
-        C:\tools\msys64\mingw64\bin\pip.exe install pyinstaller
+        python -m pip install --upgrade pip
+        pip install mutagen PySide6 Pillow
+        pip install pyinstaller
         
 
 
@@ -171,20 +148,20 @@ jobs:
       if: runner.os != 'Windows'
     - name: Run dependency check (Windows)
       continue-on-error: true
-      shell: pwsh
+      shell: msys2 {0}
       if: runner.os == 'Windows'
       run: |
-        C:\tools\msys64\mingw64\bin\python.exe .github/scripts/deps_check.py
+        python .github/scripts/deps_check.py
     - name: Build GUI (${{ matrix.gui-variant }})
       if: runner.os != 'Windows'
       run: |
         make build-${{ matrix.gui-variant }}
     - name: Build GUI (${{ matrix.gui-variant }}) [Windows]
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        Write-Host "Building GUI with MSYS2 Python..."
-        C:\tools\msys64\mingw64\bin\python.exe .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
+        echo "Building GUI with MSYS2 Python..."
+        python .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
     - name: Test built executable (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
@@ -206,22 +183,21 @@ jobs:
         
     - name: Test built executable (Windows)
       if: runner.os == 'Windows'
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        $variant = "${{ matrix.gui-variant }}"
-        if ($variant -eq "main") {
-          $expectedFile = "dist/WalrioMain.exe"
-        } else {
-          $expectedFile = "dist/WalrioLite.exe"
-        }
-        if (Test-Path $expectedFile) {
-          Write-Host "SUCCESS: $expectedFile found"
-        } else {
-          Write-Host "ERROR: $expectedFile not found"
-          Get-ChildItem dist/ -ErrorAction SilentlyContinue | Format-Table
+        variant="${{ matrix.gui-variant }}"
+        if [ "$variant" = "main" ]; then
+          expectedFile="dist/WalrioMain.exe"
+        else
+          expectedFile="dist/WalrioLite.exe"
+        fi
+        if [ -f "$expectedFile" ]; then
+          echo "SUCCESS: $expectedFile found"
+        else
+          echo "ERROR: $expectedFile not found"
+          ls -la dist/ || echo "dist/ directory not found"
           exit 1
-        }
-    
+        fi
     - name: Test PyGObject bundling (Linux/macOS)
       if: runner.os != 'Windows'
       continue-on-error: true
@@ -242,21 +218,19 @@ jobs:
     - name: Test PyGObject bundling (Windows)
       if: runner.os == 'Windows'
       continue-on-error: true
-      shell: pwsh
+      shell: msys2 {0}
       run: |
-        Write-Host "Testing PyGObject import capability in built environment (MSYS2 Python)..."
-        try {
-          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; print('SUCCESS: gi import successful')"
-          Write-Host "SUCCESS: PyGObject available in build environment"
-        } catch {
-          Write-Host "WARNING: PyGObject not available in build environment - executable may have import issues"
-        }
-        try {
-          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
-          Write-Host "SUCCESS: GStreamer available in build environment"
-        } catch {
-          Write-Host "WARNING: GStreamer not available in build environment - audio may not work"
-        }
+        echo "Testing PyGObject import capability in built environment (MSYS2 Python)..."
+        if python -c "import gi; print('SUCCESS: gi import successful')"; then
+          echo "SUCCESS: PyGObject available in build environment"
+        else
+          echo "WARNING: PyGObject not available in build environment - executable may have import issues"
+        fi
+        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
+          echo "SUCCESS: GStreamer available in build environment"
+        else
+          echo "WARNING: GStreamer not available in build environment - audio may not work"
+        fi
         
     - name: Create artifact name
       id: artifact
