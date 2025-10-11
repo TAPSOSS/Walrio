@@ -73,6 +73,7 @@ jobs:
         install: >-
           mingw-w64-x86_64-gstreamer
           mingw-w64-x86_64-python-gobject
+          mingw-w64-x86_64-python-pip
 
     - name: Comprehensive GStreamer verification (Linux/macOS)
       if: runner.os != 'Windows'
