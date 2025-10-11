@@ -61,33 +61,28 @@ jobs:
       shell: msys2 {0}
       run: |
         python -m venv venv
-        source venv/bin/activate
 
     - name: Install Python dependencies
       shell: msys2 {0}
       run: |
-        source venv/bin/activate
-        pip install --upgrade pip
-        pip install mutagen PySide6 Pillow
-        pip install pyinstaller
+        venv/bin/python -m pip install --upgrade pip
+        venv/bin/pip install mutagen PySide6 Pillow
+        venv/bin/pip install pyinstaller
 
     - name: Run dependency check
       continue-on-error: true
       shell: msys2 {0}
       run: |
-        source venv/bin/activate
-        python .github/scripts/deps_check.py
+        venv/bin/python .github/scripts/deps_check.py
 
     - name: Build GUI (${{ matrix.gui-variant }})
       shell: msys2 {0}
       run: |
-        source venv/bin/activate
-        python .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
+        venv/bin/python .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
 
     - name: Test built executable
       shell: msys2 {0}
       run: |
-        source venv/bin/activate
         variant="${{ matrix.gui-variant }}"
         if [ "$variant" = "main" ]; then
           expectedFile="dist/WalrioMain.exe"
@@ -106,13 +101,12 @@ jobs:
       continue-on-error: true
       shell: msys2 {0}
       run: |
-        source venv/bin/activate
-        if python -c "import gi; print('SUCCESS: gi import successful')"; then
+        if venv/bin/python -c "import gi; print('SUCCESS: gi import successful')"; then
           echo "SUCCESS: PyGObject available in build environment"
         else
           echo "WARNING: PyGObject not available in build environment - executable may have import issues"
         fi
-        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
+        if venv/bin/python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
           echo "SUCCESS: GStreamer available in build environment"
         else
           echo "WARNING: GStreamer not available in build environment - audio may not work"
@@ -128,6 +122,12 @@ jobs:
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.artifact.outputs.name }}
+        path: |
+          dist/
+          !dist/**/*.spec
+        retention-days: 30
       with:
         name: ${{ steps.artifact.outputs.name }}
         path: |
