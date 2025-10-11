@@ -114,5 +114,3 @@ jobs:
           dist/
           !dist/**/*.spec
         retention-days: 30
-
-# ...release job can be copied and adapted as needed...

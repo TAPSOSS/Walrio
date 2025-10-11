@@ -57,10 +57,17 @@ jobs:
         python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
         python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
 
+    - name: Create Python virtual environment
+      shell: msys2 {0}
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+
     - name: Install Python dependencies
       shell: msys2 {0}
       run: |
-        python -m pip install --upgrade pip
+        source venv/bin/activate
+        pip install --upgrade pip
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
 
@@ -68,16 +75,19 @@ jobs:
       continue-on-error: true
       shell: msys2 {0}
       run: |
+        source venv/bin/activate
         python .github/scripts/deps_check.py
 
     - name: Build GUI (${{ matrix.gui-variant }})
       shell: msys2 {0}
       run: |
+        source venv/bin/activate
         python .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
 
     - name: Test built executable
       shell: msys2 {0}
       run: |
+        source venv/bin/activate
         variant="${{ matrix.gui-variant }}"
         if [ "$variant" = "main" ]; then
           expectedFile="dist/WalrioMain.exe"
@@ -96,6 +106,7 @@ jobs:
       continue-on-error: true
       shell: msys2 {0}
       run: |
+        source venv/bin/activate
         if python -c "import gi; print('SUCCESS: gi import successful')"; then
           echo "SUCCESS: PyGObject available in build environment"
         else
@@ -123,5 +134,3 @@ jobs:
           dist/
           !dist/**/*.spec
         retention-days: 30
-
-# ...release job can be copied and adapted as needed...
