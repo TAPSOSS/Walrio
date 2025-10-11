@@ -39,6 +39,8 @@ jobs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ env.PYTHON_VERSION }}
+      # Only needed for non-Windows
+      if: runner.os != 'Windows'
         
     - name: Cache pip dependencies
       uses: actions/cache@v4
@@ -100,6 +102,7 @@ jobs:
         
     - name: Comprehensive GStreamer verification (Windows)
       if: runner.os == 'Windows'
+      shell: pwsh
       run: |
         Write-Host "=== Windows GStreamer/PyGObject Verification ==="
         
@@ -115,39 +118,46 @@ jobs:
         Write-Host "  GI_TYPELIB_PATH: $env:GI_TYPELIB_PATH"
         Write-Host "  PKG_CONFIG_PATH: $env:PKG_CONFIG_PATH"
         
-        # Test basic Python imports
+        # Test basic Python imports using MSYS2 Python
         Write-Host "Testing Python gi import..."
-        python -c "import sys; print('Python version:', sys.version)"
+        C:\tools\msys64\mingw64\bin\python.exe -c "import sys; print('Python version:', sys.version)"
         
         Write-Host "Testing PyGObject import..."
         try {
-          python -c "import gi; print('SUCCESS: gi import successful')"
+          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; print('SUCCESS: gi import successful')"
         } catch {
           Write-Host "ERROR: gi import failed - $($_.Exception.Message)"
         }
         
         Write-Host "Testing GStreamer import..."
         try {
-          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
+          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"
         } catch {
           Write-Host "ERROR: GStreamer import failed - $($_.Exception.Message)"
         }
         
         Write-Host "Testing GStreamer initialization..."
         try {
-          python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')"
+          C:\tools\msys64\mingw64\bin\python.exe -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')"
         } catch {
           Write-Host "ERROR: GStreamer initialization test failed - $($_.Exception.Message)"
         }
         
         Write-Host "Windows verification completed."
         
-    - name: Install Python dependencies
+    - name: Install Python dependencies (Linux/macOS)
+      if: runner.os != 'Windows'
       run: |
         python -m pip install --upgrade pip
-        # Install everything except PyGObject from requirements.txt (PyGObject handled separately)
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
+    - name: Install Python dependencies (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        C:\tools\msys64\mingw64\bin\python.exe -m pip install --upgrade pip
+        C:\tools\msys64\mingw64\bin\pip.exe install mutagen PySide6 Pillow
+        C:\tools\msys64\mingw64\bin\pip.exe install pyinstaller
         
 
 
@@ -157,19 +167,24 @@ jobs:
       continue-on-error: true
       run: |
         make deps-check
-        
+      shell: bash
+      if: runner.os != 'Windows'
+    - name: Run dependency check (Windows)
+      continue-on-error: true
+      shell: pwsh
+      if: runner.os == 'Windows'
+      run: |
+        C:\tools\msys64\mingw64\bin\python.exe .github/scripts/deps_check.py
     - name: Build GUI (${{ matrix.gui-variant }})
       if: runner.os != 'Windows'
       run: |
         make build-${{ matrix.gui-variant }}
-
     - name: Build GUI (${{ matrix.gui-variant }}) [Windows]
       if: runner.os == 'Windows'
       shell: pwsh
       run: |
         Write-Host "Building GUI with MSYS2 Python..."
         C:\tools\msys64\mingw64\bin\python.exe .github/scripts/build_gui.py --gui ${{ matrix.gui-variant }} --clean
-        
     - name: Test built executable (Linux/macOS)
       if: runner.os != 'Windows'
       run: |
