@@ -45,6 +45,8 @@ jobs:
           mingw-w64-x86_64-python-gobject
           mingw-w64-x86_64-python-pip
           mingw-w64-x86_64-pyside6
+          mingw-w64-x86_64-python-pillow
+          mingw-w64-x86_64-python-pyinstaller
 
     - name: Comprehensive GStreamer verification
       shell: msys2 {0}
@@ -67,7 +69,7 @@ jobs:
       shell: msys2 {0}
       run: |
         venv/bin/python -m pip install --upgrade pip
-        venv/bin/pip install mutagen Pillow
+        venv/bin/pip install mutagen
         venv/bin/pip install pyinstaller
 
     - name: Run dependency check
