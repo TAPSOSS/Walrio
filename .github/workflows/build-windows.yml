@@ -46,7 +46,6 @@ jobs:
           mingw-w64-x86_64-python-pip
           mingw-w64-x86_64-pyside6
           mingw-w64-x86_64-python-pillow
-          mingw-w64-x86_64-python-pyinstaller
 
     - name: Comprehensive GStreamer verification
       shell: msys2 {0}
