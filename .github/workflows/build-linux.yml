@@ -60,14 +60,9 @@ jobs:
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
 
-    - name: Run dependency check
-      continue-on-error: true
-      run: |
-        make deps-check
-
     - name: Build GUI (${{ matrix.gui-variant }})
       run: |
-        make build-${{ matrix.gui-variant }}
+        pyinstaller GUI/walrio_lite.spec
 
     - name: Test built executable
       run: |
@@ -100,17 +95,16 @@ jobs:
         fi
 
     - name: Create artifact name
-      id: artifact
       run: |
-        VARIANT="${{ matrix.gui-variant }}"
+        VARIANT="${{ matrix.gui-variant }}"tifact
         VARIANT_UPPER=$(echo "$VARIANT" | tr '[:lower:]' '[:upper:]')
         echo "name=WALRIO_${VARIANT_UPPER}-linux" >> $GITHUB_OUTPUT
-
-    - name: Upload build artifacts
+')
+    - name: Upload build artifacts        echo "name=WALRIO_${VARIANT_UPPER}-linux" >> $GITHUB_OUTPUT
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ steps.artifact.outputs.name }}
+        name: ${{ steps.artifact.outputs.name }} actions/upload-artifact@v4
         path: |
-          dist/
+          dist/{{ steps.artifact.outputs.name }}
           !dist/**/*.spec
-        retention-days: 30
+        retention-days: 30        retention-days: 30

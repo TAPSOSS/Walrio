@@ -60,14 +60,9 @@ jobs:
         pip install mutagen PySide6 Pillow
         pip install pyinstaller
 
-    - name: Run dependency check
-      continue-on-error: true
-      run: |
-        make deps-check
-
     - name: Build GUI (${{ matrix.gui-variant }})
       run: |
-        make build-${{ matrix.gui-variant }}
+        pyinstaller GUI/walrio_lite.spec
 
     - name: Test built executable
       run: |

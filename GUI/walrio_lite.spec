@@ -1,4 +1,4 @@
-name: Build Walrio GUI (Windows)
+name: Build Walrio GUI (Linux)
 
 on:
   pull_request:
@@ -21,7 +21,7 @@ jobs:
     strategy:
       matrix:
         gui-variant: ['main', 'lite']
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     env:
       PYTHON_VERSION: '3.11'
     steps:
@@ -32,83 +32,68 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/pip
-        key: windows-pip-${{ hashFiles('**/requirements.txt') }}
+        key: linux-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
-          windows-pip-
+          linux-pip-
 
-    - name: Install GStreamer and Python (MSYS2)
-      uses: msys2/setup-msys2@v2
+    - name: Install GStreamer
+      run: |
+        sudo apt update
+        sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad python3-gi gir1.2-gstreamer-1.0
+
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v4
       with:
-        update: true
-        install: >-
-          mingw-w64-x86_64-gstreamer
-          mingw-w64-x86_64-python-gobject
-          mingw-w64-x86_64-python-pip
-          mingw-w64-x86_64-pyside6
-          mingw-w64-x86_64-python-pillow
+        python-version: ${{ env.PYTHON_VERSION }}
 
     - name: Comprehensive GStreamer verification
-      shell: msys2 {0}
       run: |
-        export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
-        export GI_TYPELIB_PATH="/mingw64/lib/girepository-1.0"
-        export GST_PLUGIN_PATH="/mingw64/lib/gstreamer-1.0"
         echo "Testing Python gi import..."
         python -c "import sys; print('Python version:', sys.version)"
         python -c "import gi; print('SUCCESS: gi import successful')" || echo "ERROR: gi import failed"
         python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')" || echo "ERROR: GStreamer import failed"
         python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; result = Gst.init_check(None); print('SUCCESS: GStreamer initialization successful' if result else 'WARNING: GStreamer initialization failed')" || echo "ERROR: GStreamer initialization test failed"
 
-    - name: Create Python virtual environment
-      shell: msys2 {0}
-      run: |
-        python -m venv venv
-
     - name: Install Python dependencies
-      shell: msys2 {0}
       run: |
-        venv/bin/python -m pip install --upgrade pip
-        venv/bin/pip install mutagen
-        venv/bin/pip install pyinstaller
+        python -m pip install --upgrade pip
+        pip install mutagen PySide6 Pillow
+        pip install pyinstaller
 
     - name: Run dependency check
       continue-on-error: true
-      shell: msys2 {0}
       run: |
-        venv/bin/python .github/scripts/deps_check.py
+        make deps-check
 
     - name: Build GUI (${{ matrix.gui-variant }})
-      shell: msys2 {0}
       run: |
-        venv/bin/python -m PyInstaller GUI/walrio_lite.spec
+        make build-${{ matrix.gui-variant }}
 
     - name: Test built executable
-      shell: msys2 {0}
       run: |
-        variant="${{ matrix.gui-variant }}"
-        if [ "$variant" = "main" ]; then
-          expectedFile="dist/WalrioMain.exe"
+        VARIANT="${{ matrix.gui-variant }}"
+        if [ "$VARIANT" = "main" ]; then
+          EXPECTED_FILE="dist/WalrioMain"
         else
-          expectedFile="dist/WalrioLite.exe"
+          EXPECTED_FILE="dist/WalrioLite"
         fi
-        if [ -f "$expectedFile" ]; then
-          echo "SUCCESS: $expectedFile found"
+        if [ -f "$EXPECTED_FILE" ]; then
+          echo "SUCCESS: $EXPECTED_FILE found"
         else
-          echo "ERROR: $expectedFile not found"
+          echo "ERROR: $EXPECTED_FILE not found"
           ls -la dist/ || echo "dist/ directory not found"
           exit 1
         fi
 
     - name: Test PyGObject bundling
       continue-on-error: true
-      shell: msys2 {0}
       run: |
-        if venv/bin/python -c "import gi; print('SUCCESS: gi import successful')"; then
+        if python -c "import gi; print('SUCCESS: gi import successful')"; then
           echo "SUCCESS: PyGObject available in build environment"
         else
           echo "WARNING: PyGObject not available in build environment - executable may have import issues"
         fi
-        if venv/bin/python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
+        if python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
           echo "SUCCESS: GStreamer available in build environment"
         else
           echo "WARNING: GStreamer not available in build environment - audio may not work"
@@ -116,11 +101,10 @@ jobs:
 
     - name: Create artifact name
       id: artifact
-      shell: bash
       run: |
         VARIANT="${{ matrix.gui-variant }}"
         VARIANT_UPPER=$(echo "$VARIANT" | tr '[:lower:]' '[:upper:]')
-        echo "name=WALRIO_${VARIANT_UPPER}-windows" >> $GITHUB_OUTPUT
+        echo "name=WALRIO_${VARIANT_UPPER}-linux" >> $GITHUB_OUTPUT
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
