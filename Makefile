@@ -38,47 +38,35 @@ help:
 build: build-main build-lite bundle-gstreamer
 
 build-main:
-ifeq ($(OS),Windows_NT)
-	venv\Scripts\python.exe -m PyInstaller GUI/walrio_main.spec
-else
-	pyinstaller GUI/walrio_main.spec
-endif
+	python -m PyInstaller GUI/walrio_main.spec
 
 build-lite:
-ifeq ($(OS),Windows_NT)
-	venv\Scripts\python.exe -m PyInstaller GUI/walrio_lite.spec
-else
-	pyinstaller GUI/walrio_lite.spec
-endif
+	python -m PyInstaller GUI/walrio_lite.spec
 
 build-debug:
-ifeq ($(OS),Windows_NT)
-	venv\Scripts\python.exe -m PyInstaller GUI/walrio_main.spec --onedir --debug
-	venv\Scripts\python.exe -m PyInstaller GUI/walrio_lite.spec --onedir --debug
-else
-	pyinstaller GUI/walrio_main.spec --onedir --debug
-	pyinstaller GUI/walrio_lite.spec --onedir --debug
-endif
+	python -m PyInstaller GUI/walrio_main.spec --onedir --debug
+	python -m PyInstaller GUI/walrio_lite.spec --onedir --debug
 
 # Bundle essential GStreamer libraries for portability
 bundle-gstreamer:
-ifeq ($(OS),Windows_NT)
-	@echo "Bundling essential GStreamer DLLs into dist/"
-	@if exist "C:\msys64\mingw64\bin\libgst*.dll" copy /Y C:\msys64\mingw64\bin\libgst*.dll dist\
-else
 	@echo "Bundling essential GStreamer libraries into dist/"
-	@mkdir -p dist/gstreamer-1.0
-	@for dir in /usr/lib64/gstreamer-1.0 /usr/lib/gstreamer-1.0; do \
-		if [ -d $$dir ]; then \
-			cp -v $$dir/libgst*.so dist/gstreamer-1.0/ 2>/dev/null || true; \
-		fi \
-	done
-	@for dir in /usr/lib64 /usr/lib; do \
-		if [ -d $$dir ]; then \
-			cp -v $$dir/libgst*.so* dist/ 2>/dev/null || true; \
-		fi \
-	done
-endif
+	@if [ "$(OS)" = "Windows_NT" ]; then \
+		echo "Copying GStreamer DLLs for Windows..."; \
+		mkdir -p dist; \
+		cp /c/msys64/mingw64/bin/libgst*.dll dist/ 2>/dev/null || true; \
+	else \
+		mkdir -p dist/gstreamer-1.0; \
+		for dir in /usr/lib64/gstreamer-1.0 /usr/lib/gstreamer-1.0; do \
+			if [ -d $$dir ]; then \
+				cp -v $$dir/libgst*.so dist/gstreamer-1.0/ 2>/dev/null || true; \
+			fi \
+		done; \
+		for dir in /usr/lib64 /usr/lib; do \
+			if [ -d $$dir ]; then \
+				cp -v $$dir/libgst*.so* dist/ 2>/dev/null || true; \
+			fi \
+		done; \
+	fi
 
 clean:
 	rm -rf dist build __pycache__ *.spec GUI/*.spec
