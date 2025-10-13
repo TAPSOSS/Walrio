@@ -51,22 +51,22 @@ jobs:
           mkdir -p dist
           cp /mingw64/bin/libgst*.dll dist/ 2>/dev/null || true
 
+      - name: Create artifact name
+        id: artifact
+        shell: bash
+        run: |
+          VARIANT="${{ matrix.gui }}"
+          VARIANT_UPPER=$(echo "$VARIANT" | tr '[:lower:]' '[:upper:]')
+          echo "name=WALRIO_${VARIANT_UPPER}-windows" >> $GITHUB_OUTPUT
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.gui }}-windows
+          name: ${{ steps.artifact.outputs.name }}
           path: |
             dist/
             !dist/**/*.spec
           retention-days: 30
-    - name: Create Python virtual environment
-      shell: msys2 {0}
-      run: |
-        python -m venv venv
-
-    - name: Install Python dependencies
-      shell: msys2 {0}
-      run: |
         venv/bin/python -m pip install --upgrade pip
         venv/bin/pip install mutagen
         venv/bin/pip install pyinstaller

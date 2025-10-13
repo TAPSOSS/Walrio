@@ -35,7 +35,7 @@ jobs:
 
       - name: Build ${{ matrix.gui }}
         run: |
-          pyinstaller GUI/${{ matrix.gui }}.spec
+          python -m PyInstaller GUI/${{ matrix.gui }}.spec
 
       - name: Bundle GStreamer libraries
         run: |
