@@ -1,0 +1,61 @@
+name: Build Walrio GUIs (Linux)
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        gui: [walrio_main, walrio_lite]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install GStreamer
+        run: |
+          sudo apt update
+          sudo apt install -y gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly gstreamer1.0-plugins-bad python3-gi gir1.2-gstreamer-1.0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mutagen PySide6 Pillow pyinstaller
+
+      - name: Build ${{ matrix.gui }}
+        run: |
+          pyinstaller GUI/${{ matrix.gui }}.spec
+
+      - name: Bundle GStreamer libraries
+        run: |
+          mkdir -p dist/gstreamer-1.0
+          for dir in /usr/lib64/gstreamer-1.0 /usr/lib/gstreamer-1.0; do
+            if [ -d "$dir" ]; then
+              cp -v $dir/libgst*.so dist/gstreamer-1.0/ 2>/dev/null || true
+            fi
+          done
+          for dir in /usr/lib64 /usr/lib; do
+            if [ -d "$dir" ]; then
+              cp -v $dir/libgst*.so* dist/ 2>/dev/null || true
+            fi
+          done
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.gui }}-linux
+          path: |
+            dist/
+            !dist/**/*.spec
+          retention-days: 30

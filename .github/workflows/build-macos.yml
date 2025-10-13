@@ -1,0 +1,47 @@
+name: Build Walrio GUIs (macOS)
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        gui: [walrio_main, walrio_lite]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install GStreamer
+        run: |
+          brew update
+          brew install gstreamer pygobject3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mutagen PySide6 Pillow pyinstaller
+
+      - name: Build ${{ matrix.gui }}
+        run: |
+          pyinstaller GUI/${{ matrix.gui }}.spec
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.gui }}-macos
+          path: |
+            dist/
+            !dist/**/*.spec
+          retention-days: 30

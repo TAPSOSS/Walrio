@@ -1,0 +1,132 @@
+name: Build Walrio GUIs (Windows)
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        gui: [walrio_main, walrio_lite]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install MSYS2 and GStreamer
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gstreamer
+            mingw-w64-x86_64-python-gobject
+            mingw-w64-x86_64-python-pip
+            mingw-w64-x86_64-pyside6
+            mingw-w64-x86_64-python-pillow
+
+      - name: Create Python virtual environment
+        shell: msys2 {0}
+        run: |
+          python -m venv venv
+
+      - name: Install Python dependencies
+        shell: msys2 {0}
+        run: |
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/pip install mutagen pyinstaller
+
+      - name: Build ${{ matrix.gui }}
+        shell: msys2 {0}
+        run: |
+          venv/bin/python -m PyInstaller GUI/${{ matrix.gui }}.spec
+
+      - name: Bundle GStreamer DLLs
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist
+          cp /mingw64/bin/libgst*.dll dist/ 2>/dev/null || true
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.gui }}-windows
+          path: |
+            dist/
+            !dist/**/*.spec
+          retention-days: 30
+    - name: Create Python virtual environment
+      shell: msys2 {0}
+      run: |
+        python -m venv venv
+
+    - name: Install Python dependencies
+      shell: msys2 {0}
+      run: |
+        venv/bin/python -m pip install --upgrade pip
+        venv/bin/pip install mutagen
+        venv/bin/pip install pyinstaller
+
+    - name: Run dependency check
+      continue-on-error: true
+      shell: msys2 {0}
+      run: |
+        venv/bin/python .github/scripts/deps_check.py
+
+    - name: Build GUI (${{ matrix.gui-variant }})
+      shell: msys2 {0}
+      run: |
+        venv/bin/python -m PyInstaller GUI/walrio_lite.spec
+
+    - name: Test built executable
+      shell: msys2 {0}
+      run: |
+        variant="${{ matrix.gui-variant }}"
+        if [ "$variant" = "main" ]; then
+          expectedFile="dist/WalrioMain.exe"
+        else
+          expectedFile="dist/WalrioLite.exe"
+        fi
+        if [ -f "$expectedFile" ]; then
+          echo "SUCCESS: $expectedFile found"
+        else
+          echo "ERROR: $expectedFile not found"
+          ls -la dist/ || echo "dist/ directory not found"
+          exit 1
+        fi
+
+    - name: Test PyGObject bundling
+      continue-on-error: true
+      shell: msys2 {0}
+      run: |
+        if venv/bin/python -c "import gi; print('SUCCESS: gi import successful')"; then
+          echo "SUCCESS: PyGObject available in build environment"
+        else
+          echo "WARNING: PyGObject not available in build environment - executable may have import issues"
+        fi
+        if venv/bin/python -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; print('SUCCESS: GStreamer import successful')"; then
+          echo "SUCCESS: GStreamer available in build environment"
+        else
+          echo "WARNING: GStreamer not available in build environment - audio may not work"
+        fi
+
+    - name: Create artifact name
+      id: artifact
+      shell: bash
+      run: |
+        VARIANT="${{ matrix.gui-variant }}"
+        VARIANT_UPPER=$(echo "$VARIANT" | tr '[:lower:]' '[:upper:]')
+        echo "name=WALRIO_${VARIANT_UPPER}-windows" >> $GITHUB_OUTPUT
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.artifact.outputs.name }}
+        path: |
+          dist/
+          !dist/**/*.spec
+        retention-days: 30
