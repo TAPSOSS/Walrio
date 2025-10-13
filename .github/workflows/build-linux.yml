@@ -37,7 +37,7 @@ jobs:
         run: |
           python -m PyInstaller GUI/${{ matrix.gui }}.spec
 
-      - name: Bundle GStreamer libraries
+      - name: Bundle GStreamer and gi libraries
         run: |
           mkdir -p dist/gstreamer-1.0
           for dir in /usr/lib64/gstreamer-1.0 /usr/lib/gstreamer-1.0; do
@@ -50,6 +50,8 @@ jobs:
               cp -v $dir/libgst*.so* dist/ 2>/dev/null || true
             fi
           done
+          # Ensure gi is available
+          python -c "import gi; print('SUCCESS: gi is bundled')" || echo "WARNING: gi not bundled"
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

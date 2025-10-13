@@ -7,7 +7,12 @@ a = Analysis(
     pathex=['.'],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=[
+        'gi',
+        'gi.repository.Gst',
+        'gi.repository.GObject',
+        'gi.repository.Gio'
+    ],
     hookspath=[],
     runtime_hooks=[],
     excludes=[],

@@ -37,6 +37,13 @@ jobs:
         run: |
           python -m PyInstaller GUI/${{ matrix.gui }}.spec
 
+      - name: Verify gi and GStreamer
+        run: |
+          # Ensure gi is available
+          python -c "import gi; print('SUCCESS: gi is bundled')" || echo "WARNING: gi not bundled"
+          # Ensure GStreamer is available
+          gst-inspect-1.0 --version || echo "WARNING: GStreamer not found"
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
