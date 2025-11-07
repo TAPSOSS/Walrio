@@ -8,7 +8,7 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 A tool to move audio files into folder structures based on metadata.
 Moves files from a source library into organized subfolders under a specified root directory.
 
-Default folder structure: /(album)/(year)/(albumartist)/ with sanitized folder names but can be changed by user.
+Default folder structure: /(album)_(albumartist)_(year) with sanitized folder names but can be changed by user.
 """
 
 import os
@@ -41,7 +41,7 @@ ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
 # Default folder structure format
-DEFAULT_FOLDER_FORMAT = "{album}/{year}/{albumartist}"
+DEFAULT_FOLDER_FORMAT = "{album}_{albumartist}_{year}"
 
 # Standard character replacements (applied before other sanitization when --standard is used)
 STANDARD_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
