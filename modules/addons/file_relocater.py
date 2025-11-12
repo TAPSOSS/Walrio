@@ -44,7 +44,23 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 DEFAULT_FOLDER_FORMAT = "{album}_{albumartist}_{year}"
 
 # Standard character replacements (applied before other sanitization when --standard is used)
-STANDARD_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
+STANDARD_CHAR_REPLACEMENTS = {
+    '/': '-', '\\': '-', ':': '-', '|': '-',
+    # Common accented characters to base forms
+    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a', 'ã': 'a',
+    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
+    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
+    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o', 'õ': 'o',
+    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+    'ñ': 'n', 'ç': 'c',
+    # Uppercase versions
+    'Á': 'A', 'À': 'A', 'Ä': 'A', 'Â': 'A', 'Ã': 'A',
+    'É': 'E', 'È': 'E', 'Ë': 'E', 'Ê': 'E',
+    'Í': 'I', 'Ì': 'I', 'Ï': 'I', 'Î': 'I',
+    'Ó': 'O', 'Ò': 'O', 'Ö': 'O', 'Ô': 'O', 'Õ': 'O',
+    'Ú': 'U', 'Ù': 'U', 'Ü': 'U', 'Û': 'U',
+    'Ñ': 'N', 'Ç': 'C'
+}
 
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
@@ -672,8 +688,9 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     """
     replacements = {}
     
-    # Note: By default, no character replacements are applied
-    # Users can add custom replacements using --replace-char
+    # Add standard replacements by default unless disabled
+    if not no_defaults:
+        replacements.update(STANDARD_CHAR_REPLACEMENTS)
     
     # Add custom replacements
     if replace_char_list:
