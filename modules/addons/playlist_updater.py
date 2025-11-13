@@ -48,57 +48,38 @@ class PlaylistUpdater:
     def _load_m3u_paths_only(playlist_path: str) -> List[Dict[str, str]]:
         """
         Load only the file paths from an M3U playlist without extracting metadata.
-        This is much faster than loading full metadata for all tracks.
+        Preserves EXTINF lines exactly as-is for later writing.
         
         Args:
             playlist_path (str): Path to the M3U playlist file
             
         Returns:
-            List[Dict[str, str]]: List of dicts with 'url', 'artist', 'title' from M3U tags
+            List[Dict[str, str]]: List of dicts with 'url' and optional 'extinf'
         """
         tracks = []
         try:
             with open(playlist_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            current_info = {}
+            current_extinf = None
             for line in lines:
                 line = line.strip()
                 
-                # Skip empty lines and comments (except EXTINF)
+                # Skip empty lines and non-EXTINF comments
                 if not line or (line.startswith('#') and not line.startswith('#EXTINF')):
                     continue
                 
-                # Parse EXTINF line for artist/title (for logging only)
+                # Store EXTINF line to write back later
                 if line.startswith('#EXTINF:'):
-                    # Store the entire EXTINF line to preserve it exactly
-                    current_info['extinf'] = line
-                    
-                    # Parse artist/title for logging purposes only
-                    try:
-                        parts = line[8:].split(',', 1)
-                        if len(parts) > 1 and ' - ' in parts[1]:
-                            artist, title = parts[1].split(' - ', 1)
-                            current_info['artist'] = artist.strip()
-                            current_info['title'] = title.strip()
-                    except (ValueError, IndexError):
-                        pass
+                    current_extinf = line
                 else:
                     # This is a file path
-                    file_path = line
-                    
-                    # Store path and EXTINF line (if any) for exact preservation
-                    track = {'url': file_path}
-                    if 'extinf' in current_info:
-                        track['extinf'] = current_info['extinf']
-                    # Include artist/title only for logging
-                    if 'artist' in current_info:
-                        track['artist'] = current_info['artist']
-                    if 'title' in current_info:
-                        track['title'] = current_info['title']
+                    track = {'url': line}
+                    if current_extinf:
+                        track['extinf'] = current_extinf
                     
                     tracks.append(track)
-                    current_info = {}
+                    current_extinf = None
             
             return tracks
         except Exception as e:
@@ -238,17 +219,8 @@ class PlaylistUpdater:
                         changes_made = True
                         changes_count += 1
                         
-                        # Log the change with track info
-                        track_artist = track.get('artist', '')
-                        track_title = track.get('title', '')
-                        
-                        # Format track info for display
-                        if track_artist and track_title:
-                            track_info = f"{track_artist} - {track_title}"
-                        else:
-                            track_info = os.path.basename(track_url)
-                        
-                        logger.info(f"  Track #{idx}: {track_info}")
+                        # Log the change showing full paths
+                        logger.info(f"  Track #{idx} in {playlist_name}:")
                         logger.info(f"    Old: {track_url}")
                         logger.info(f"    New: {new_url}")
                 
