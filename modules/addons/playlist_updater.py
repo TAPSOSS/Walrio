@@ -69,28 +69,33 @@ class PlaylistUpdater:
                 if not line or (line.startswith('#') and not line.startswith('#EXTINF')):
                     continue
                 
-                # Parse EXTINF line for artist/title
+                # Parse EXTINF line for artist/title (for logging only)
                 if line.startswith('#EXTINF:'):
+                    # Store the entire EXTINF line to preserve it exactly
+                    current_info['extinf'] = line
+                    
+                    # Parse artist/title for logging purposes only
                     try:
                         parts = line[8:].split(',', 1)
                         if len(parts) > 1 and ' - ' in parts[1]:
                             artist, title = parts[1].split(' - ', 1)
-                            current_info = {
-                                'artist': artist.strip(),
-                                'title': title.strip()
-                            }
+                            current_info['artist'] = artist.strip()
+                            current_info['title'] = title.strip()
                     except (ValueError, IndexError):
-                        current_info = {}
+                        pass
                 else:
                     # This is a file path
                     file_path = line
                     
-                    # Store the original path format (relative or absolute)
-                    track = {
-                        'url': file_path,
-                        'artist': current_info.get('artist', 'Unknown'),
-                        'title': current_info.get('title', 'Unknown')
-                    }
+                    # Store path and EXTINF line (if any) for exact preservation
+                    track = {'url': file_path}
+                    if 'extinf' in current_info:
+                        track['extinf'] = current_info['extinf']
+                    # Include artist/title only for logging
+                    if 'artist' in current_info:
+                        track['artist'] = current_info['artist']
+                    if 'title' in current_info:
+                        track['title'] = current_info['title']
                     
                     tracks.append(track)
                     current_info = {}
@@ -103,11 +108,12 @@ class PlaylistUpdater:
     @staticmethod
     def _save_m3u_playlist(playlist_path: str, tracks: List[Dict[str, str]], playlist_name: str = None):
         """
-        Save tracks to an M3U playlist file with EXTINF metadata.
+        Save tracks to an M3U playlist file, preserving original format.
+        Only writes EXTINF tags if they were present in the original playlist.
         
         Args:
             playlist_path (str): Path to save the playlist
-            tracks (List[Dict[str, str]]): List of track dicts with 'url', 'artist', 'title'
+            tracks (List[Dict[str, str]]): List of track dicts with 'url' and optional 'extinf'
             playlist_name (str): Optional playlist name for header
         """
         try:
@@ -115,12 +121,13 @@ class PlaylistUpdater:
                 f.write('#EXTM3U\n')
                 
                 for track in tracks:
-                    artist = track.get('artist', 'Unknown')
-                    title = track.get('title', 'Unknown')
                     url = track.get('url', '')
+                    extinf = track.get('extinf', '')
                     
-                    # Write EXTINF line (duration -1 means unknown)
-                    f.write(f'#EXTINF:-1,{artist} - {title}\n')
+                    # Write EXTINF line if it was present in the original
+                    if extinf:
+                        f.write(f'{extinf}\n')
+                    
                     f.write(f'{url}\n')
                     
             logger.debug(f"Saved playlist: {playlist_path}")
@@ -232,9 +239,16 @@ class PlaylistUpdater:
                         changes_count += 1
                         
                         # Log the change with track info
-                        track_title = track.get('title', 'Unknown')
-                        track_artist = track.get('artist', 'Unknown')
-                        logger.info(f"  Track #{idx}: {track_artist} - {track_title}")
+                        track_artist = track.get('artist', '')
+                        track_title = track.get('title', '')
+                        
+                        # Format track info for display
+                        if track_artist and track_title:
+                            track_info = f"{track_artist} - {track_title}"
+                        else:
+                            track_info = os.path.basename(track_url)
+                        
+                        logger.info(f"  Track #{idx}: {track_info}")
                         logger.info(f"    Old: {track_url}")
                         logger.info(f"    New: {new_url}")
                 
