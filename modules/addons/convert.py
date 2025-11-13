@@ -776,8 +776,9 @@ def parse_arguments():
         help="Force overwrite of existing files: y=yes (force), n=no (prompt)"
     )
     parser.add_argument(
-        "--do", "--delete-original",
+        "--delete-original", "--do",
         action="store_true",
+        dest="delete_original",
         help="Delete original file after successful conversion (use with caution!)"
     )
     

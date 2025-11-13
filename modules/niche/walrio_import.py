@@ -277,8 +277,9 @@ Examples:
     )
     
     parser.add_argument(
-        '--do', '--delete-originals',
+        '--delete-originals', '--do',
         action='store_true',
+        dest='delete_originals',
         help='Delete original files after successful conversion (use with caution!)'
     )
 
