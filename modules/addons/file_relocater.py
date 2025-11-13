@@ -475,6 +475,48 @@ class FileRelocater:
         if self.playlists_to_update:
             logger.info(f"Loaded {len(self.playlists_to_update)} playlist(s) for updating")
     
+    def organize_directory(self, source_dir: str, destination_root: str) -> tuple[int, int]:
+        """
+        Organize all audio files in a directory.
+        
+        Args:
+            source_dir (str): Source directory containing audio files
+            destination_root (str): Root directory for organized files
+            
+        Returns:
+            tuple[int, int]: (number of files moved, total files processed)
+        """
+        total_files = 0
+        
+        # Collect all audio files
+        audio_files = []
+        
+        if self.options.get('recursive', False):
+            # Recursively scan subdirectories
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    filepath = os.path.join(root, file)
+                    file_ext = os.path.splitext(filepath)[1].lower()
+                    if file_ext in AUDIO_EXTENSIONS:
+                        audio_files.append(filepath)
+        else:
+            # Only scan the top-level directory
+            for file in os.listdir(source_dir):
+                filepath = os.path.join(source_dir, file)
+                if os.path.isfile(filepath):
+                    file_ext = os.path.splitext(filepath)[1].lower()
+                    if file_ext in AUDIO_EXTENSIONS:
+                        audio_files.append(filepath)
+        
+        total_files = len(audio_files)
+        logger.info(f"Found {total_files} audio files to process")
+        
+        # Process each file
+        for filepath in audio_files:
+            self.move_file(filepath, destination_root)
+        
+        return self.moved_count, total_files
+    
     def update_playlists(self) -> int:
         """
         Update all loaded playlists with new file paths.
