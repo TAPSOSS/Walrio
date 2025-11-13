@@ -111,15 +111,39 @@ class PlaylistUpdater:
                     logger.warning(f"Could not load playlist: {playlist_path}")
                     continue
                 
+                logger.info(f"  Playlist contains {len(playlist_data)} track(s)")
+                logger.info(f"  Checking against {len(path_mapping)} path mapping(s)")
+                
                 # Update paths in playlist
                 changes_made = False
                 changes_count = 0
                 
                 for idx, track in enumerate(playlist_data, 1):
-                    old_url = os.path.abspath(track.get('url', ''))
+                    track_url = track.get('url', '')
+                    
+                    # Convert relative paths to absolute based on playlist location
+                    if not os.path.isabs(track_url):
+                        playlist_dir = os.path.dirname(playlist_path)
+                        old_url = os.path.abspath(os.path.join(playlist_dir, track_url))
+                    else:
+                        old_url = os.path.abspath(track_url)
+                    
+                    # Debug: Show first few tracks being checked
+                    if idx <= 3:
+                        logger.debug(f"  Track #{idx} original: {track_url}")
+                        logger.debug(f"  Track #{idx} absolute: {old_url}")
+                        logger.debug(f"    Looking for match in path_mapping...")
                     
                     if old_url in path_mapping:
-                        new_url = path_mapping[old_url]
+                        new_url_absolute = path_mapping[old_url]
+                        
+                        # Convert back to relative path if original was relative
+                        if not os.path.isabs(track_url):
+                            playlist_dir = os.path.dirname(playlist_path)
+                            new_url = os.path.relpath(new_url_absolute, playlist_dir)
+                        else:
+                            new_url = new_url_absolute
+                        
                         track['url'] = new_url
                         changes_made = True
                         changes_count += 1
@@ -128,7 +152,7 @@ class PlaylistUpdater:
                         track_title = track.get('title', 'Unknown')
                         track_artist = track.get('artist', 'Unknown')
                         logger.info(f"  Track #{idx}: {track_artist} - {track_title}")
-                        logger.info(f"    Old: {old_url}")
+                        logger.info(f"    Old: {track_url}")
                         logger.info(f"    New: {new_url}")
                 
                 # Save playlist if changes were made
@@ -136,10 +160,11 @@ class PlaylistUpdater:
                     if self.dry_run:
                         logger.info(f"\n[DRY RUN] Would update {changes_count} track(s) in playlist: {playlist_name}")
                     else:
+                        # Preserve the path format (relative/absolute) from original playlist
                         playlist_module.create_m3u_playlist(
                             playlist_data,
                             playlist_path,
-                            use_absolute_paths=True,  # Use absolute paths for reliability
+                            use_absolute_paths=False,  # Keep paths as-is (already converted above)
                             playlist_name=os.path.splitext(playlist_name)[0]
                         )
                         logger.info(f"\n✓ Updated {changes_count} track(s) in playlist: {playlist_name}")
