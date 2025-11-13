@@ -25,7 +25,7 @@ from typing import List, Dict, Any, Optional, Union
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core import metadata
-from core import playlist as playlist_module
+from addons.playlist_updater import PlaylistUpdater
 
 # Configure logging format
 logging.basicConfig(
@@ -97,11 +97,13 @@ class FileRelocater:
         self.metadata_error_count = 0
         self.conflict_count = 0
         self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
-        self.playlists_to_update = []  # List of playlist paths to update
+        self.playlist_updater = None  # Will be initialized if playlists are specified
         
         # Load playlists if specified
         if self.options.get('update_playlists'):
-            self._load_playlists_to_update()
+            playlist_paths = self.options.get('update_playlists', [])
+            dry_run = self.options.get('dry_run', False)
+            self.playlist_updater = PlaylistUpdater(playlist_paths, dry_run)
         
         # Validate FFprobe availability
         self._check_ffprobe()
@@ -434,7 +436,7 @@ class FileRelocater:
                     logger.info(f"Moved: {source_filepath} -> {destination_filepath}")
                 
                 # Track path mapping for playlist updates
-                if self.playlists_to_update:
+                if self.playlist_updater:
                     old_path = os.path.abspath(source_filepath)
                     new_path = os.path.abspath(destination_filepath)
                     self.path_mapping[old_path] = new_path
@@ -446,34 +448,6 @@ class FileRelocater:
             logger.error(f"Failed to move {source_filepath}: {str(e)}")
             self.error_count += 1
             return False
-    
-    def _load_playlists_to_update(self):
-        """
-        Load playlist files to update from the specified paths.
-        Supports both individual files and directories.
-        """
-        playlist_paths = self.options.get('update_playlists', [])
-        
-        for path in playlist_paths:
-            if os.path.isfile(path):
-                # Individual playlist file
-                if path.lower().endswith('.m3u'):
-                    self.playlists_to_update.append(path)
-                    logger.debug(f"Added playlist to update: {path}")
-                else:
-                    logger.warning(f"Skipping non-M3U file: {path}")
-            elif os.path.isdir(path):
-                # Directory of playlists
-                for file in os.listdir(path):
-                    if file.lower().endswith('.m3u'):
-                        full_path = os.path.join(path, file)
-                        self.playlists_to_update.append(full_path)
-                        logger.debug(f"Added playlist to update: {full_path}")
-            else:
-                logger.warning(f"Playlist path does not exist: {path}")
-        
-        if self.playlists_to_update:
-            logger.info(f"Loaded {len(self.playlists_to_update)} playlist(s) for updating")
     
     def organize_directory(self, source_dir: str, destination_root: str) -> tuple[int, int]:
         """
@@ -519,64 +493,15 @@ class FileRelocater:
     
     def update_playlists(self) -> int:
         """
-        Update all loaded playlists with new file paths.
+        Update all loaded playlists with new file paths using the PlaylistUpdater.
         
         Returns:
             int: Number of playlists successfully updated
         """
-        if not self.playlists_to_update:
+        if not self.playlist_updater:
             return 0
         
-        if not self.path_mapping:
-            logger.info("No files were moved, skipping playlist updates")
-            return 0
-        
-        logger.info(f"Updating {len(self.playlists_to_update)} playlist(s) with new file paths...")
-        
-        updated_count = 0
-        
-        for playlist_path in self.playlists_to_update:
-            try:
-                # Load playlist
-                logger.debug(f"Loading playlist: {playlist_path}")
-                playlist_data = playlist_module.load_m3u_playlist(playlist_path)
-                
-                if not playlist_data:
-                    logger.warning(f"Could not load playlist: {playlist_path}")
-                    continue
-                
-                # Update paths in playlist
-                changes_made = False
-                for track in playlist_data:
-                    old_url = os.path.abspath(track.get('url', ''))
-                    
-                    if old_url in self.path_mapping:
-                        new_url = self.path_mapping[old_url]
-                        track['url'] = new_url
-                        changes_made = True
-                        logger.debug(f"Updated path in playlist: {old_url} -> {new_url}")
-                
-                # Save playlist if changes were made
-                if changes_made:
-                    if self.options.get('dry_run', False):
-                        logger.info(f"[DRY RUN] Would update playlist: {playlist_path}")
-                    else:
-                        playlist_module.create_m3u_playlist(
-                            playlist_data,
-                            playlist_path,
-                            use_absolute_paths=True,  # Use absolute paths for reliability
-                            playlist_name=os.path.splitext(os.path.basename(playlist_path))[0]
-                        )
-                        logger.info(f"Updated playlist: {playlist_path}")
-                    
-                    updated_count += 1
-                else:
-                    logger.debug(f"No changes needed for playlist: {playlist_path}")
-                    
-            except Exception as e:
-                logger.error(f"Error updating playlist {playlist_path}: {str(e)}")
-        
-        return updated_count
+        return self.playlist_updater.update_playlists(self.path_mapping)
 
 
 def parse_arguments():
@@ -980,10 +905,10 @@ def main():
         moved_count, total_files = organizer.organize_directory(args.source, args.destination)
         
         # Update playlists if specified
-        if organizer.playlists_to_update:
+        if organizer.playlist_updater:
             updated_playlists = organizer.update_playlists()
             if updated_playlists > 0:
-                logger.info(f"Updated {updated_playlists} playlist(s) with new file paths")
+                logger.info(f"\nPlaylist update completed: {updated_playlists} playlist(s) updated with new file paths")
         
         # Final summary
         operation_verb = "copied" if args.copy == 'y' else "moved"
