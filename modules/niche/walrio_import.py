@@ -76,7 +76,7 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
-def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None):
+def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
     """
     Run the complete import pipeline on the input path.
     
@@ -85,6 +85,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         recursive (bool): Whether to process recursively
         dry_run (bool): Whether to show commands without executing
         playlist_dir (str): Directory containing playlists to update after rename
+        delete_originals (bool): Delete original files after conversion
     
     Returns:
         bool: True if all steps succeeded, False otherwise
@@ -99,7 +100,8 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16']
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'],
+            'delete_original_support': True  # This stage supports delete-original flag
         },
         {
             'name': 'rename',
@@ -169,6 +171,10 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             cmd_parts.append(input_path)
             cmd_parts.extend(stage['args'])
             
+            # Add delete-original flag if applicable
+            if delete_originals and stage.get('delete_original_support', False):
+                cmd_parts.append('--delete-original')
+            
             # Add playlist update arguments if applicable
             if playlist_dir and stage.get('playlist_update', False):
                 cmd_parts.extend(['--update-playlists', playlist_dir])
@@ -188,6 +194,10 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         
         # Prepare stage arguments
         stage_args = stage['args'].copy()
+        
+        # Add delete-original flag if applicable
+        if delete_originals and stage.get('delete_original_support', False):
+            stage_args.append('--delete-original')
         
         # Add playlist update arguments if applicable
         if playlist_dir and stage.get('playlist_update', False):
@@ -235,6 +245,9 @@ Examples:
   # Process and update playlists after renaming
   python walrio_import.py /path/to/music --update-playlists /path/to/playlists
 
+  # Process and delete original files after conversion (use with caution!)
+  python walrio_import.py /path/to/music --recursive --delete-originals
+
   # Show what would be executed without running
   python walrio_import.py /path/to/music --dry-run
         """
@@ -262,6 +275,12 @@ Examples:
         metavar='PLAYLIST_DIR',
         help='Directory containing playlists to update after renaming files'
     )
+    
+    parser.add_argument(
+        '--do', '--delete-originals',
+        action='store_true',
+        help='Delete original files after successful conversion (use with caution!)'
+    )
 
     
     args = parser.parse_args()
@@ -287,7 +306,8 @@ Examples:
             str(input_path),
             recursive=args.recursive,
             dry_run=args.dry_run,
-            playlist_dir=args.update_playlists
+            playlist_dir=args.update_playlists,
+            delete_originals=args.delete_originals
         )
         
         if not success:
