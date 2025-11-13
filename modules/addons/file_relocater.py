@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional, Union
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core import metadata
+from core import playlist as playlist_module
 
 # Configure logging format
 logging.basicConfig(
@@ -95,6 +96,12 @@ class FileRelocater:
         self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
+        self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
+        self.playlists_to_update = []  # List of playlist paths to update
+        
+        # Load playlists if specified
+        if self.options.get('update_playlists'):
+            self._load_playlists_to_update()
         
         # Validate FFprobe availability
         self._check_ffprobe()
@@ -425,6 +432,12 @@ class FileRelocater:
                 else:
                     shutil.move(source_filepath, destination_filepath)
                     logger.info(f"Moved: {source_filepath} -> {destination_filepath}")
+                
+                # Track path mapping for playlist updates
+                if self.playlists_to_update:
+                    old_path = os.path.abspath(source_filepath)
+                    new_path = os.path.abspath(destination_filepath)
+                    self.path_mapping[old_path] = new_path
             
             self.moved_count += 1
             return True
@@ -434,64 +447,94 @@ class FileRelocater:
             self.error_count += 1
             return False
     
-    def organize_directory(self, source_directory: str, destination_root: str) -> tuple[int, int]:
+    def _load_playlists_to_update(self):
         """
-        Organize all audio files in a directory.
+        Load playlist files to update from the specified paths.
+        Supports both individual files and directories.
+        """
+        playlist_paths = self.options.get('update_playlists', [])
         
-        Args:
-            source_directory (str): Directory containing audio files to organize
-            destination_root (str): Root directory for organized files
-            
+        for path in playlist_paths:
+            if os.path.isfile(path):
+                # Individual playlist file
+                if path.lower().endswith('.m3u'):
+                    self.playlists_to_update.append(path)
+                    logger.debug(f"Added playlist to update: {path}")
+                else:
+                    logger.warning(f"Skipping non-M3U file: {path}")
+            elif os.path.isdir(path):
+                # Directory of playlists
+                for file in os.listdir(path):
+                    if file.lower().endswith('.m3u'):
+                        full_path = os.path.join(path, file)
+                        self.playlists_to_update.append(full_path)
+                        logger.debug(f"Added playlist to update: {full_path}")
+            else:
+                logger.warning(f"Playlist path does not exist: {path}")
+        
+        if self.playlists_to_update:
+            logger.info(f"Loaded {len(self.playlists_to_update)} playlist(s) for updating")
+    
+    def update_playlists(self) -> int:
+        """
+        Update all loaded playlists with new file paths.
+        
         Returns:
-            tuple: (number of successful moves, total number of files processed)
+            int: Number of playlists successfully updated
         """
-        if not os.path.isdir(source_directory):
-            logger.error(f"Source directory does not exist: {source_directory}")
-            return (0, 0)
+        if not self.playlists_to_update:
+            return 0
         
-        if not os.path.exists(destination_root):
+        if not self.path_mapping:
+            logger.info("No files were moved, skipping playlist updates")
+            return 0
+        
+        logger.info(f"Updating {len(self.playlists_to_update)} playlist(s) with new file paths...")
+        
+        updated_count = 0
+        
+        for playlist_path in self.playlists_to_update:
             try:
-                os.makedirs(destination_root, exist_ok=True)
-                logger.info(f"Created destination root directory: {destination_root}")
-            except OSError as e:
-                logger.error(f"Failed to create destination root directory {destination_root}: {str(e)}")
-                return (0, 0)
+                # Load playlist
+                logger.debug(f"Loading playlist: {playlist_path}")
+                playlist_data = playlist_module.load_m3u_playlist(playlist_path)
+                
+                if not playlist_data:
+                    logger.warning(f"Could not load playlist: {playlist_path}")
+                    continue
+                
+                # Update paths in playlist
+                changes_made = False
+                for track in playlist_data:
+                    old_url = os.path.abspath(track.get('url', ''))
+                    
+                    if old_url in self.path_mapping:
+                        new_url = self.path_mapping[old_url]
+                        track['url'] = new_url
+                        changes_made = True
+                        logger.debug(f"Updated path in playlist: {old_url} -> {new_url}")
+                
+                # Save playlist if changes were made
+                if changes_made:
+                    if self.options.get('dry_run', False):
+                        logger.info(f"[DRY RUN] Would update playlist: {playlist_path}")
+                    else:
+                        playlist_module.create_m3u_playlist(
+                            playlist_data,
+                            playlist_path,
+                            use_absolute_paths=True,  # Use absolute paths for reliability
+                            playlist_name=os.path.splitext(os.path.basename(playlist_path))[0]
+                        )
+                        logger.info(f"Updated playlist: {playlist_path}")
+                    
+                    updated_count += 1
+                else:
+                    logger.debug(f"No changes needed for playlist: {playlist_path}")
+                    
+            except Exception as e:
+                logger.error(f"Error updating playlist {playlist_path}: {str(e)}")
         
-        # Get list of audio files
-        files_to_process = []
-        
-        if self.options.get('recursive', False):
-            # Walk through directory tree recursively
-            for root, _, files in os.walk(source_directory):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    if os.path.splitext(file)[1].lower() in AUDIO_EXTENSIONS:
-                        files_to_process.append(file_path)
-        else:
-            # Non-recursive: just get files in the top directory
-            files_to_process = [
-                os.path.join(source_directory, file) 
-                for file in os.listdir(source_directory) 
-                if os.path.isfile(os.path.join(source_directory, file)) and
-                os.path.splitext(file)[1].lower() in AUDIO_EXTENSIONS
-            ]
-        
-        total_files = len(files_to_process)
-        initial_moved_count = self.moved_count
-        
-        logger.info(f"Found {total_files} audio files to organize")
-        
-        # Process each file
-        for i, file_path in enumerate(files_to_process, 1):
-            logger.debug(f"Processing file {i}/{total_files}: {os.path.basename(file_path)}")
-            self.move_file(file_path, destination_root)
-        
-        # Log summary of skipped files during processing
-        if self.skipped_count > 0:
-            logger.info(f"Processed {total_files} files: {self.moved_count - initial_moved_count} organized, {self.skipped_count} skipped (no metadata)")
-        
-        successful_moves = self.moved_count - initial_moved_count
-        return (successful_moves, total_files)
+        return updated_count
 
 
 def parse_arguments():
@@ -526,6 +569,13 @@ def parse_arguments():
 
   # Detailed organization with track info and custom character replacement
   python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
+
+  # Organize and update playlists
+  python organize.py /music /organized --update-playlists /playlists/my_playlist.m3u
+  python organize.py /music /organized --up /playlists/
+  
+  # Multiple playlist updates
+  python organize.py /music /organized --up playlist1.m3u --up playlist2.m3u --up /playlist_folder/
 
 Available pre-defined metadata fields:
   {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
@@ -651,6 +701,13 @@ Folder format tips:
         "--full-date",
         action="store_true",
         help="Use full date from metadata instead of just the year for {year} field"
+    )
+    parser.add_argument(
+        "--update-playlists", "--up",
+        action="append",
+        dest="update_playlists",
+        metavar="PATH",
+        help="Update playlist(s) with new file paths. Can be a .m3u file or directory containing playlists. Use multiple times for multiple paths."
     )
     
     # Utility options
@@ -848,6 +905,7 @@ def main():
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
         'full_date': args.full_date,
+        'update_playlists': args.update_playlists or [],
     }
     
     # Add custom sanitization character set if provided
@@ -878,6 +936,12 @@ def main():
         logger.info(f"Destination root: {args.destination}")
         
         moved_count, total_files = organizer.organize_directory(args.source, args.destination)
+        
+        # Update playlists if specified
+        if organizer.playlists_to_update:
+            updated_playlists = organizer.update_playlists()
+            if updated_playlists > 0:
+                logger.info(f"Updated {updated_playlists} playlist(s) with new file paths")
         
         # Final summary
         operation_verb = "copied" if args.copy == 'y' else "moved"
