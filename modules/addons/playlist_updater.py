@@ -44,6 +44,89 @@ class PlaylistUpdater:
         # Load playlists from provided paths
         self._load_playlists(playlist_paths)
     
+    @staticmethod
+    def _load_m3u_paths_only(playlist_path: str) -> List[Dict[str, str]]:
+        """
+        Load only the file paths from an M3U playlist without extracting metadata.
+        This is much faster than loading full metadata for all tracks.
+        
+        Args:
+            playlist_path (str): Path to the M3U playlist file
+            
+        Returns:
+            List[Dict[str, str]]: List of dicts with 'url', 'artist', 'title' from M3U tags
+        """
+        tracks = []
+        try:
+            with open(playlist_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            current_info = {}
+            for line in lines:
+                line = line.strip()
+                
+                # Skip empty lines and comments (except EXTINF)
+                if not line or (line.startswith('#') and not line.startswith('#EXTINF')):
+                    continue
+                
+                # Parse EXTINF line for artist/title
+                if line.startswith('#EXTINF:'):
+                    try:
+                        parts = line[8:].split(',', 1)
+                        if len(parts) > 1 and ' - ' in parts[1]:
+                            artist, title = parts[1].split(' - ', 1)
+                            current_info = {
+                                'artist': artist.strip(),
+                                'title': title.strip()
+                            }
+                    except (ValueError, IndexError):
+                        current_info = {}
+                else:
+                    # This is a file path
+                    file_path = line
+                    
+                    # Store the original path format (relative or absolute)
+                    track = {
+                        'url': file_path,
+                        'artist': current_info.get('artist', 'Unknown'),
+                        'title': current_info.get('title', 'Unknown')
+                    }
+                    
+                    tracks.append(track)
+                    current_info = {}
+            
+            return tracks
+        except Exception as e:
+            logger.error(f"Error loading playlist {playlist_path}: {str(e)}")
+            return []
+    
+    @staticmethod
+    def _save_m3u_playlist(playlist_path: str, tracks: List[Dict[str, str]], playlist_name: str = None):
+        """
+        Save tracks to an M3U playlist file with EXTINF metadata.
+        
+        Args:
+            playlist_path (str): Path to save the playlist
+            tracks (List[Dict[str, str]]): List of track dicts with 'url', 'artist', 'title'
+            playlist_name (str): Optional playlist name for header
+        """
+        try:
+            with open(playlist_path, 'w', encoding='utf-8') as f:
+                f.write('#EXTM3U\n')
+                
+                for track in tracks:
+                    artist = track.get('artist', 'Unknown')
+                    title = track.get('title', 'Unknown')
+                    url = track.get('url', '')
+                    
+                    # Write EXTINF line (duration -1 means unknown)
+                    f.write(f'#EXTINF:-1,{artist} - {title}\n')
+                    f.write(f'{url}\n')
+                    
+            logger.debug(f"Saved playlist: {playlist_path}")
+        except Exception as e:
+            logger.error(f"Error saving playlist {playlist_path}: {str(e)}")
+    
     def _load_playlists(self, playlist_paths: List[str]):
         """
         Load playlist files from the specified paths.
@@ -103,9 +186,9 @@ class PlaylistUpdater:
                 logger.info(f"\nProcessing playlist: {playlist_name}")
                 logger.info("-" * 80)
                 
-                # Load playlist
+                # Load playlist (paths only, no metadata extraction for speed)
                 logger.debug(f"Loading playlist: {playlist_path}")
-                playlist_data = playlist_module.load_m3u_playlist(playlist_path)
+                playlist_data = self._load_m3u_paths_only(playlist_path)
                 
                 if not playlist_data:
                     logger.warning(f"Could not load playlist: {playlist_path}")
@@ -160,11 +243,10 @@ class PlaylistUpdater:
                     if self.dry_run:
                         logger.info(f"\n[DRY RUN] Would update {changes_count} track(s) in playlist: {playlist_name}")
                     else:
-                        # Preserve the path format (relative/absolute) from original playlist
-                        playlist_module.create_m3u_playlist(
-                            playlist_data,
+                        # Save using our simple M3U writer (preserves path format)
+                        self._save_m3u_playlist(
                             playlist_path,
-                            use_absolute_paths=False,  # Keep paths as-is (already converted above)
+                            playlist_data,
                             playlist_name=os.path.splitext(playlist_name)[0]
                         )
                         logger.info(f"\n✓ Updated {changes_count} track(s) in playlist: {playlist_name}")
