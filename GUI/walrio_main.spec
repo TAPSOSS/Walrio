@@ -110,3 +110,20 @@ coll = COLLECT(
     upx_exclude=[],
     name='WalrioMain'
 )
+
+# macOS .app bundle
+app = BUNDLE(
+    coll,
+    name='WalrioMain.app',
+    icon=None,
+    bundle_identifier='com.tapsoss.walrio.main',
+    info_plist={
+        'CFBundleName': 'Walrio Main',
+        'CFBundleDisplayName': 'Walrio Main',
+        'CFBundleVersion': '1.0.0',
+        'CFBundleShortVersionString': '1.0.0',
+        'NSHighResolutionCapable': 'True',
+        'LSMinimumSystemVersion': '10.13.0',
+        'NSPrincipalClass': 'NSApplication',
+    },
+) if sys.platform == 'darwin' else None

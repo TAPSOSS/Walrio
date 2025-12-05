@@ -239,16 +239,33 @@ jobs:
         run: |
           python -m PyInstaller GUI/walrio_lite.spec
 
-      - name: Create ZIP archive
+      - name: Create DMG
+        run: |
+          # Install create-dmg
+          brew install create-dmg
+          
+          # Create DMG
+          create-dmg \
+            --volname "Walrio Lite" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 425 120 \
+            "walrio_lite-macos.dmg" \
+            "dist/WalrioLite.app"
+
+      - name: Create portable ZIP
         run: |
           cd dist
-          zip -r walrio_lite-macos.zip WalrioLite
+          zip -r walrio_lite-macos-portable.zip WalrioLite.app
 
       - name: Upload to release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'release'
         with:
-          files: dist/walrio_lite-macos.zip
+          files: |
+            walrio_lite-macos.dmg
+            dist/walrio_lite-macos-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -283,16 +300,33 @@ jobs:
         run: |
           python -m PyInstaller GUI/walrio_main.spec
 
-      - name: Create ZIP archive
+      - name: Create DMG
+        run: |
+          # Install create-dmg
+          brew install create-dmg
+          
+          # Create DMG
+          create-dmg \
+            --volname "Walrio Main" \
+            --window-pos 200 120 \
+            --window-size 600 400 \
+            --icon-size 100 \
+            --app-drop-link 425 120 \
+            "walrio_main-macos.dmg" \
+            "dist/WalrioMain.app"
+
+      - name: Create portable ZIP
         run: |
           cd dist
-          zip -r walrio_main-macos.zip WalrioMain
+          zip -r walrio_main-macos-portable.zip WalrioMain.app
 
       - name: Upload to release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'release'
         with:
-          files: dist/walrio_main-macos.zip
+          files: |
+            walrio_main-macos.dmg
+            dist/walrio_main-macos-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -334,16 +368,56 @@ jobs:
         run: |
           venv/bin/python -m PyInstaller GUI/walrio_lite.spec
 
-      - name: Create ZIP archive
-        shell: pwsh
+      - name: Create portable ZIP
         run: |
-          Compress-Archive -Path dist/WalrioLite -DestinationPath walrio_lite-windows.zip
+          Compress-Archive -Path dist/WalrioLite -DestinationPath walrio_lite-windows-portable.zip
+
+      - name: Create NSIS installer
+        run: |
+          # Create NSIS script
+          $nsisScript = @'
+          !include "MUI2.nsh"
+          
+          Name "Walrio Lite"
+          OutFile "walrio_lite-windows-setup.exe"
+          InstallDir "$PROGRAMFILES64\Walrio Lite"
+          RequestExecutionLevel admin
+          
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+          
+          Section "Install"
+            SetOutPath "$INSTDIR"
+            File /r "dist\WalrioLite\*.*"
+            CreateShortcut "$DESKTOP\Walrio Lite.lnk" "$INSTDIR\WalrioLite.exe"
+            CreateDirectory "$SMPROGRAMS\Walrio"
+            CreateShortcut "$SMPROGRAMS\Walrio\Walrio Lite.lnk" "$INSTDIR\WalrioLite.exe"
+            WriteUninstaller "$INSTDIR\Uninstall.exe"
+          SectionEnd
+          
+          Section "Uninstall"
+            Delete "$DESKTOP\Walrio Lite.lnk"
+            Delete "$SMPROGRAMS\Walrio\Walrio Lite.lnk"
+            RMDir "$SMPROGRAMS\Walrio"
+            RMDir /r "$INSTDIR"
+          SectionEnd
+          '@
+          
+          $nsisScript | Out-File -FilePath installer.nsi -Encoding ASCII
+          
+          # Install NSIS and build installer
+          choco install nsis -y
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 
       - name: Upload to release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'release'
         with:
-          files: walrio_lite-windows.zip
+          files: |
+            walrio_lite-windows-setup.exe
+            walrio_lite-windows-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -385,15 +459,55 @@ jobs:
         run: |
           venv/bin/python -m PyInstaller GUI/walrio_main.spec
 
-      - name: Create ZIP archive
-        shell: pwsh
+      - name: Create portable ZIP
         run: |
-          Compress-Archive -Path dist/WalrioMain -DestinationPath walrio_main-windows.zip
+          Compress-Archive -Path dist/WalrioMain -DestinationPath walrio_main-windows-portable.zip
+
+      - name: Create NSIS installer
+        run: |
+          # Create NSIS script
+          $nsisScript = @'
+          !include "MUI2.nsh"
+          
+          Name "Walrio Main"
+          OutFile "walrio_main-windows-setup.exe"
+          InstallDir "$PROGRAMFILES64\Walrio Main"
+          RequestExecutionLevel admin
+          
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+          
+          Section "Install"
+            SetOutPath "$INSTDIR"
+            File /r "dist\WalrioMain\*.*"
+            CreateShortcut "$DESKTOP\Walrio Main.lnk" "$INSTDIR\WalrioMain.exe"
+            CreateDirectory "$SMPROGRAMS\Walrio"
+            CreateShortcut "$SMPROGRAMS\Walrio\Walrio Main.lnk" "$INSTDIR\WalrioMain.exe"
+            WriteUninstaller "$INSTDIR\Uninstall.exe"
+          SectionEnd
+          
+          Section "Uninstall"
+            Delete "$DESKTOP\Walrio Main.lnk"
+            Delete "$SMPROGRAMS\Walrio\Walrio Main.lnk"
+            RMDir "$SMPROGRAMS\Walrio"
+            RMDir /r "$INSTDIR"
+          SectionEnd
+          '@
+          
+          $nsisScript | Out-File -FilePath installer.nsi -Encoding ASCII
+          
+          # Install NSIS and build installer
+          choco install nsis -y
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 
       - name: Upload to release
         uses: softprops/action-gh-release@v1
         if: github.event_name == 'release'
         with:
-          files: walrio_main-windows.zip
+          files: |
+            walrio_main-windows-setup.exe
+            walrio_main-windows-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
