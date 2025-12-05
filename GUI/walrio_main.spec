@@ -1,18 +1,35 @@
 # -*- mode: python ; coding: utf-8 -*-
+import sys
+import os
+import site
 
 block_cipher = None
+
+# Find gi module location dynamically
+gi_path = None
+for path in site.getsitepackages() + [site.getusersitepackages()]:
+    potential_gi = os.path.join(path, 'gi')
+    if os.path.exists(potential_gi):
+        gi_path = potential_gi
+        break
+
+# Build datas list
+datas_list = [('../modules', 'modules'), ('../icons', 'icons')]
+if gi_path:
+    # Add gi Python source files
+    datas_list.append((os.path.join(gi_path, '*.py'), 'gi'))
+    gi_repo = os.path.join(gi_path, 'repository')
+    if os.path.exists(gi_repo):
+        datas_list.append((os.path.join(gi_repo, '*.py'), 'gi/repository'))
+    gi_overrides = os.path.join(gi_path, 'overrides')
+    if os.path.exists(gi_overrides):
+        datas_list.append((os.path.join(gi_overrides, '*.py'), 'gi/overrides'))
 
 a = Analysis(
     ['walrio_main.py'],
     pathex=['..'],
     binaries=[],
-    datas=[
-        ('../modules', 'modules'),
-        ('../icons', 'icons'),
-        ('/usr/lib64/python3.13/site-packages/gi/*.py', 'gi'),
-        ('/usr/lib64/python3.13/site-packages/gi/repository/*.py', 'gi/repository'),
-        ('/usr/lib64/python3.13/site-packages/gi/overrides/*.py', 'gi/overrides')
-    ],
+    datas=datas_list,
     hiddenimports=[
         'gi',
         'gi._gi',
