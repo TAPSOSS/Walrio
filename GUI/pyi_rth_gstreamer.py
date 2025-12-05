@@ -24,11 +24,19 @@ if hasattr(sys, '_MEIPASS'):
     gst_plugin_path = os.path.join(bundle_dir, 'gst_plugins')
     if os.path.exists(gst_plugin_path):
         os.environ['GST_PLUGIN_PATH'] = gst_plugin_path
-        # Disable system plugin scanner to prevent conflicts
-        os.environ['GST_PLUGIN_SCANNER'] = ''
         print(f"[Walrio] GStreamer plugin path: {gst_plugin_path}")
         if '--debug-gst' in sys.argv:
             print(f"GStreamer: Debug - Plugin path set to {gst_plugin_path}")
+    
+    # Set plugin scanner to bundled version
+    gst_scanner_path = os.path.join(bundle_dir, 'gst_helpers', 'gst-plugin-scanner')
+    if os.path.exists(gst_scanner_path):
+        os.environ['GST_PLUGIN_SCANNER'] = gst_scanner_path
+        print(f"[Walrio] GStreamer plugin scanner: {gst_scanner_path}")
+    else:
+        # Disable system plugin scanner if we don't have our own
+        os.environ['GST_PLUGIN_SCANNER'] = ''
+        print("[Walrio] GStreamer plugin scanner: disabled (not found)")
     
     # Set typelib path for GObject introspection
     gi_typelib_path = os.path.join(bundle_dir, 'gi_typelibs')

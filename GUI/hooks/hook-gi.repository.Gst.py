@@ -60,6 +60,17 @@ if sys.platform.startswith('linux'):
                 binaries.append((plugin, 'gst_plugins'))
             break
     
+    # Collect gst-plugin-scanner helper binary
+    scanner_paths = [
+        '/usr/libexec/gstreamer-1.0/gst-plugin-scanner',
+        '/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
+        '/usr/lib/gstreamer-1.0/gst-plugin-scanner'
+    ]
+    for scanner_path in scanner_paths:
+        if os.path.exists(scanner_path):
+            binaries.append((scanner_path, 'gst_helpers'))
+            break
+    
     lib_paths = ['/usr/lib64', '/usr/lib/x86_64-linux-gnu', '/usr/lib'] if is_64bit else ['/usr/lib', '/usr/lib/x86_64-linux-gnu', '/usr/lib64']
     gst_libs = [
         'libgstreamer-1.0.so.*', 'libgstbase-1.0.so.*', 'libgstaudio-1.0.so.*',
