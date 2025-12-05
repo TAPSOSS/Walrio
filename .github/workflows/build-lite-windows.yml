@@ -41,6 +41,9 @@ jobs:
         run: |
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
+          # Install PyGObject into venv so PyInstaller can analyze gi imports
+          venv/bin/pip install --no-build-isolation pycairo
+          venv/bin/pip install --no-build-isolation PyGObject
 
       - name: Debug GStreamer paths
         shell: msys2 {0}
@@ -65,40 +68,39 @@ jobs:
       - name: Build walrio_lite
         shell: msys2 {0}
         run: |
-          cd GUI
-          ../venv/bin/python -m PyInstaller walrio_lite.spec
+          venv/bin/python -m PyInstaller GUI/walrio_lite.spec
       
       - name: Check what was bundled
         shell: msys2 {0}
         run: |
           echo "=== Checking dist/WalrioLite contents ==="
-          ls -lh GUI/dist/WalrioLite/ | head -30
+          ls -lh dist/WalrioLite/ | head -30
           echo ""
           echo "=== Checking for GStreamer plugins ==="
-          if [ -d "GUI/dist/WalrioLite/gst_plugins" ]; then
+          if [ -d "dist/WalrioLite/gst_plugins" ]; then
             echo "gst_plugins directory exists"
-            ls GUI/dist/WalrioLite/gst_plugins/ | wc -l
+            ls dist/WalrioLite/gst_plugins/ | wc -l
             echo "plugins found"
           else
             echo "ERROR: gst_plugins directory NOT found!"
           fi
           echo ""
           echo "=== Checking for typelibs ==="
-          if [ -d "GUI/dist/WalrioLite/gi_typelibs" ]; then
+          if [ -d "dist/WalrioLite/gi_typelibs" ]; then
             echo "gi_typelibs directory exists"
-            ls GUI/dist/WalrioLite/gi_typelibs/
+            ls dist/WalrioLite/gi_typelibs/
           else
             echo "ERROR: gi_typelibs directory NOT found!"
           fi
           echo ""
           echo "=== Total dist size ==="
-          du -sh GUI/dist/WalrioLite/
+          du -sh dist/WalrioLite/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: walrio_lite-windows
           path: |
-            GUI/dist/
-            !GUI/dist/**/*.spec
+            dist/
+            !dist/**/*.spec
           retention-days: 30

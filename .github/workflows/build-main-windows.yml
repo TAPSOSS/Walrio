@@ -41,6 +41,9 @@ jobs:
         run: |
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
+          # Install PyGObject into venv so PyInstaller can analyze gi imports
+          venv/bin/pip install --no-build-isolation pycairo
+          venv/bin/pip install --no-build-isolation PyGObject
 
       - name: Debug GStreamer paths
         shell: msys2 {0}
@@ -65,45 +68,39 @@ jobs:
       - name: Build walrio_main
         shell: msys2 {0}
         run: |
-          echo "=== Verifying hook exists ==="
-          ls -la GUI/hooks/hook-gi.repository.Gst.py
-          cat GUI/hooks/hook-gi.repository.Gst.py | head -20
-          echo ""
-          echo "=== Building with PyInstaller ==="
-          cd GUI
-          ../venv/bin/python -m PyInstaller walrio_main.spec
+          venv/bin/python -m PyInstaller GUI/walrio_main.spec
       
       - name: Check what was bundled
         shell: msys2 {0}
         run: |
           echo "=== Checking dist/WalrioMain contents ==="
-          ls -lh GUI/dist/WalrioMain/ | head -30
+          ls -lh dist/WalrioMain/ | head -30
           echo ""
           echo "=== Checking for GStreamer plugins ==="
-          if [ -d "GUI/dist/WalrioMain/gst_plugins" ]; then
+          if [ -d "dist/WalrioMain/gst_plugins" ]; then
             echo "gst_plugins directory exists"
-            ls GUI/dist/WalrioMain/gst_plugins/ | wc -l
+            ls dist/WalrioMain/gst_plugins/ | wc -l
             echo "plugins found"
           else
             echo "ERROR: gst_plugins directory NOT found!"
           fi
           echo ""
           echo "=== Checking for typelibs ==="
-          if [ -d "GUI/dist/WalrioMain/gi_typelibs" ]; then
+          if [ -d "dist/WalrioMain/gi_typelibs" ]; then
             echo "gi_typelibs directory exists"
-            ls GUI/dist/WalrioMain/gi_typelibs/
+            ls dist/WalrioMain/gi_typelibs/
           else
             echo "ERROR: gi_typelibs directory NOT found!"
           fi
           echo ""
           echo "=== Total dist size ==="
-          du -sh GUI/dist/WalrioMain/
+          du -sh dist/WalrioMain/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: walrio_main-windows
           path: |
-            GUI/dist/
-            !GUI/dist/**/*.spec
+            dist/
+            !dist/**/*.spec
           retention-days: 30
