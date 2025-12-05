@@ -53,6 +53,9 @@ jobs:
         run: |
           wget -O appimagetool "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool
+          # Extract appimagetool
+          ./appimagetool --appimage-extract
+          mv squashfs-root appimagetool-extracted
 
       - name: Create AppImage for ${{ matrix.gui }}
         run: |
@@ -98,8 +101,8 @@ jobs:
           EOF
           chmod +x AppDir/AppRun
           
-          # Build AppImage
-          ./appimagetool AppDir ${{ matrix.gui }}-x86_64.AppImage
+          # Build AppImage (use extracted version since GitHub Actions doesn't support FUSE)
+          ARCH=x86_64 ./appimagetool-extracted/AppRun AppDir ${{ matrix.gui }}-x86_64.AppImage
 
       - name: Upload AppImage artifacts
         uses: actions/upload-artifact@v4
