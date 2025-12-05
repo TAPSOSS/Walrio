@@ -1,0 +1,55 @@
+name: Build Walrio GUIs (Windows)
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        gui: [walrio_main, walrio_lite]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install MSYS2 and GStreamer
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gstreamer
+            mingw-w64-x86_64-python-gobject
+            mingw-w64-x86_64-python-pip
+            mingw-w64-x86_64-pyside6
+            mingw-w64-x86_64-python-pillow
+
+      - name: Create Python virtual environment
+        shell: msys2 {0}
+        run: |
+          python -m venv venv
+
+      - name: Install Python dependencies
+        shell: msys2 {0}
+        run: |
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/pip install mutagen pyinstaller
+
+      - name: Build ${{ matrix.gui }}
+        shell: msys2 {0}
+        run: |
+          venv/bin/python -m PyInstaller GUI/${{ matrix.gui }}.spec
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.gui }}-windows
+          path: |
+            dist/
+            !dist/**/*.spec
+          retention-days: 30

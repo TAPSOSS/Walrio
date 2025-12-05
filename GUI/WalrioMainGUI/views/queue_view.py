@@ -55,8 +55,8 @@ class QueueView(BaseView):
         self.queue_table.setAlternatingRowColors(True)
         
         # Set up columns: Title, Album, Album Artist, Artist, Year
-        self.queue_table.setColumnCount(5)
-        self.queue_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year'])
+        self.queue_table.setColumnCount(7)
+        self.queue_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Length', 'Filepath'])
         
         # Enable resizable columns
         header = self.queue_table.horizontalHeader()
@@ -65,6 +65,10 @@ class QueueView(BaseView):
         header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
         header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
         header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
+        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Length - fixed width
+        header.setSectionResizeMode(6, QHeaderView.Interactive)  # Filepath - manual resize
+        self.queue_table.setColumnWidth(4, 60)
+        self.queue_table.setColumnWidth(5, 80)
         
         # Enable right-click context menu on header for column visibility
         header.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -141,7 +145,7 @@ class QueueView(BaseView):
     def _show_column_context_menu(self, position):
         """Show context menu for column visibility."""
         header = self.queue_table.horizontalHeader()
-        column_names = ["Title", "Album", "Album Artist", "Artist", "Year"]
+        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Length", "Filepath"]
         
         menu = QMenu(self)
         
@@ -193,6 +197,8 @@ class QueueView(BaseView):
             songs (list): List of song dictionaries
             current_index (int): Index of currently playing song (-1 for none)
         """
+        # Store songs data for access during highlighting
+        self.songs_data = songs
         # Block signals for better performance during bulk updates
         self.queue_table.blockSignals(True)
         self.queue_table.setUpdatesEnabled(False)
@@ -204,13 +210,29 @@ class QueueView(BaseView):
             
             # Batch update items to reduce redraws  
             for i, song in enumerate(songs):
+                # Format duration from seconds to MM:SS
+                duration_seconds = song.get('length', 0)
+                if duration_seconds and duration_seconds > 0:
+                    minutes = int(duration_seconds // 60)
+                    seconds = int(duration_seconds % 60)
+                    duration_text = f"{minutes}:{seconds:02d}"
+                else:
+                    duration_text = ""
+                
+                # Get filepath - use url or filepath field
+                filepath = song.get('url', song.get('filepath', ''))
+                
                 texts = [
                     song.get('title', 'Unknown Title'),
                     song.get('album', 'Unknown Album'),
                     song.get('albumartist', song.get('artist', 'Unknown Artist')),
                     song.get('artist', 'Unknown Artist'), 
-                    str(song.get('year', ''))
+                    str(song.get('year', '')),
+                    duration_text,
+                    filepath
                 ]
+                
+                is_missing = song.get('file_missing', False)
                 
                 # Update all columns for this row
                 for col, text in enumerate(texts):
@@ -221,6 +243,20 @@ class QueueView(BaseView):
                         self.queue_table.setItem(i, col, item)
                     elif item.text() != text:
                         item.setText(text)
+                    
+                    # Apply visual styling for missing files
+                    if is_missing:
+                        item.setForeground(QColor(128, 128, 128))  # Gray text
+                        item.setBackground(QColor(255, 200, 200, 128))  # Light red background at 50% opacity
+                        font = item.font()
+                        font.setItalic(True)
+                        item.setFont(font)
+                    else:
+                        item.setForeground(QColor(0, 0, 0))  # Normal black text
+                        item.setData(Qt.BackgroundRole, None)  # Clear background
+                        font = item.font()
+                        font.setItalic(False)
+                        item.setFont(font)
             
             # Update highlighting
             self._update_highlighting(current_index)
@@ -235,6 +271,12 @@ class QueueView(BaseView):
         """Update highlighting of the currently playing song."""
         for row in range(self.queue_table.rowCount()):
             is_current = (row == current_index)
+            is_missing = False
+            
+            # Check if this song is missing (if we have the data)
+            if hasattr(self, 'songs_data') and row < len(self.songs_data):
+                is_missing = self.songs_data[row].get('file_missing', False)
+                
             for col in range(5):
                 item = self.queue_table.item(row, col)
                 if item:
@@ -248,6 +290,21 @@ class QueueView(BaseView):
                         item.setData(Qt.BackgroundRole, None)
                         font = item.font()
                         font.setBold(False)
+                        item.setFont(font)
+                    
+                    # Preserve missing file styling regardless of current status
+                    if is_missing:
+                        item.setForeground(QColor(128, 128, 128))  # Gray text
+                        if not is_current:  # Don't override current song background
+                            item.setBackground(QColor(255, 200, 200, 128))  # Light red background at 50% opacity
+                        font = item.font()
+                        font.setItalic(True)
+                        item.setFont(font)
+                    elif not is_current:  # Only reset if not current (current styling takes precedence)
+                        item.setForeground(QColor(0, 0, 0))  # Normal black text
+                        item.setData(Qt.BackgroundRole, None)  # Clear background
+                        font = item.font()
+                        font.setItalic(False)
                         item.setFont(font)
     
     def set_add_button_text(self, text):

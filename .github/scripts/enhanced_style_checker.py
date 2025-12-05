@@ -5,7 +5,7 @@ Copyright (c) 2025 TAPS OSS
 Project: https://github.com/TAPSOSS/Walrio
 Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-Provides detailed feedback on BSD header and docstring requirements
+Provides detailed feedback on BSD header and docstring requirements.
 """
 
 import ast

@@ -76,7 +76,7 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
         print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
-def process_import_pipeline(input_path, recursive=False, dry_run=False):
+def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
     """
     Run the complete import pipeline on the input path.
     
@@ -84,6 +84,8 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         input_path (str): Path to input file or directory
         recursive (bool): Whether to process recursively
         dry_run (bool): Whether to show commands without executing
+        playlist_dir (str): Directory containing playlists to update after rename
+        delete_originals (bool): Delete original files after conversion
     
     Returns:
         bool: True if all steps succeeded, False otherwise
@@ -98,7 +100,8 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16']
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'],
+            'delete_original_support': True  # This stage supports delete-original flag
         },
         {
             'name': 'rename',
@@ -137,7 +140,8 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
                 '--rc', 'Ó', 'O', '--rc', 'Ò', 'O', '--rc', 'Ö', 'O', '--rc', 'Ô', 'O', '--rc', 'Õ', 'O',
                 '--rc', 'Ú', 'U', '--rc', 'Ù', 'U', '--rc', 'Ü', 'U', '--rc', 'Û', 'U',
                 '--rc', 'Ñ', 'N', '--rc', 'Ç', 'C',
-            ]
+            ],
+            'playlist_update': True  # This stage supports playlist updating
         },
         {
             'name': 'replaygain',
@@ -166,6 +170,15 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
                 cmd_parts.append("--recursive")
             cmd_parts.append(input_path)
             cmd_parts.extend(stage['args'])
+            
+            # Add delete-original flag if applicable
+            if delete_originals and stage.get('delete_original_support', False):
+                cmd_parts.append('--delete-original')
+            
+            # Add playlist update arguments if applicable
+            if playlist_dir and stage.get('playlist_update', False):
+                cmd_parts.extend(['--update-playlists', playlist_dir])
+            
             print(f"{stage['description']}:")
             print(f"  {' '.join(cmd_parts)}")
             print()
@@ -179,10 +192,21 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False):
         print(f"\nStage {i}/{total_stages}: {stage['description']}")
         print("-" * 40)
         
+        # Prepare stage arguments
+        stage_args = stage['args'].copy()
+        
+        # Add delete-original flag if applicable
+        if delete_originals and stage.get('delete_original_support', False):
+            stage_args.append('--delete-original')
+        
+        # Add playlist update arguments if applicable
+        if playlist_dir and stage.get('playlist_update', False):
+            stage_args.extend(['--update-playlists', playlist_dir])
+        
         success = run_walrio_command(
             stage['name'],
             input_path,
-            stage['args'],
+            stage_args,
             recursive
         )
         
@@ -218,6 +242,12 @@ Examples:
   # Process recursively through subdirectories
   python walrio_import.py /path/to/music --recursive
 
+  # Process and update playlists after renaming
+  python walrio_import.py /path/to/music --update-playlists /path/to/playlists
+
+  # Process and delete original files after conversion (use with caution!)
+  python walrio_import.py /path/to/music --recursive --delete-originals
+
   # Show what would be executed without running
   python walrio_import.py /path/to/music --dry-run
         """
@@ -240,6 +270,18 @@ Examples:
         help='Show commands that would be executed without actually running them'
     )
     
+    parser.add_argument(
+        '--update-playlists',
+        metavar='PLAYLIST_DIR',
+        help='Directory containing playlists to update after renaming files'
+    )
+    
+    parser.add_argument(
+        '--delete-originals', '--do',
+        action='store_true',
+        dest='delete_originals',
+        help='Delete original files after successful conversion (use with caution!)'
+    )
 
     
     args = parser.parse_args()
@@ -250,11 +292,23 @@ Examples:
         print(f"Error: Input path does not exist: {args.input}")
         sys.exit(1)
     
+    # Validate playlist directory if provided
+    if args.update_playlists:
+        playlist_dir = Path(args.update_playlists)
+        if not playlist_dir.exists():
+            print(f"Error: Playlist directory does not exist: {args.update_playlists}")
+            sys.exit(1)
+        if not playlist_dir.is_dir():
+            print(f"Error: Playlist path is not a directory: {args.update_playlists}")
+            sys.exit(1)
+    
     try:
         success = process_import_pipeline(
             str(input_path),
             recursive=args.recursive,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            playlist_dir=args.update_playlists,
+            delete_originals=args.delete_originals
         )
         
         if not success:

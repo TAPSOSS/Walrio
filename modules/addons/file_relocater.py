@@ -8,7 +8,7 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 A tool to move audio files into folder structures based on metadata.
 Moves files from a source library into organized subfolders under a specified root directory.
 
-Default folder structure: /(album)/(year)/(albumartist)/ with sanitized folder names but can be changed by user.
+Default folder structure: /(album)_(albumartist)_(year) with sanitized folder names but can be changed by user.
 """
 
 import os
@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional, Union
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from core import metadata
+from addons.playlist_updater import PlaylistUpdater
 
 # Configure logging format
 logging.basicConfig(
@@ -41,10 +42,26 @@ ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
 # Default folder structure format
-DEFAULT_FOLDER_FORMAT = "{album}/{year}/{albumartist}"
+DEFAULT_FOLDER_FORMAT = "{album}_{albumartist}_{year}"
 
 # Standard character replacements (applied before other sanitization when --standard is used)
-STANDARD_CHAR_REPLACEMENTS = {'/': '-', '\\': '-', ':': '-', '|': '-'}
+STANDARD_CHAR_REPLACEMENTS = {
+    '/': '-', '\\': '-', ':': '-', '|': '-',
+    # Common accented characters to base forms
+    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a', 'ã': 'a',
+    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
+    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
+    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o', 'õ': 'o',
+    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
+    'ñ': 'n', 'ç': 'c',
+    # Uppercase versions
+    'Á': 'A', 'À': 'A', 'Ä': 'A', 'Â': 'A', 'Ã': 'A',
+    'É': 'E', 'È': 'E', 'Ë': 'E', 'Ê': 'E',
+    'Í': 'I', 'Ì': 'I', 'Ï': 'I', 'Î': 'I',
+    'Ó': 'O', 'Ò': 'O', 'Ö': 'O', 'Ô': 'O', 'Õ': 'O',
+    'Ú': 'U', 'Ù': 'U', 'Ü': 'U', 'Û': 'U',
+    'Ñ': 'N', 'Ç': 'C'
+}
 
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
@@ -79,6 +96,14 @@ class FileRelocater:
         self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
+        self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
+        self.playlist_updater = None  # Will be initialized if playlists are specified
+        
+        # Load playlists if specified
+        if self.options.get('update_playlists'):
+            playlist_paths = self.options.get('update_playlists', [])
+            dry_run = self.options.get('dry_run', False)
+            self.playlist_updater = PlaylistUpdater(playlist_paths, dry_run)
         
         # Validate FFprobe availability
         self._check_ffprobe()
@@ -409,6 +434,12 @@ class FileRelocater:
                 else:
                     shutil.move(source_filepath, destination_filepath)
                     logger.info(f"Moved: {source_filepath} -> {destination_filepath}")
+                
+                # Track path mapping for playlist updates
+                if self.playlist_updater:
+                    old_path = os.path.abspath(source_filepath)
+                    new_path = os.path.abspath(destination_filepath)
+                    self.path_mapping[old_path] = new_path
             
             self.moved_count += 1
             return True
@@ -418,64 +449,59 @@ class FileRelocater:
             self.error_count += 1
             return False
     
-    def organize_directory(self, source_directory: str, destination_root: str) -> tuple[int, int]:
+    def organize_directory(self, source_dir: str, destination_root: str) -> tuple[int, int]:
         """
         Organize all audio files in a directory.
         
         Args:
-            source_directory (str): Directory containing audio files to organize
+            source_dir (str): Source directory containing audio files
             destination_root (str): Root directory for organized files
             
         Returns:
-            tuple: (number of successful moves, total number of files processed)
+            tuple[int, int]: (number of files moved, total files processed)
         """
-        if not os.path.isdir(source_directory):
-            logger.error(f"Source directory does not exist: {source_directory}")
-            return (0, 0)
+        total_files = 0
         
-        if not os.path.exists(destination_root):
-            try:
-                os.makedirs(destination_root, exist_ok=True)
-                logger.info(f"Created destination root directory: {destination_root}")
-            except OSError as e:
-                logger.error(f"Failed to create destination root directory {destination_root}: {str(e)}")
-                return (0, 0)
-        
-        # Get list of audio files
-        files_to_process = []
+        # Collect all audio files
+        audio_files = []
         
         if self.options.get('recursive', False):
-            # Walk through directory tree recursively
-            for root, _, files in os.walk(source_directory):
+            # Recursively scan subdirectories
+            for root, _, files in os.walk(source_dir):
                 for file in files:
-                    file_path = os.path.join(root, file)
-                    if os.path.splitext(file)[1].lower() in AUDIO_EXTENSIONS:
-                        files_to_process.append(file_path)
+                    filepath = os.path.join(root, file)
+                    file_ext = os.path.splitext(filepath)[1].lower()
+                    if file_ext in AUDIO_EXTENSIONS:
+                        audio_files.append(filepath)
         else:
-            # Non-recursive: just get files in the top directory
-            files_to_process = [
-                os.path.join(source_directory, file) 
-                for file in os.listdir(source_directory) 
-                if os.path.isfile(os.path.join(source_directory, file)) and
-                os.path.splitext(file)[1].lower() in AUDIO_EXTENSIONS
-            ]
+            # Only scan the top-level directory
+            for file in os.listdir(source_dir):
+                filepath = os.path.join(source_dir, file)
+                if os.path.isfile(filepath):
+                    file_ext = os.path.splitext(filepath)[1].lower()
+                    if file_ext in AUDIO_EXTENSIONS:
+                        audio_files.append(filepath)
         
-        total_files = len(files_to_process)
-        initial_moved_count = self.moved_count
-        
-        logger.info(f"Found {total_files} audio files to organize")
+        total_files = len(audio_files)
+        logger.info(f"Found {total_files} audio files to process")
         
         # Process each file
-        for i, file_path in enumerate(files_to_process, 1):
-            logger.debug(f"Processing file {i}/{total_files}: {os.path.basename(file_path)}")
-            self.move_file(file_path, destination_root)
+        for filepath in audio_files:
+            self.move_file(filepath, destination_root)
         
-        # Log summary of skipped files during processing
-        if self.skipped_count > 0:
-            logger.info(f"Processed {total_files} files: {self.moved_count - initial_moved_count} organized, {self.skipped_count} skipped (no metadata)")
+        return self.moved_count, total_files
+    
+    def update_playlists(self) -> int:
+        """
+        Update all loaded playlists with new file paths using the PlaylistUpdater.
         
-        successful_moves = self.moved_count - initial_moved_count
-        return (successful_moves, total_files)
+        Returns:
+            int: Number of playlists successfully updated
+        """
+        if not self.playlist_updater:
+            return 0
+        
+        return self.playlist_updater.update_playlists(self.path_mapping)
 
 
 def parse_arguments():
@@ -510,6 +536,13 @@ def parse_arguments():
 
   # Detailed organization with track info and custom character replacement
   python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
+
+  # Organize and update playlists
+  python organize.py /music /organized --update-playlists /playlists/my_playlist.m3u
+  python organize.py /music /organized --up /playlists/
+  
+  # Multiple playlist updates
+  python organize.py /music /organized --up playlist1.m3u --up playlist2.m3u --up /playlist_folder/
 
 Available pre-defined metadata fields:
   {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
@@ -636,6 +669,13 @@ Folder format tips:
         action="store_true",
         help="Use full date from metadata instead of just the year for {year} field"
     )
+    parser.add_argument(
+        "--update-playlists", "--up",
+        action="append",
+        dest="update_playlists",
+        metavar="PATH",
+        help="Update playlist(s) with new file paths. Can be a .m3u file or directory containing playlists. Use multiple times for multiple paths."
+    )
     
     # Utility options
     parser.add_argument(
@@ -672,8 +712,9 @@ def parse_character_replacements(replace_char_list, no_defaults=False):
     """
     replacements = {}
     
-    # Note: By default, no character replacements are applied
-    # Users can add custom replacements using --replace-char
+    # Add standard replacements by default unless disabled
+    if not no_defaults:
+        replacements.update(STANDARD_CHAR_REPLACEMENTS)
     
     # Add custom replacements
     if replace_char_list:
@@ -831,6 +872,7 @@ def main():
         'char_replacements': char_replacements,
         'dont_sanitize': not sanitize_enabled,
         'full_date': args.full_date,
+        'update_playlists': args.update_playlists or [],
     }
     
     # Add custom sanitization character set if provided
@@ -861,6 +903,12 @@ def main():
         logger.info(f"Destination root: {args.destination}")
         
         moved_count, total_files = organizer.organize_directory(args.source, args.destination)
+        
+        # Update playlists if specified
+        if organizer.playlist_updater:
+            updated_playlists = organizer.update_playlists()
+            if updated_playlists > 0:
+                logger.info(f"\nPlaylist update completed: {updated_playlists} playlist(s) updated with new file paths")
         
         # Final summary
         operation_verb = "copied" if args.copy == 'y' else "moved"

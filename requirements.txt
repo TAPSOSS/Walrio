@@ -1,4 +1,5 @@
 # Python package dependencies for Walrio
 mutagen>=1.45.0
 PySide6>=6.0.0
-PyGObject>=3.30.0
+python-vlc>=3.0.0
+Pillow>=8.0.0

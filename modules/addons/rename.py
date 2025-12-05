@@ -21,6 +21,11 @@ import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
 
+# Add parent directory to path for module imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from core import metadata
+from addons.playlist_updater import PlaylistUpdater
+
 # Configure logging format
 logging.basicConfig(
     level=logging.INFO,
@@ -70,10 +75,18 @@ class AudioRenamer:
         self.skipped_count = 0
         self.metadata_error_count = 0
         self.conflict_count = 0
+        self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
+        self.playlist_updater = None  # Will be initialized if playlists are specified
         
         # Interactive special character handling state
         self.allow_special_all = False
         self.skip_special_all = False
+        
+        # Load playlists if specified
+        if self.options.get('update_playlists'):
+            playlist_paths = self.options.get('update_playlists', [])
+            dry_run = self.options.get('dry_run', False)
+            self.playlist_updater = PlaylistUpdater(playlist_paths, dry_run)
         
         # Validate FFprobe availability
         self._check_ffprobe()
@@ -507,6 +520,12 @@ class AudioRenamer:
             if self.options.get('dry_run', False):
                 logger.info(f"[DRY RUN] Would rename: {os.path.basename(filepath)} -> {new_filename}")
             else:
+                # Track path mapping for playlist updates
+                if self.playlist_updater:
+                    old_path = os.path.abspath(filepath)
+                    new_path = os.path.abspath(new_filepath)
+                    self.path_mapping[old_path] = new_path
+                
                 os.rename(filepath, new_filepath)
                 logger.info(f"Renamed: {os.path.basename(filepath)} -> {new_filename}")
             
@@ -563,6 +582,18 @@ class AudioRenamer:
         
         successful_renames = self.renamed_count - initial_renamed_count
         return (successful_renames, total_files)
+    
+    def update_playlists(self) -> int:
+        """
+        Update all loaded playlists with new file paths using the PlaylistUpdater.
+        
+        Returns:
+            int: Number of playlists successfully updated
+        """
+        if not self.playlist_updater:
+            return 0
+        
+        return self.playlist_updater.update_playlists(self.path_mapping)
 
 
 def parse_arguments():
@@ -743,6 +774,13 @@ Format string tips:
         action="store_true",
         help="Use full date from metadata instead of just the year for {year} field"
     )
+    parser.add_argument(
+        "--update-playlists", "--up",
+        action="append",
+        dest="update_playlists",
+        metavar="PATH",
+        help="Update playlist(s) with new file paths. Can be a .m3u file or directory containing playlists. Use multiple times for multiple paths."
+    )
     
     # Utility options
     parser.add_argument(
@@ -880,6 +918,7 @@ def main():
         'auto_sanitize': args.auto_sanitize,
         'force_allow_special': args.force_allow_special,
         'full_date': args.full_date,
+        'update_playlists': args.update_playlists or [],
     }
     
     # Add custom sanitization character set if provided
@@ -949,6 +988,12 @@ def main():
             dir_renamed, dir_total = renamer.rename_directory(dir_path)
             total_dir_files += dir_total
             total_dir_renamed += dir_renamed
+        
+        # Update playlists if specified
+        if renamer.playlist_updater:
+            updated_playlists = renamer.update_playlists()
+            if updated_playlists > 0:
+                logger.info(f"\nPlaylist update completed: {updated_playlists} playlist(s) updated with new file paths")
         
         # Final summary
         if args.dry_run:

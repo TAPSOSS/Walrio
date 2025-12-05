@@ -233,6 +233,62 @@ class QueueManager:
             self.current_index += 1
             return self.current_index < len(self.songs)
     
+    def next_track_skip_missing(self):
+        """
+        Move to next track like next_track() but automatically skips missing files.
+        For auto-progression after song ends - prevents playing missing files.
+        
+        Returns:
+            bool: True if there's a next available track, False if queue ended.
+        """
+        if not self.songs:
+            return False
+        
+        # Special case: If current song is missing and in track repeat, skip to next
+        if self.repeat_mode == RepeatMode.TRACK:
+            current_song = self.current_song()
+            if current_song and current_song.get('file_missing', False):
+                print(f"[DEBUG] next_track_skip_missing(): Current song missing in track repeat, advancing")
+                # Override track repeat to advance past missing file
+                self.playback_history.append(self.current_index)
+                self.current_index += 1
+                if self.current_index >= len(self.songs):
+                    if self.repeat_mode == RepeatMode.QUEUE:
+                        self.current_index = 0
+                    else:
+                        return False
+            else:
+                # Track repeat with available file - stay on same track
+                return True
+        
+        # For all other cases, use normal next_track logic but then check for missing files
+        original_index = self.current_index
+        max_attempts = len(self.songs)  # Prevent infinite loops
+        attempts = 0
+        
+        while attempts < max_attempts:
+            if not self.next_track():
+                return False
+            
+            next_song = self.current_song()
+            if next_song and not next_song.get('file_missing', False):
+                # Found an available file
+                print(f"[DEBUG] next_track_skip_missing(): Found available song at index {self.current_index}")
+                return True
+            
+            # This song is missing, continue searching
+            print(f"[DEBUG] next_track_skip_missing(): Skipping missing file at index {self.current_index}")
+            attempts += 1
+            
+            # In queue repeat mode, check if we've looped back to start
+            if self.repeat_mode == RepeatMode.QUEUE and self.current_index == original_index:
+                print("[DEBUG] next_track_skip_missing(): Looped through entire queue, all files missing")
+                return False
+        
+        # If we get here, all remaining files are missing
+        print("[DEBUG] next_track_skip_missing(): No more available files in queue")
+        return False
+    
     def previous_track(self):
         """
         Move to previous track using global playback history.
@@ -401,6 +457,7 @@ class QueueManager:
     def handle_song_finished(self):
         """
         Handle when current song finishes playing.
+        Auto-skips missing files during progression.
         
         Returns:
             tuple: (should_continue: bool, next_song: dict or None)
@@ -411,8 +468,8 @@ class QueueManager:
         if current_song:
             print(f"Song finished: {current_song.get('title', 'Unknown')}")
         
-        # Use next_track logic to determine what to do next
-        if self.next_track():
+        # Use next_track_skip_missing to skip missing files during auto-progression
+        if self.next_track_skip_missing():
             next_song = self.current_song()
             if next_song:
                 next_title = next_song.get('title', 'Unknown')

@@ -14,19 +14,19 @@ import subprocess
 try:
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-        QPushButton, QHeaderView, QLabel
+        QPushButton, QHeaderView, QLabel, QMenu
     )
     from PySide6.QtCore import Qt, Signal
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QColor
 except ImportError:
     print("PySide6 not found. Installing...")
     subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
     from PySide6.QtWidgets import (
         QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-        QPushButton, QHeaderView, QLabel
+        QPushButton, QHeaderView, QLabel, QMenu
     )
     from PySide6.QtCore import Qt, Signal
-    from PySide6.QtGui import QFont
+    from PySide6.QtGui import QFont, QColor
 
 from .base_view import BaseView
 
@@ -60,8 +60,8 @@ class PlaylistContentView(BaseView):
         self.playlist_content_table.setAlternatingRowColors(True)
         
         # Set up columns: same as queue for consistency
-        self.playlist_content_table.setColumnCount(5)
-        self.playlist_content_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year'])
+        self.playlist_content_table.setColumnCount(7)
+        self.playlist_content_table.setHorizontalHeaderLabels(['Title', 'Album', 'Album Artist', 'Artist', 'Year', 'Length', 'Filepath'])
         
         # Configure column behavior
         header = self.playlist_content_table.horizontalHeader()
@@ -70,12 +70,19 @@ class PlaylistContentView(BaseView):
         header.setSectionResizeMode(2, QHeaderView.Interactive)  # Album Artist - manual resize
         header.setSectionResizeMode(3, QHeaderView.Interactive)  # Artist - manual resize
         header.setSectionResizeMode(4, QHeaderView.Fixed)  # Year - fixed width
+        header.setSectionResizeMode(5, QHeaderView.Fixed)  # Length - fixed width
+        header.setSectionResizeMode(6, QHeaderView.Interactive)  # Filepath - manual resize
         
         # Set reasonable default column widths
         self.playlist_content_table.setColumnWidth(1, 120)  # Album
         self.playlist_content_table.setColumnWidth(2, 120)  # Album Artist
         self.playlist_content_table.setColumnWidth(3, 100)  # Artist
         self.playlist_content_table.setColumnWidth(4, 50)   # Year
+        self.playlist_content_table.setColumnWidth(5, 80)   # Length
+        
+        # Enable right-click context menu on header for column visibility
+        header.setContextMenuPolicy(Qt.CustomContextMenu)
+        header.customContextMenuRequested.connect(self._show_column_context_menu)
         
         # Performance optimizations
         self.playlist_content_table.setShowGrid(False)
@@ -127,6 +134,8 @@ class PlaylistContentView(BaseView):
         self.playlist_content_table.setRowCount(len(songs))
         
         for row, song in enumerate(songs):
+            is_missing = song.get('file_missing', False)
+            
             # Title
             title_item = QTableWidgetItem(song.get('title', 'Unknown Title'))
             self.playlist_content_table.setItem(row, 0, title_item)
@@ -146,6 +155,38 @@ class PlaylistContentView(BaseView):
             # Year
             year_item = QTableWidgetItem(str(song.get('year', '')))
             self.playlist_content_table.setItem(row, 4, year_item)
+            
+            # Duration
+            duration_seconds = song.get('length', 0)
+            if duration_seconds and duration_seconds > 0:
+                minutes = int(duration_seconds // 60)
+                seconds = int(duration_seconds % 60)
+                duration_text = f"{minutes}:{seconds:02d}"
+            else:
+                duration_text = ""
+            duration_item = QTableWidgetItem(duration_text)
+            self.playlist_content_table.setItem(row, 5, duration_item)
+            
+            # Filepath
+            filepath = song.get('url', song.get('filepath', ''))
+            filepath_item = QTableWidgetItem(filepath)
+            self.playlist_content_table.setItem(row, 6, filepath_item)
+            
+            # Apply missing file styling to all items in this row
+            items = [title_item, album_item, albumartist_item, artist_item, year_item, duration_item, filepath_item]
+            for item in items:
+                if is_missing:
+                    item.setForeground(QColor(128, 128, 128))  # Gray text
+                    item.setBackground(QColor(255, 200, 200, 128))  # Light red background at 50% opacity
+                    font = item.font()
+                    font.setItalic(True)
+                    item.setFont(font)
+                else:
+                    item.setForeground(QColor(0, 0, 0))  # Normal black text
+                    item.setData(Qt.BackgroundRole, None)  # Clear background
+                    font = item.font()
+                    font.setItalic(False)
+                    item.setFont(font)
         
         # Enable playlist-to-queue buttons
         self.btn_add_to_queue.setEnabled(True)
@@ -164,3 +205,26 @@ class PlaylistContentView(BaseView):
         """Enable or disable the playlist-to-queue buttons."""
         self.btn_add_to_queue.setEnabled(enabled)
         self.btn_replace_queue.setEnabled(enabled)
+    
+    def _show_column_context_menu(self, position):
+        """Show context menu for column visibility."""
+        header = self.playlist_content_table.horizontalHeader()
+        column_names = ["Title", "Album", "Album Artist", "Artist", "Year", "Length", "Filepath"]
+        
+        menu = QMenu(self)
+        
+        for col, name in enumerate(column_names):
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.setChecked(not header.isSectionHidden(col))
+            action.triggered.connect(lambda checked, column=col: self._toggle_column_visibility(column, checked))
+        
+        menu.exec_(header.mapToGlobal(position))
+    
+    def _toggle_column_visibility(self, column, visible):
+        """Toggle the visibility of a table column."""
+        header = self.playlist_content_table.horizontalHeader()
+        if visible:
+            header.showSection(column)
+        else:
+            header.hideSection(column)

@@ -90,6 +90,9 @@ class QueueController(QObject):
         Args:
             song_dict (dict): Dictionary containing processed song metadata
         """
+        # DEBUG: Print what's being added to queue
+        print(f"DEBUG _on_file_processed: {song_dict}")
+        
         # Add song to queue
         self.app_state.queue_songs.append(song_dict)
         
@@ -103,9 +106,12 @@ class QueueController(QObject):
         song_title = song_dict.get('title', 'Unknown')
         print(f"Added to queue: {song_title} (Queue size: {len(self.app_state.queue_songs)})")
         
-        # Enable navigation buttons if we have multiple songs
-        if len(self.app_state.queue_songs) > 1:
-            self.navigation_state_changed.emit(True)
+        # Emit navigation state for any songs (enables play button)
+        # But navigation buttons (prev/next) only enabled for multiple songs  
+        queue_has_songs = len(self.app_state.queue_songs) > 0
+        has_multiple_songs = len(self.app_state.queue_songs) > 1
+        
+        self.navigation_state_changed.emit(queue_has_songs)
         
         # If no current file, load the first song from queue
         if not self.app_state.current_file and len(self.app_state.queue_songs) == 1:
@@ -272,23 +278,51 @@ class QueueController(QObject):
     
     def _load_song_from_queue(self, index):
         """Load a song from the queue by index.
+        Handles missing files on manual selection by attempting to play and checking result.
         
         Args:
             index (int): Index of the song in the queue to load
         """
         if 0 <= index < len(self.app_state.queue_songs):
             song = self.app_state.queue_songs[index]
+            file_path = song['url']
+            
+            # Check if file was previously marked as missing
+            was_missing = song.get('file_missing', False)
+            
+            # Always attempt to load, even if marked as missing (manual selection override)
             self.app_state.current_queue_index = index
-            self.app_state.current_file = song['url']
+            self.app_state.current_file = file_path
             
             # Reset position
             self.app_state.reset_playback_state()
+            
+            # If this was a manual attempt on a missing file, check if it's now available
+            if was_missing:
+                import os
+                if os.path.exists(file_path):
+                    print(f"[INFO] Previously missing file now found: {file_path}")
+                    # Update the song data to reflect it's no longer missing
+                    song['file_missing'] = False
+                    # Update queue manager if it exists
+                    if (hasattr(self.app_state, 'queue_manager') and 
+                        self.app_state.queue_manager and 
+                        index < len(self.app_state.queue_manager.songs)):
+                        self.app_state.queue_manager.songs[index]['file_missing'] = False
+                else:
+                    print(f"[WARNING] Manual attempt on missing file: {file_path}")
+                    # File is still missing - playback will likely fail and show error
             
             # Update queue display to highlight current song
             self._update_queue_display()
     
     def _update_queue_display(self):
         """Update the queue display."""
+        # DEBUG: Print what's being sent to queue view
+        print(f"DEBUG _update_queue_display: {len(self.app_state.queue_songs)} songs")
+        if self.app_state.queue_songs:
+            print(f"DEBUG first queue song: {self.app_state.queue_songs[0]}")
+            
         self.queue_view.update_queue_display(
             self.app_state.queue_songs,
             self.app_state.current_queue_index if self.app_state.current_file else -1
@@ -340,6 +374,11 @@ class QueueController(QObject):
             songs (list): List of song dictionaries to add to the queue
             action (str): Action to perform - "add" to append or "replace" to clear and set
         """
+        # DEBUG: Print playlist songs being added to queue
+        print(f"DEBUG handle_playlist_to_queue: {len(songs)} songs, action: {action}")
+        if songs:
+            print(f"DEBUG first playlist song: {songs[0]}")
+        
         if action == "replace":
             # Clear current queue
             self.app_state.queue_songs.clear()

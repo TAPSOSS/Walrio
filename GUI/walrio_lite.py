@@ -12,15 +12,8 @@ playing music files without any file modification or other extra unneeded capabi
 import sys
 import subprocess
 
-try:
-    from PySide6.QtWidgets import QApplication
-except ImportError:
-    print("PySide6 not found. Installing...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "PySide6"])
-    from PySide6.QtWidgets import QApplication
-
+from PySide6.QtWidgets import QApplication
 from WalrioLiteGUI.controllers.main_controller import MainController
-
 
 def main():
     """Main entry point for Walrio Lite GUI."""

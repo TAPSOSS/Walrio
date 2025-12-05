@@ -21,7 +21,7 @@ from modules.core.queue import QueueManager, RepeatMode
 class Song:
     """Data model for a single song."""
     
-    def __init__(self, url, title=None, artist=None, album=None, albumartist=None, year=None, duration=0):
+    def __init__(self, url, title=None, artist=None, album=None, albumartist=None, year=None, duration=0, file_missing=False):
         """
         Initialize a Song instance.
         
@@ -33,6 +33,7 @@ class Song:
             albumartist (str): Album artist name
             year (str): Release year
             duration (float): Duration in seconds
+            file_missing (bool): Whether the file exists or not
         """
         self.url = url
         self.title = title or Path(url).stem
@@ -41,12 +42,13 @@ class Song:
         self.albumartist = albumartist or self.artist
         self.year = year or 'Unknown'
         self.duration = duration or 0
+        self.file_missing = file_missing
     
     def to_dict(self):
         """Convert song to dictionary format.
         
         Returns:
-            dict: Dictionary containing song metadata with keys: url, title, artist, album, albumartist, year, duration
+            dict: Dictionary containing song metadata with keys: url, title, artist, album, albumartist, year, length, file_missing
         """
         return {
             'url': self.url,
@@ -55,7 +57,8 @@ class Song:
             'album': self.album,
             'albumartist': self.albumartist,
             'year': self.year,
-            'duration': self.duration
+            'length': self.duration,
+            'file_missing': self.file_missing
         }
     
     @classmethod
@@ -75,7 +78,8 @@ class Song:
             album=data.get('album'),
             albumartist=data.get('albumartist'),
             year=data.get('year'),
-            duration=data.get('duration', 0)
+            duration=data.get('length', 0),  # Use 'length' field from metadata
+            file_missing=data.get('file_missing', False)
         )
     
     def __str__(self):

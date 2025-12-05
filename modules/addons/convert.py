@@ -55,6 +55,7 @@ DEFAULT_SETTINGS = {
     'skip_existing': True,
     'recursive': False,
     'force_overwrite': False,  # Don't force overwrite by default
+    'delete_original': False,  # Don't delete originals by default
 }
 
 # Bitrate presets for various formats (in kbps)
@@ -596,6 +597,14 @@ class AudioConverter:
                     logger.error(f"  Failed to replace original file: {str(e)}")
                     return False, 'error'
             
+            # Delete original file if requested and conversion was to a different file
+            if self.options.get('delete_original', False) and not is_same_file:
+                try:
+                    os.remove(input_file)
+                    logger.info(f"  Deleted original file: {os.path.basename(input_file)}")
+                except Exception as e:
+                    logger.warning(f"  Failed to delete original file: {str(e)}")
+            
             logger.info(f"Successfully converted {input_file} to {output_file}")
             return True, 'converted'
         except Exception as e:
@@ -766,6 +775,12 @@ def parse_arguments():
         choices=["y", "n"],
         help="Force overwrite of existing files: y=yes (force), n=no (prompt)"
     )
+    parser.add_argument(
+        "--delete-original", "--do",
+        action="store_true",
+        dest="delete_original",
+        help="Delete original file after successful conversion (use with caution!)"
+    )
     
     # Format options
     parser.add_argument(
@@ -867,6 +882,8 @@ def main():
         options['skip_existing'] = args.skip_existing == 'y'
     if args.force_overwrite:
         options['force_overwrite'] = args.force_overwrite == 'y'
+    if args.delete_original:
+        options['delete_original'] = True
     
     # Create converter
     try:

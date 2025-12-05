@@ -106,7 +106,14 @@ autodoc_default_options = {
 }
 
 # Mock imports for external dependencies that might not be available during doc build
-autodoc_mock_imports = ['mutagen', 'sqlite3']
+autodoc_mock_imports = [
+    'mutagen', 
+    'sqlite3',
+    'gi',
+    'gi.repository',
+    'gi.repository.Gst',
+    'gi.repository.GLib'
+]
 
 # Process docstrings to remove copyright headers
 def process_docstring(app, what, name, obj, options, lines):
