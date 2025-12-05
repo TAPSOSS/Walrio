@@ -120,15 +120,26 @@ elif sys.platform == 'darwin':
 elif sys.platform == 'win32':
     # Windows (MSYS2/MinGW)
     print("Windows GStreamer bundling starting...")
-    msys_paths = [
-        'C:/msys64/mingw64',
-        'D:/a/_temp/msys64/msys64/mingw64',  # GitHub Actions path
-        os.path.join(os.environ.get('MSYSTEM_PREFIX', 'C:/msys64/mingw64')),
-        os.path.join(os.environ.get('MSYS2_ROOT', 'C:/msys64'), 'mingw64')
-    ]
+    
+    # Detect if we're running inside MSYS2 shell (GitHub Actions)
+    in_msys2 = 'MSYSTEM' in os.environ
+    print(f"Running in MSYS2: {in_msys2}")
+    print(f"MSYSTEM: {os.environ.get('MSYSTEM', 'not set')}")
+    print(f"MSYSTEM_PREFIX: {os.environ.get('MSYSTEM_PREFIX', 'not set')}")
+    
+    if in_msys2:
+        # In MSYS2 shell, use Unix-style paths
+        msys_prefix = os.environ.get('MSYSTEM_PREFIX', '/mingw64')
+        msys_paths = [msys_prefix, '/mingw64']
+    else:
+        # Outside MSYS2, use Windows paths
+        msys_paths = [
+            'C:/msys64/mingw64',
+            'D:/a/_temp/msys64/msys64/mingw64',
+            os.path.join(os.environ.get('MSYSTEM_PREFIX', 'C:/msys64/mingw64')),
+        ]
     
     print(f"Checking MSYS paths: {msys_paths}")
-    print(f"Environment MSYSTEM_PREFIX: {os.environ.get('MSYSTEM_PREFIX', 'not set')}")
     
     for msys_prefix in msys_paths:
         print(f"Checking: {msys_prefix}")
@@ -137,25 +148,31 @@ elif sys.platform == 'win32':
             typelib_path = os.path.join(msys_prefix, 'lib/girepository-1.0')
             if os.path.exists(typelib_path):
                 print(f"  Found typelib path: {typelib_path}")
+                typelib_count = 0
                 for pattern in ['Gst*.typelib', 'GLib*.typelib', 'GObject*.typelib', 'Gio*.typelib']:
                     for typelib in glob.glob(os.path.join(typelib_path, pattern)):
                         datas.append((typelib, 'gi_typelibs'))
-                        print(f"    Added typelib: {os.path.basename(typelib)}")
+                        typelib_count += 1
+                print(f"  Added {typelib_count} typelibs")
             
             plugin_path = os.path.join(msys_prefix, 'lib/gstreamer-1.0')
             if os.path.exists(plugin_path):
                 print(f"  Found plugin path: {plugin_path}")
+                plugin_count = 0
                 for plugin in glob.glob(os.path.join(plugin_path, '*.dll')):
                     binaries.append((plugin, 'gst_plugins'))
-                    print(f"    Added plugin: {os.path.basename(plugin)}")
+                    plugin_count += 1
+                print(f"  Added {plugin_count} plugins")
             
             bin_path = os.path.join(msys_prefix, 'bin')
             if os.path.exists(bin_path):
                 print(f"  Found bin path: {bin_path}")
-                for pattern in ['gstreamer-1.0-0.dll', 'gst*.dll', 'libgst*.dll']:
+                lib_count = 0
+                for pattern in ['libgstreamer-1.0*.dll', 'libgst*.dll']:
                     for lib in glob.glob(os.path.join(bin_path, pattern)):
                         binaries.append((lib, '.'))
-                        print(f"    Added lib: {os.path.basename(lib)}")
+                        lib_count += 1
+                print(f"  Added {lib_count} GStreamer libraries")
             
             if datas or binaries:
                 print(f"  Successfully collected from {msys_prefix}")
@@ -165,5 +182,7 @@ elif sys.platform == 'win32':
     
     if not datas and not binaries:
         print("WARNING: No GStreamer files found on Windows!")
+        print(f"Current working directory: {os.getcwd()}")
+        print(f"sys.prefix: {sys.prefix}")
 
 print(f"GStreamer hook ({sys.platform}): Found {len(datas)} typelibs and {len([b for b in binaries if 'gst' in b[0].lower()])} GStreamer files")
