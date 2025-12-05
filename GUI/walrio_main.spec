@@ -1,35 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import sys
 import os
-import site
 
 block_cipher = None
 
-# Find gi module location dynamically
-gi_path = None
-for path in site.getsitepackages() + [site.getusersitepackages()]:
-    potential_gi = os.path.join(path, 'gi')
-    if os.path.exists(potential_gi):
-        gi_path = potential_gi
-        break
-
-# Build datas list
-datas_list = [('../modules', 'modules'), ('../icons', 'icons')]
-if gi_path:
-    # Add gi Python source files
-    datas_list.append((os.path.join(gi_path, '*.py'), 'gi'))
-    gi_repo = os.path.join(gi_path, 'repository')
-    if os.path.exists(gi_repo):
-        datas_list.append((os.path.join(gi_repo, '*.py'), 'gi/repository'))
-    gi_overrides = os.path.join(gi_path, 'overrides')
-    if os.path.exists(gi_overrides):
-        datas_list.append((os.path.join(gi_overrides, '*.py'), 'gi/overrides'))
+# Collect all gi module files
+gi_datas = collect_data_files('gi', include_py_files=True)
+gi_submodules = collect_submodules('gi')
 
 a = Analysis(
     ['walrio_main.py'],
     pathex=['..'],
     binaries=[],
-    datas=datas_list,
+    datas=[('../modules', 'modules'), ('../icons', 'icons')] + gi_datas,
     hiddenimports=[
         'gi',
         'gi._gi',
@@ -49,7 +33,7 @@ a = Analysis(
         'modules.core.playlist',
         'modules.core.metadata',
         'modules.core.database'
-    ],
+    ] + gi_submodules,
     hookspath=['hooks'],
     runtime_hooks=['GUI/pyi_rth_gstreamer.py'],
     excludes=[],
