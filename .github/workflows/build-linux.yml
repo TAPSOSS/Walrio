@@ -68,7 +68,7 @@ jobs:
           cp -r dist/${{ matrix.gui == 'walrio_main' && 'WalrioMain' || 'WalrioLite' }}/* AppDir/usr/bin/
           
           # Create desktop file
-          cat > AppDir/usr/share/applications/${{ matrix.gui }}.desktop << EOF
+          cat > AppDir/${{ matrix.gui }}.desktop << EOF
           [Desktop Entry]
           Type=Application
           Name=${{ matrix.gui == 'walrio_main' && 'Walrio Main' || 'Walrio Lite' }}
@@ -78,6 +78,7 @@ jobs:
           Comment=Audio player with playlist management
           Terminal=false
           EOF
+          cp AppDir/${{ matrix.gui }}.desktop AppDir/usr/share/applications/
           
           # Copy icon if exists, otherwise create placeholder
           if [ -f "icons/walrio.png" ]; then
