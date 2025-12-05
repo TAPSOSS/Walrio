@@ -1,8 +1,8 @@
-name: Build Walrio GUIs (macOS)
+name: Build Walrio Lite (macOS)
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, bundlefix ]
     tags: [ 'v*' ]
   pull_request:
     branches: [ main, develop ]
@@ -11,9 +11,6 @@ on:
 jobs:
   build:
     runs-on: macos-latest
-    strategy:
-      matrix:
-        gui: [walrio_main, walrio_lite]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,14 +37,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install mutagen PySide6 Pillow pyinstaller
 
-      - name: Build ${{ matrix.gui }}
+      - name: Build walrio_lite
         run: |
-          python -m PyInstaller GUI/${{ matrix.gui }}.spec
+          python -m PyInstaller GUI/walrio_lite.spec
 
-      - name: Upload build artifacts
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.gui }}-macos
+          name: walrio_lite-macos
           path: |
             dist/
             !dist/**/*.spec
