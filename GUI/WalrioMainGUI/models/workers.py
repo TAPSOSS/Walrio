@@ -287,40 +287,23 @@ class QueueWorker(QThread):
         file_exists = os.path.exists(filepath)
         
         try:
-            modules_dir = Path(__file__).parent.parent.parent.parent / "modules"
+            # Import metadata module directly instead of subprocess
+            from modules.core.metadata import AudioMetadata
             
-            # Get full metadata using --show
-            result = subprocess.run(
-                ["python", "walrio.py", "metadata", "--show", filepath],
-                cwd=str(modules_dir),
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            # Get metadata using the module
+            meta = AudioMetadata(filepath)
+            tag_data = meta.get_all_tags()
             
-            if result.returncode == 0 and result.stdout.strip():
-                # Parse the metadata output
-                metadata = {}
-                for line in result.stdout.strip().split('\n'):
-                    if ':' in line and not line.startswith('='):
-                        key, value = line.split(':', 1)
-                        key = key.strip().lower().replace(' ', '_').replace('/', '_')
-                        value = value.strip()
-                        metadata[key] = value
-                
-                # Debug: Show what we extracted for year and album artist
-                print(f"DEBUG {Path(filepath).name}: date_year='{metadata.get('date_year')}', album_artist='{metadata.get('album_artist')}'")
-                
-                # Return structured metadata with fallbacks
-                return {
-                    'title': metadata.get('title', Path(filepath).stem),
-                    'artist': metadata.get('artist', ''),
-                    'album': metadata.get('album', ''),
-                    'albumartist': metadata.get('album_artist', metadata.get('artist', '')),
-                    'year': metadata.get('date_year', metadata.get('year', metadata.get('date', ''))),
-                    'length': self._parse_duration(metadata.get('duration', '0:00')),
-                    'file_missing': not file_exists
-                }
+            # Return structured metadata with fallbacks
+            return {
+                'title': tag_data.get('title') or Path(filepath).stem,
+                'artist': tag_data.get('artist') or '',
+                'album': tag_data.get('album') or '',
+                'albumartist': tag_data.get('albumartist') or tag_data.get('artist') or '',
+                'year': str(tag_data.get('year') or tag_data.get('originalyear') or ''),
+                'length': tag_data.get('length', 0),
+                'file_missing': not file_exists
+            }
             else:
                 # Fallback if metadata extraction fails (error reading metadata)
                 return {
