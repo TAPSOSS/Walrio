@@ -41,8 +41,14 @@ jobs:
         run: |
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
-          # Install PyGObject via pip (uses pre-built wheels, provides metadata for PyInstaller)
-          venv/bin/pip install PyGObject
+          # Install PyGObject from MSYS2 (pre-built, no compilation)
+          pacman -S --noconfirm mingw-w64-x86_64-python-gobject
+          # Link into venv so PyInstaller can find it
+          ln -sf /mingw64/lib/python3.12/site-packages/gi venv/lib/python3.12/site-packages/gi
+          ln -sf /mingw64/lib/python3.12/site-packages/cairo venv/lib/python3.12/site-packages/cairo
+          # Create fake pip metadata for PyGObject so PyInstaller hook works
+          mkdir -p "venv/lib/python3.12/site-packages/PyGObject-3.48.0.dist-info"
+          echo -e "Metadata-Version: 2.1\nName: PyGObject\nVersion: 3.48.0" > "venv/lib/python3.12/site-packages/PyGObject-3.48.0.dist-info/METADATA"
 
       - name: Debug GStreamer paths
         shell: msys2 {0}
