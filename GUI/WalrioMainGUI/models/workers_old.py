@@ -869,7 +869,7 @@ class PlayerWorker(QThread):
         """Initialize the in-process audio player (standard approach)."""
         try:
             # Import and initialize the AudioPlayer directly (works everywhere)
-            from modules.core.player import AudioPlayer
+            from modules.core.gstreamer_player import AudioPlayer
             self.audio_player = AudioPlayer()
             
             # Create a simple mock process object for compatibility

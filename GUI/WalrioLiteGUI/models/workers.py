@@ -287,51 +287,35 @@ class QueueWorker(QThread):
         file_exists = os.path.exists(filepath)
         
         try:
-            modules_dir = Path(__file__).parent.parent.parent.parent / "modules"
+            # Import metadata module directly instead of subprocess
+            from modules.core.metadata import MetadataEditor
             
-            # Get full metadata using --show
-            result = subprocess.run(
-                ["python", "walrio.py", "metadata", "--show", filepath],
-                cwd=str(modules_dir),
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            # Get metadata using the module
+            editor = MetadataEditor()
+            tag_data = editor.get_metadata(filepath)
             
-            if result.returncode == 0 and result.stdout.strip():
-                # Parse the metadata output
-                metadata = {}
-                for line in result.stdout.strip().split('\n'):
-                    if ':' in line and not line.startswith('='):
-                        key, value = line.split(':', 1)
-                        key = key.strip().lower().replace(' ', '_').replace('/', '_')
-                        value = value.strip()
-                        metadata[key] = value
-                
-                # Debug: Show what we extracted for year and album artist
-                print(f"DEBUG {Path(filepath).name}: date_year='{metadata.get('date_year')}', album_artist='{metadata.get('album_artist')}'")
-                
-                # Return structured metadata with fallbacks
-                return {
-                    'title': metadata.get('title', Path(filepath).stem),
-                    'artist': metadata.get('artist', ''),
-                    'album': metadata.get('album', ''),
-                    'albumartist': metadata.get('album_artist', metadata.get('artist', '')),
-                    'year': metadata.get('date_year', metadata.get('year', metadata.get('date', ''))),
-                    'length': self._parse_duration(metadata.get('duration', '0:00')),
-                    'file_missing': not file_exists
-                }
-            else:
-                # Fallback if metadata extraction fails (error reading metadata)
-                return {
-                    'title': Path(filepath).stem,
-                    'artist': 'Unknown',
-                    'album': 'Unknown',
-                    'albumartist': 'Unknown',
-                    'year': 'Unknown',
-                    'length': 0,
-                    'file_missing': not file_exists
-                }
+            # Debug: Show key metadata fields
+            print(f"DEBUG: Metadata for {Path(filepath).name}:")
+            print(f"  title={tag_data.get('title', 'N/A')}")
+            print(f"  artist={tag_data.get('artist', 'N/A')}")
+            print(f"  length={tag_data.get('length', 'N/A')} (type: {type(tag_data.get('length')).__name__})")
+            
+            # Return structured metadata with fallbacks
+            # Extract year from 'year', 'date', or 'originalyear' fields
+            year_value = tag_data.get('year') or tag_data.get('date') or tag_data.get('originalyear') or ''
+            # If date is in YYYY-MM-DD or YYYY format, extract just the year
+            if year_value and len(str(year_value)) >= 4:
+                year_value = str(year_value)[:4]
+            
+            return {
+                'title': tag_data.get('title') or Path(filepath).stem,
+                'artist': tag_data.get('artist') or '',
+                'album': tag_data.get('album') or '',
+                'albumartist': tag_data.get('albumartist') or tag_data.get('artist') or '',
+                'year': str(year_value),
+                'length': tag_data.get('length', 0),
+                'file_missing': not file_exists
+            }
                 
         except Exception as e:
             print(f"Error getting metadata for {filepath}: {e}")
@@ -410,8 +394,22 @@ class PlayerWorker(QThread):
             if self.filepath:
                 success = self.audio_player.load_file(self.filepath)
                 if success:
-                    # Get actual duration from the audio player
-                    detected_duration = self.audio_player.get_duration()
+                    # Start playback first - pipeline needs to be in PLAYING state
+                    play_success = self.audio_player.play()
+                    if not play_success:
+                        self.error.emit(f"Failed to start playback: {self.filepath}")
+                        return
+                    
+                    # Wait for pipeline to reach PLAYING state and retry duration query
+                    import time
+                    detected_duration = 0.0
+                    for attempt in range(5):  # Try up to 5 times
+                        time.sleep(0.05)  # 50ms between attempts
+                        detected_duration = self.audio_player.get_duration()
+                        if detected_duration > 0:
+                            break
+                        print(f"DEBUG: run() duration attempt {attempt + 1}: {detected_duration}")
+                    
                     print(f"DEBUG: AudioPlayer detected duration: {detected_duration}")
                     if detected_duration > 0:
                         self.duration = detected_duration
@@ -425,12 +423,6 @@ class PlayerWorker(QThread):
                         'title': os.path.basename(self.filepath),
                         'position': 0.0
                     })
-                    
-                    # Start playback using modules/core/player.py
-                    play_success = self.audio_player.play()
-                    if not play_success:
-                        self.error.emit(f"Failed to start playback: {self.filepath}")
-                        return
                 else:
                     self.error.emit(f"Failed to load file: {self.filepath}")
                     return
@@ -576,8 +568,9 @@ class PlayerWorker(QThread):
         Returns:
             bool: True if command was sent successfully, False otherwise
         """
-        success, response = self._send_player_command(command)
-        return success
+        # Direct player doesn't use text commands like VLC did
+        print(f"DEBUG: send_command called with: {command} (not applicable for GStreamer)")
+        return True
     
     def _start_position_tracking(self):
         """Start position tracking timer."""
@@ -632,6 +625,8 @@ class PlayerWorker(QThread):
     def play_new_song(self, filepath, duration=0):
         """Load and play a new song using core AudioPlayer."""
         try:
+            print(f"DEBUG: play_new_song called with filepath: {filepath}, duration: {duration}")
+            
             # Stop current playback
             if hasattr(self, 'audio_player') and self.audio_player:
                 self.audio_player.stop()
@@ -642,9 +637,23 @@ class PlayerWorker(QThread):
             self.should_stop = False
             
             # Load new file
+            print(f"DEBUG: Loading file: {filepath}")
             if self.audio_player.load_file(filepath):
-                # Get actual duration
-                detected_duration = self.audio_player.get_duration()
+                print(f"DEBUG: File loaded successfully, starting playback")
+                
+                # Start playback first - pipeline needs to be in PLAYING state for duration query
+                play_result = self.audio_player.play()
+                
+                # Wait for pipeline to reach PLAYING state and retry duration query
+                import time
+                detected_duration = 0.0
+                for attempt in range(5):  # Try up to 5 times
+                    time.sleep(0.05)  # 50ms between attempts
+                    detected_duration = self.audio_player.get_duration()
+                    if detected_duration > 0:
+                        break
+                    print(f"DEBUG: Duration attempt {attempt + 1}: {detected_duration}")
+                
                 print(f"DEBUG: play_new_song - AudioPlayer detected duration: {detected_duration}")
                 if detected_duration > 0:
                     self.duration = detected_duration
@@ -659,11 +668,14 @@ class PlayerWorker(QThread):
                     'position': 0.0
                 })
                 
-                # Start playback
-                return self.audio_player.play()
+                return play_result
+            else:
+                print(f"ERROR: Failed to load file: {filepath}")
             return False
         except Exception as e:
             print(f"Error playing new song: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # Note: Daemon connection methods removed - now using direct AudioPlayer integration
