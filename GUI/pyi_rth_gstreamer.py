@@ -46,9 +46,6 @@ if hasattr(sys, '_MEIPASS'):
         if '--debug-gst' in sys.argv:
             print(f"GStreamer: Debug - Typelib path set to {gi_typelib_path}")
     
-    # Disable plugin registry update (we have all plugins we need)
-    os.environ['GST_REGISTRY_UPDATE'] = 'no'
-    
     # Disable system plugins completely to avoid conflicts
     os.environ['GST_PLUGIN_SYSTEM_PATH_1_0'] = ''
     print("[Walrio] GStreamer: System plugins disabled")
@@ -65,9 +62,11 @@ if hasattr(sys, '_MEIPASS'):
     registry_path = os.path.join(cache_dir, 'gstreamer-registry.bin')
     os.environ['GST_REGISTRY'] = registry_path
     
-    # Force registry rebuild on first run if it doesn't exist
-    if not os.path.exists(registry_path):
-        os.environ['GST_REGISTRY_FORK'] = 'no'
+    # Force registry fork to ensure child processes can update registry
+    os.environ['GST_REGISTRY_FORK'] = 'yes'
+    
+    # Don't disable registry updates - let GStreamer update if needed
+    # This ensures plugins are properly registered on first run or after updates
     
     if '--debug-gst' in sys.argv:
         print(f"GStreamer: Registry set to {registry_path}")

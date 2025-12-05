@@ -50,14 +50,12 @@ def _ensure_gstreamer_imported():
                 print(f"DEBUG: playbin factory found: {playbin_factory.get_name()}")
             else:
                 print("ERROR: playbin factory NOT found in registry!")
-                print(f"ERROR: This means plugins are not being loaded from {os.environ.get('GST_PLUGIN_PATH')}")
-                # Try to manually update the registry
-                registry.scan_path(os.environ.get('GST_PLUGIN_PATH', ''))
-                playbin_factory = Gst.ElementFactory.find('playbin')
-                if playbin_factory:
-                    print("DEBUG: playbin found after manual registry scan")
-                else:
-                    print("ERROR: playbin still not found after manual scan!")
+                print(f"ERROR: GST_PLUGIN_PATH={os.environ.get('GST_PLUGIN_PATH', 'NOT SET')}")
+                print(f"ERROR: GST_REGISTRY={os.environ.get('GST_REGISTRY', 'NOT SET')}")
+                print("ERROR: Available plugins:")
+                for plugin in registry.get_plugin_list()[:10]:  # Show first 10
+                    print(f"  - {plugin.get_name()}")
+
 
 class AudioPlayer:
     """
