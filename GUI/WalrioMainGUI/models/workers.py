@@ -304,17 +304,6 @@ class QueueWorker(QThread):
                 'length': tag_data.get('length', 0),
                 'file_missing': not file_exists
             }
-            else:
-                # Fallback if metadata extraction fails (error reading metadata)
-                return {
-                    'title': Path(filepath).stem,
-                    'artist': 'Unknown',
-                    'album': 'Unknown',
-                    'albumartist': 'Unknown',
-                    'year': 'Unknown',
-                    'length': 0,
-                    'file_missing': not file_exists
-                }
                 
         except Exception as e:
             print(f"Error getting metadata for {filepath}: {e}")
