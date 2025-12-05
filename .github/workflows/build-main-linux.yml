@@ -114,5 +114,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: walrio_main-linux-appimage
-          path: walrio_main-x86_64.AppImage
+          path: |
+            walrio_main-x86_64.AppImage
+            !build/
+            !dist/
           retention-days: 30
