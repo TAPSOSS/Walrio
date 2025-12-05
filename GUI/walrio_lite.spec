@@ -25,7 +25,7 @@ a = Analysis(
         'modules.core.database'
     ],
     hookspath=['hooks'],
-    runtime_hooks=['pyi_rth_gstreamer.py'],
+    runtime_hooks=['GUI/pyi_rth_gstreamer.py'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
