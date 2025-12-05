@@ -63,13 +63,21 @@ if sys.platform.startswith('linux'):
     # Collect gst-plugin-scanner helper binary
     scanner_paths = [
         '/usr/libexec/gstreamer-1.0/gst-plugin-scanner',
+        '/usr/lib/x86_64-linux-gnu/gstreamer-1.0/gst-plugin-scanner',
         '/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner',
-        '/usr/lib/gstreamer-1.0/gst-plugin-scanner'
+        '/usr/lib/gstreamer-1.0/gst-plugin-scanner',
+        '/usr/lib64/gstreamer-1.0/gst-plugin-scanner'
     ]
+    scanner_found = False
     for scanner_path in scanner_paths:
         if os.path.exists(scanner_path):
             binaries.append((scanner_path, 'gst_helpers'))
+            print(f"Found gst-plugin-scanner at: {scanner_path}")
+            scanner_found = True
             break
+    if not scanner_found:
+        print("WARNING: gst-plugin-scanner not found in any known location")
+        print(f"Searched paths: {scanner_paths}")
     
     lib_paths = ['/usr/lib64', '/usr/lib/x86_64-linux-gnu', '/usr/lib'] if is_64bit else ['/usr/lib', '/usr/lib/x86_64-linux-gnu', '/usr/lib64']
     gst_libs = [
