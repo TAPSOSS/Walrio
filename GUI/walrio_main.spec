@@ -1,19 +1,27 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import sys
 import os
+import glob
 
 block_cipher = None
 
-# Collect all gi module files
-gi_datas = collect_data_files('gi', include_py_files=True)
-gi_submodules = collect_submodules('gi')
+# Collect gi binary extensions (needed when using system PyGObject)
+gi_binaries = []
+try:
+    import gi
+    gi_path = os.path.dirname(gi.__file__)
+    for ext in glob.glob(os.path.join(gi_path, '*.so')):
+        gi_binaries.append((ext, 'gi'))
+    for ext in glob.glob(os.path.join(gi_path, '*.pyd')):
+        gi_binaries.append((ext, 'gi'))
+except ImportError:
+    pass
 
 a = Analysis(
     ['walrio_main.py'],
     pathex=['..'],
-    binaries=[],
-    datas=[('../modules', 'modules'), ('../icons', 'icons')] + gi_datas,
+    binaries=gi_binaries,
+    datas=[('../modules', 'modules'), ('../icons', 'icons')],
     hiddenimports=[
         'gi',
         'gi._gi',
@@ -33,7 +41,7 @@ a = Analysis(
         'modules.core.playlist',
         'modules.core.metadata',
         'modules.core.database'
-    ] + gi_submodules,
+    ],
     hookspath=['hooks'],
     runtime_hooks=['GUI/pyi_rth_gstreamer.py'],
     excludes=[],
