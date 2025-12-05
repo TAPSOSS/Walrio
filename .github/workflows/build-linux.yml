@@ -43,10 +43,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Make system site-packages available to venv
+        run: |
+          SITE_PACKAGES=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          echo "/usr/lib/python3/dist-packages" > $SITE_PACKAGES/system-packages.pth
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mutagen PySide6 Pillow pyinstaller PyGObject
+          pip install mutagen PySide6 Pillow pyinstaller
 
       - name: Build ${{ matrix.gui }}
         run: |
