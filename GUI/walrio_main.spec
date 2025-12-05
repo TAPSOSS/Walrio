@@ -10,12 +10,28 @@ gi_binaries = []
 try:
     import gi
     gi_path = os.path.dirname(gi.__file__)
+    print(f"Found gi at: {gi_path}")
     for ext in glob.glob(os.path.join(gi_path, '*.so')):
         gi_binaries.append((ext, 'gi'))
+        print(f"  Adding: {ext}")
     for ext in glob.glob(os.path.join(gi_path, '*.pyd')):
         gi_binaries.append((ext, 'gi'))
-except ImportError:
-    pass
+        print(f"  Adding: {ext}")
+except ImportError as e:
+    print(f"Could not import gi during spec: {e}")
+    # Try system paths directly
+    for sys_path in ['/usr/lib/python3/dist-packages/gi', '/usr/lib64/python3.11/site-packages/gi']:
+        if os.path.exists(sys_path):
+            print(f"Searching system path: {sys_path}")
+            for ext in glob.glob(os.path.join(sys_path, '*.so')):
+                gi_binaries.append((ext, 'gi'))
+                print(f"  Adding: {ext}")
+            break
+
+if gi_binaries:
+    print(f"Total gi binaries collected: {len(gi_binaries)}")
+else:
+    print("WARNING: No gi binaries collected!")
 
 a = Analysis(
     ['walrio_main.py'],
