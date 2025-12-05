@@ -294,7 +294,11 @@ class QueueWorker(QThread):
             editor = MetadataEditor()
             tag_data = editor.get_metadata(filepath)
             
-            print(f"DEBUG: Metadata for {Path(filepath).name}: length={tag_data.get('length', 0)}")
+            # Debug: Show key metadata fields
+            print(f"DEBUG: Metadata for {Path(filepath).name}:")
+            print(f"  title={tag_data.get('title', 'N/A')}")
+            print(f"  artist={tag_data.get('artist', 'N/A')}")
+            print(f"  length={tag_data.get('length', 'N/A')} (type: {type(tag_data.get('length')).__name__})")
             
             # Return structured metadata with fallbacks
             # Extract year from 'year', 'date', or 'originalyear' fields
