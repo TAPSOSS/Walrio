@@ -36,14 +36,16 @@ jobs:
         run: |
           python -m venv venv
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         shell: msys2 {0}
         run: |
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
-          # Install PyGObject into venv so PyInstaller can analyze gi imports
-          venv/bin/pip install --no-build-isolation pycairo
-          venv/bin/pip install --no-build-isolation PyGObject
+          # Install PyGObject from MSYS2 packages (pre-built, no compilation needed)
+          pacman -S --noconfirm mingw-w64-x86_64-python-gobject
+          # Link MSYS2 PyGObject into venv so PyInstaller can analyze gi imports
+          ln -sf /mingw64/lib/python3.12/site-packages/gi venv/lib/python3.12/site-packages/gi
+          ln -sf /mingw64/lib/python3.12/site-packages/cairo venv/lib/python3.12/site-packages/cairo
 
       - name: Debug GStreamer paths
         shell: msys2 {0}
