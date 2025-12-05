@@ -42,6 +42,26 @@ jobs:
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
 
+      - name: Debug GStreamer paths
+        shell: msys2 {0}
+        run: |
+          echo "=== Environment Variables ==="
+          echo "MSYSTEM: $MSYSTEM"
+          echo "MSYSTEM_PREFIX: $MSYSTEM_PREFIX"
+          echo "PWD: $PWD"
+          echo ""
+          echo "=== Checking GStreamer installation ==="
+          ls -la /mingw64/lib/gstreamer-1.0/ | head -20
+          echo ""
+          echo "Plugin count:"
+          ls /mingw64/lib/gstreamer-1.0/*.dll | wc -l
+          echo ""
+          echo "=== Checking typelibs ==="
+          ls -la /mingw64/lib/girepository-1.0/Gst*.typelib
+          echo ""
+          echo "=== Checking GStreamer libraries ==="
+          ls /mingw64/bin/libgst*.dll | head -10
+
       - name: Build walrio_main
         shell: msys2 {0}
         run: |
