@@ -295,12 +295,18 @@ class QueueWorker(QThread):
             tag_data = editor.get_metadata(filepath)
             
             # Return structured metadata with fallbacks
+            # Extract year from 'year', 'date', or 'originalyear' fields
+            year_value = tag_data.get('year') or tag_data.get('date') or tag_data.get('originalyear') or ''
+            # If date is in YYYY-MM-DD or YYYY format, extract just the year
+            if year_value and len(str(year_value)) >= 4:
+                year_value = str(year_value)[:4]
+            
             return {
                 'title': tag_data.get('title') or Path(filepath).stem,
                 'artist': tag_data.get('artist') or '',
                 'album': tag_data.get('album') or '',
                 'albumartist': tag_data.get('albumartist') or tag_data.get('artist') or '',
-                'year': str(tag_data.get('year') or tag_data.get('originalyear') or ''),
+                'year': str(year_value),
                 'length': tag_data.get('length', 0),
                 'file_missing': not file_exists
             }
