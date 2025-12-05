@@ -41,11 +41,8 @@ jobs:
         run: |
           venv/bin/python -m pip install --upgrade pip
           venv/bin/pip install mutagen pyinstaller
-          # Install PyGObject from MSYS2 packages (pre-built, no compilation needed)
-          pacman -S --noconfirm mingw-w64-x86_64-python-gobject
-          # Link MSYS2 PyGObject into venv so PyInstaller can analyze gi imports
-          ln -sf /mingw64/lib/python3.12/site-packages/gi venv/lib/python3.12/site-packages/gi
-          ln -sf /mingw64/lib/python3.12/site-packages/cairo venv/lib/python3.12/site-packages/cairo
+          # Install PyGObject via pip (uses pre-built wheels, provides metadata for PyInstaller)
+          venv/bin/pip install PyGObject
 
       - name: Debug GStreamer paths
         shell: msys2 {0}
