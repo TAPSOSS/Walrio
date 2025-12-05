@@ -212,6 +212,7 @@ class QueueView(BaseView):
             for i, song in enumerate(songs):
                 # Format duration from seconds to MM:SS
                 duration_seconds = song.get('length', 0)
+                print(f"DEBUG: Queue song {i}: title={song.get('title', 'Unknown')}, length={duration_seconds}")
                 if duration_seconds and duration_seconds > 0:
                     minutes = int(duration_seconds // 60)
                     seconds = int(duration_seconds % 60)

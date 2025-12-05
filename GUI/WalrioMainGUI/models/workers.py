@@ -294,6 +294,8 @@ class QueueWorker(QThread):
             editor = MetadataEditor()
             tag_data = editor.get_metadata(filepath)
             
+            print(f"DEBUG: Metadata for {Path(filepath).name}: length={tag_data.get('length', 0)}")
+            
             # Return structured metadata with fallbacks
             # Extract year from 'year', 'date', or 'originalyear' fields
             year_value = tag_data.get('year') or tag_data.get('date') or tag_data.get('originalyear') or ''
@@ -388,8 +390,22 @@ class PlayerWorker(QThread):
             if self.filepath:
                 success = self.audio_player.load_file(self.filepath)
                 if success:
-                    # Get actual duration from the audio player
-                    detected_duration = self.audio_player.get_duration()
+                    # Start playback first - pipeline needs to be in PLAYING state
+                    play_success = self.audio_player.play()
+                    if not play_success:
+                        self.error.emit(f"Failed to start playback: {self.filepath}")
+                        return
+                    
+                    # Wait for pipeline to reach PLAYING state and retry duration query
+                    import time
+                    detected_duration = 0.0
+                    for attempt in range(5):  # Try up to 5 times
+                        time.sleep(0.05)  # 50ms between attempts
+                        detected_duration = self.audio_player.get_duration()
+                        if detected_duration > 0:
+                            break
+                        print(f"DEBUG: run() duration attempt {attempt + 1}: {detected_duration}")
+                    
                     print(f"DEBUG: AudioPlayer detected duration: {detected_duration}")
                     if detected_duration > 0:
                         self.duration = detected_duration
@@ -403,12 +419,6 @@ class PlayerWorker(QThread):
                         'title': os.path.basename(self.filepath),
                         'position': 0.0
                     })
-                    
-                    # Start playback using modules/core/player.py
-                    play_success = self.audio_player.play()
-                    if not play_success:
-                        self.error.emit(f"Failed to start playback: {self.filepath}")
-                        return
                 else:
                     self.error.emit(f"Failed to load file: {self.filepath}")
                     return
@@ -658,12 +668,16 @@ class PlayerWorker(QThread):
                 # Start playback first - pipeline needs to be in PLAYING state for duration query
                 play_result = self.audio_player.play()
                 
-                # Wait a moment for pipeline to reach PLAYING state
+                # Wait for pipeline to reach PLAYING state and retry duration query
                 import time
-                time.sleep(0.1)
+                detected_duration = 0.0
+                for attempt in range(5):  # Try up to 5 times
+                    time.sleep(0.05)  # 50ms between attempts
+                    detected_duration = self.audio_player.get_duration()
+                    if detected_duration > 0:
+                        break
+                    print(f"DEBUG: Duration attempt {attempt + 1}: {detected_duration}")
                 
-                # Get actual duration
-                detected_duration = self.audio_player.get_duration()
                 print(f"DEBUG: play_new_song - AudioPlayer detected duration: {detected_duration}")
                 if detected_duration > 0:
                     self.duration = detected_duration
