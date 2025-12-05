@@ -288,10 +288,10 @@ class QueueWorker(QThread):
         
         try:
             # Import metadata module directly instead of subprocess
-            from modules.core.metadata import AudioMetadata
+            from modules.core.metadata import MetadataEditor
             
             # Get metadata using the module
-            meta = AudioMetadata(filepath)
+            meta = MetadataEditor(filepath)
             tag_data = meta.get_all_tags()
             
             # Return structured metadata with fallbacks
