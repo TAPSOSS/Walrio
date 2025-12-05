@@ -6,9 +6,18 @@ a = Analysis(
     ['walrio_lite.py'],
     pathex=['..'],
     binaries=[],
-    datas=[('../modules', 'modules'), ('../icons', 'icons')],
+    datas=[
+        ('../modules', 'modules'),
+        ('../icons', 'icons'),
+        ('/usr/lib64/python3.13/site-packages/gi/*.py', 'gi'),
+        ('/usr/lib64/python3.13/site-packages/gi/repository/*.py', 'gi/repository'),
+        ('/usr/lib64/python3.13/site-packages/gi/overrides/*.py', 'gi/overrides')
+    ],
     hiddenimports=[
         'gi',
+        'gi._gi',
+        'gi.repository',
+        'gi.overrides',
         'gi.repository.Gst',
         'gi.repository.GstBase',
         'gi.repository.GstAudio',
