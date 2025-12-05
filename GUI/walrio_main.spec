@@ -80,8 +80,8 @@ a = Analysis(
         'modules.core.metadata',
         'modules.core.database'
     ],
-    hookspath=['GUI/hooks'],
-    runtime_hooks=['GUI/pyi_rth_gstreamer.py'],
+    hookspath=['hooks'],
+    runtime_hooks=['pyi_rth_gstreamer.py'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
