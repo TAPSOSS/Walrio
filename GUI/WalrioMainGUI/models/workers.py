@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.append(os.path.join(os.path.dirname(__file__), '../../..'))
 
 from modules.core import metadata
-from modules.core.player import AudioPlayer
+from modules.core.gstreamer_player import AudioPlayer
 
 try:
     from PySide6.QtCore import QThread, Signal, Qt

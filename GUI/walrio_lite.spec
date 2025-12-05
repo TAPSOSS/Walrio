@@ -4,17 +4,28 @@ block_cipher = None
 
 a = Analysis(
     ['walrio_lite.py'],
-    pathex=['.'],
+    pathex=['..'],
     binaries=[],
-    datas=[],
+    datas=[('../modules', 'modules'), ('../icons', 'icons')],
     hiddenimports=[
         'gi',
         'gi.repository.Gst',
+        'gi.repository.GstBase',
+        'gi.repository.GstAudio',
+        'gi.repository.GstVideo',
         'gi.repository.GObject',
-        'gi.repository.Gio'
+        'gi.repository.Gio',
+        'gi.repository.GLib',
+        'modules',
+        'modules.core',
+        'modules.core.player',
+        'modules.core.queue',
+        'modules.core.playlist',
+        'modules.core.metadata',
+        'modules.core.database'
     ],
-    hookspath=[],
-    runtime_hooks=[],
+    hookspath=['hooks'],
+    runtime_hooks=['pyi_rth_gstreamer.py'],
     excludes=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

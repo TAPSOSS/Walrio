@@ -22,16 +22,50 @@ from pathlib import Path
 
 import gi
 gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GLib
+
+# Lazy import of Gst/GLib to allow PyInstaller runtime hooks to set environment first
+Gst = None
+GLib = None
+
+def _ensure_gstreamer_imported():
+    """Import GStreamer modules if not already imported (allows runtime hooks to run first)."""
+    global Gst, GLib
+    if Gst is None:
+        from gi.repository import Gst as _Gst, GLib as _GLib
+        Gst = _Gst
+        GLib = _GLib
+        if not Gst.is_initialized():
+            # Force registry scan with current environment settings
+            print(f"DEBUG: Initializing GStreamer with GST_PLUGIN_PATH={os.environ.get('GST_PLUGIN_PATH', 'NOT SET')}")
+            Gst.init(None)
+            
+            # Verify registry is populated
+            registry = Gst.Registry.get()
+            plugin_count = len(registry.get_plugin_list())
+            print(f"DEBUG: GStreamer registry has {plugin_count} plugins loaded")
+            
+            # Check if playbin is available
+            playbin_factory = Gst.ElementFactory.find('playbin')
+            if playbin_factory:
+                print(f"DEBUG: playbin factory found: {playbin_factory.get_name()}")
+            else:
+                print("ERROR: playbin factory NOT found in registry!")
+                print(f"ERROR: This means plugins are not being loaded from {os.environ.get('GST_PLUGIN_PATH')}")
+                # Try to manually update the registry
+                registry.scan_path(os.environ.get('GST_PLUGIN_PATH', ''))
+                playbin_factory = Gst.ElementFactory.find('playbin')
+                if playbin_factory:
+                    print("DEBUG: playbin found after manual registry scan")
+                else:
+                    print("ERROR: playbin still not found after manual scan!")
 
 class AudioPlayer:
     """
     GStreamer-based audio player with real-time control.
     """
     def __init__(self):
-        from gi.repository import Gst
-        if not Gst.is_initialized():
-            Gst.init(None)
+        # Ensure GStreamer is imported (lazy initialization)
+        _ensure_gstreamer_imported()
         self.pipeline = None
         self.bus = None
         self.current_file = None
@@ -152,7 +186,18 @@ class AudioPlayer:
         if self.pipeline:
             self.stop()
         self.current_file = absolute_path
+        
+        # Debug: Print plugin path
+        print(f"DEBUG: GST_PLUGIN_PATH = {os.environ.get('GST_PLUGIN_PATH', 'NOT SET')}")
+        print(f"DEBUG: GST_PLUGIN_SYSTEM_PATH_1_0 = {os.environ.get('GST_PLUGIN_SYSTEM_PATH_1_0', 'NOT SET')}")
+        
         self.pipeline = Gst.ElementFactory.make("playbin", None)
+        if not self.pipeline:
+            print("ERROR: Failed to create playbin element!")
+            print("DEBUG: This usually means GStreamer cannot find the playbin plugin")
+            print(f"DEBUG: Check that plugins are in: {os.environ.get('GST_PLUGIN_PATH', 'NOT SET')}")
+            return False
+            
         self.pipeline.set_property("uri", f"file://{absolute_path}")
         self.pipeline.set_property("volume", self.volume_value)
         self.bus = self.pipeline.get_bus()

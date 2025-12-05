@@ -21,7 +21,7 @@ jobs:
       - name: Install GStreamer
         run: |
           brew update
-          brew install gstreamer pygobject3
+          brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-libav pygobject3
 
       - name: Set up Python
         uses: actions/setup-python@v4
