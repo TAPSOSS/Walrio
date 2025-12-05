@@ -291,8 +291,8 @@ class QueueWorker(QThread):
             from modules.core.metadata import MetadataEditor
             
             # Get metadata using the module
-            meta = MetadataEditor(filepath)
-            tag_data = meta.get_all_tags()
+            editor = MetadataEditor()
+            tag_data = editor.get_metadata(filepath)
             
             # Return structured metadata with fallbacks
             return {
