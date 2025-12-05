@@ -11,22 +11,44 @@ try:
     import gi
     gi_path = os.path.dirname(gi.__file__)
     print(f"Found gi at: {gi_path}")
-    for ext in glob.glob(os.path.join(gi_path, '*.so')):
-        gi_binaries.append((ext, 'gi'))
-        print(f"  Adding: {ext}")
-    for ext in glob.glob(os.path.join(gi_path, '*.pyd')):
-        gi_binaries.append((ext, 'gi'))
-        print(f"  Adding: {ext}")
+    # Collect all binary extensions (.so for Unix, .pyd/.dll for Windows, .dylib for macOS)
+    for pattern in ['*.so', '*.pyd', '*.dll', '*.dylib']:
+        for ext in glob.glob(os.path.join(gi_path, pattern)):
+            gi_binaries.append((ext, 'gi'))
+            print(f"  Adding: {ext}")
 except ImportError as e:
     print(f"Could not import gi during spec: {e}")
-    # Try system paths directly
-    for sys_path in ['/usr/lib/python3/dist-packages/gi', '/usr/lib64/python3.11/site-packages/gi']:
+    # Try platform-specific system paths
+    if sys.platform.startswith('linux'):
+        sys_paths = [
+            '/usr/lib/python3/dist-packages/gi',
+            '/usr/lib64/python3.12/site-packages/gi',
+            '/usr/lib/python3.12/site-packages/gi'
+        ]
+    elif sys.platform == 'darwin':
+        import subprocess
+        brew_prefix = subprocess.run(['brew', '--prefix'], capture_output=True, text=True).stdout.strip()
+        sys_paths = [
+            f"{brew_prefix}/lib/python3.12/site-packages/gi",
+            '/opt/homebrew/lib/python3.12/site-packages/gi'
+        ]
+    elif sys.platform == 'win32':
+        sys_paths = [
+            'C:/msys64/mingw64/lib/python3.12/site-packages/gi',
+            os.path.join(os.environ.get('MSYSTEM_PREFIX', 'C:/msys64/mingw64'), 'lib/python3.12/site-packages/gi')
+        ]
+    else:
+        sys_paths = []
+    
+    for sys_path in sys_paths:
         if os.path.exists(sys_path):
             print(f"Searching system path: {sys_path}")
-            for ext in glob.glob(os.path.join(sys_path, '*.so')):
-                gi_binaries.append((ext, 'gi'))
-                print(f"  Adding: {ext}")
-            break
+            for pattern in ['*.so', '*.pyd', '*.dll', '*.dylib']:
+                for ext in glob.glob(os.path.join(sys_path, pattern)):
+                    gi_binaries.append((ext, 'gi'))
+                    print(f"  Adding: {ext}")
+            if gi_binaries:
+                break
 
 if gi_binaries:
     print(f"Total gi binaries collected: {len(gi_binaries)}")

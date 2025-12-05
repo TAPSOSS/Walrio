@@ -26,7 +26,14 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: '3.12'
+
+      - name: Make system site-packages available to venv
+        run: |
+          # Add Homebrew Python packages to Python path
+          SITE_PACKAGES=$(python -c "import sysconfig; print(sysconfig.get_paths()['purelib'])")
+          BREW_PREFIX=$(brew --prefix)
+          echo "${BREW_PREFIX}/lib/python3.12/site-packages" > $SITE_PACKAGES/homebrew-packages.pth
 
       - name: Install Python dependencies
         run: |
