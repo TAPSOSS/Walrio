@@ -65,39 +65,45 @@ jobs:
       - name: Build walrio_main
         shell: msys2 {0}
         run: |
-          venv/bin/python -m PyInstaller GUI/walrio_main.spec
+          echo "=== Verifying hook exists ==="
+          ls -la GUI/hooks/hook-gi.repository.Gst.py
+          cat GUI/hooks/hook-gi.repository.Gst.py | head -20
+          echo ""
+          echo "=== Building with PyInstaller ==="
+          cd GUI
+          ../venv/bin/python -m PyInstaller walrio_main.spec
       
       - name: Check what was bundled
         shell: msys2 {0}
         run: |
           echo "=== Checking dist/WalrioMain contents ==="
-          ls -lh dist/WalrioMain/ | head -30
+          ls -lh GUI/dist/WalrioMain/ | head -30
           echo ""
           echo "=== Checking for GStreamer plugins ==="
-          if [ -d "dist/WalrioMain/gst_plugins" ]; then
+          if [ -d "GUI/dist/WalrioMain/gst_plugins" ]; then
             echo "gst_plugins directory exists"
-            ls dist/WalrioMain/gst_plugins/ | wc -l
+            ls GUI/dist/WalrioMain/gst_plugins/ | wc -l
             echo "plugins found"
           else
             echo "ERROR: gst_plugins directory NOT found!"
           fi
           echo ""
           echo "=== Checking for typelibs ==="
-          if [ -d "dist/WalrioMain/gi_typelibs" ]; then
+          if [ -d "GUI/dist/WalrioMain/gi_typelibs" ]; then
             echo "gi_typelibs directory exists"
-            ls dist/WalrioMain/gi_typelibs/
+            ls GUI/dist/WalrioMain/gi_typelibs/
           else
             echo "ERROR: gi_typelibs directory NOT found!"
           fi
           echo ""
           echo "=== Total dist size ==="
-          du -sh dist/WalrioMain/
+          du -sh GUI/dist/WalrioMain/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: walrio_main-windows
           path: |
-            dist/
-            !dist/**/*.spec
+            GUI/dist/
+            !GUI/dist/**/*.spec
           retention-days: 30
