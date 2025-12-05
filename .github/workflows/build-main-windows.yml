@@ -66,6 +66,32 @@ jobs:
         shell: msys2 {0}
         run: |
           venv/bin/python -m PyInstaller GUI/walrio_main.spec
+      
+      - name: Check what was bundled
+        shell: msys2 {0}
+        run: |
+          echo "=== Checking dist/WalrioMain contents ==="
+          ls -lh dist/WalrioMain/ | head -30
+          echo ""
+          echo "=== Checking for GStreamer plugins ==="
+          if [ -d "dist/WalrioMain/gst_plugins" ]; then
+            echo "gst_plugins directory exists"
+            ls dist/WalrioMain/gst_plugins/ | wc -l
+            echo "plugins found"
+          else
+            echo "ERROR: gst_plugins directory NOT found!"
+          fi
+          echo ""
+          echo "=== Checking for typelibs ==="
+          if [ -d "dist/WalrioMain/gi_typelibs" ]; then
+            echo "gi_typelibs directory exists"
+            ls dist/WalrioMain/gi_typelibs/
+          else
+            echo "ERROR: gi_typelibs directory NOT found!"
+          fi
+          echo ""
+          echo "=== Total dist size ==="
+          du -sh dist/WalrioMain/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
