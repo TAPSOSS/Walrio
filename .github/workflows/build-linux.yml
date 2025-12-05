@@ -43,7 +43,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mutagen PySide6 Pillow pyinstaller
+          pip install mutagen PySide6 Pillow pyinstaller PyGObject
 
       - name: Build ${{ matrix.gui }}
         run: |
