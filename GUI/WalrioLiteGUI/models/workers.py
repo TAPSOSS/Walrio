@@ -611,6 +611,8 @@ class PlayerWorker(QThread):
     def play_new_song(self, filepath, duration=0):
         """Load and play a new song using core AudioPlayer."""
         try:
+            print(f"DEBUG: play_new_song called with filepath: {filepath}, duration: {duration}")
+            
             # Stop current playback
             if hasattr(self, 'audio_player') and self.audio_player:
                 self.audio_player.stop()
@@ -621,7 +623,17 @@ class PlayerWorker(QThread):
             self.should_stop = False
             
             # Load new file
+            print(f"DEBUG: Loading file: {filepath}")
             if self.audio_player.load_file(filepath):
+                print(f"DEBUG: File loaded successfully, starting playback")
+                
+                # Start playback first - pipeline needs to be in PLAYING state for duration query
+                play_result = self.audio_player.play()
+                
+                # Wait a moment for pipeline to reach PLAYING state
+                import time
+                time.sleep(0.1)
+                
                 # Get actual duration
                 detected_duration = self.audio_player.get_duration()
                 print(f"DEBUG: play_new_song - AudioPlayer detected duration: {detected_duration}")
@@ -638,11 +650,14 @@ class PlayerWorker(QThread):
                     'position': 0.0
                 })
                 
-                # Start playback
-                return self.audio_player.play()
+                return play_result
+            else:
+                print(f"ERROR: Failed to load file: {filepath}")
             return False
         except Exception as e:
             print(f"Error playing new song: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     # Note: Daemon connection methods removed - now using direct AudioPlayer integration
