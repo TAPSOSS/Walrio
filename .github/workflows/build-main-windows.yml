@@ -75,6 +75,20 @@ jobs:
         run: |
           venv/bin/python -m PyInstaller GUI/walrio_main.spec
       
+      - name: Check build TOC
+        shell: msys2 {0}
+        run: |
+          echo "=== Checking if GStreamer files are in Analysis TOC ==="
+          grep -c "gst_plugins" build/walrio_main/Analysis-00.toc || echo "No gst_plugins entries found"
+          grep -c "gi_typelibs" build/walrio_main/Analysis-00.toc || echo "No gi_typelibs entries found"
+          echo ""
+          echo "=== Checking if GStreamer files are in COLLECT TOC ==="
+          grep -c "gst_plugins" build/walrio_main/COLLECT-00.toc || echo "No gst_plugins entries in COLLECT"
+          grep -c "gi_typelibs" build/walrio_main/COLLECT-00.toc || echo "No gi_typelibs entries in COLLECT"
+          echo ""
+          echo "=== Sample entries from Analysis TOC ==="
+          grep "libgst" build/walrio_main/Analysis-00.toc | head -5 || echo "No libgst entries"
+      
       - name: Check what was bundled
         shell: msys2 {0}
         run: |
