@@ -7,7 +7,7 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 PyInstaller hook for GStreamer that collects all necessary GStreamer files 
 (plugins, libraries, and typelibs) for bundling on Linux, Windows, and macOS.
 """
-from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
+from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files, logger
 import os
 import sys
 import glob
@@ -15,6 +15,8 @@ import glob
 # Collect GStreamer typelibs
 datas = []
 binaries = []
+
+logger.info(f"[HOOK EXEC] hook-gi.repository.Gst.py executing on platform: {sys.platform}")
 
 if sys.platform.startswith('linux'):
     # LINUX - Prioritize 64-bit paths for 64-bit Python
@@ -197,13 +199,12 @@ elif sys.platform == 'win32':
         print(f"sys.prefix: {sys.prefix}")
     else:
         # Debug: Show first few collected files
-        print("DEBUG: First 5 typelibs:")
+        logger.info("DEBUG: First 5 typelibs:")
         for i, (src, dst) in enumerate(datas[:5]):
-            print(f"  {src} -> {dst}")
-        print("DEBUG: First 5 binaries:")
+            logger.info(f"  {src} -> {dst}")
+        logger.info("DEBUG: First 5 binaries:")
         for i, (src, dst) in enumerate(binaries[:5]):
-            print(f"  {src} -> {dst}")
+            logger.info(f"  {src} -> {dst}")
 
-print(f"GStreamer hook ({sys.platform}): Found {len(datas)} typelibs and {len([b for b in binaries if 'gst' in b[0].lower()])} GStreamer files")
-print(f"DEBUG: Total datas entries: {len(datas)}")
-print(f"DEBUG: Total binaries entries: {len(binaries)}")
+logger.info(f"[HOOK RESULT] GStreamer hook ({sys.platform}): Collected {len(datas)} datas and {len(binaries)} binaries")
+logger.info(f"[HOOK RESULT] Typelibs: {len(datas)}, GStreamer binaries: {len([b for b in binaries if 'gst' in b[0].lower()])}")
