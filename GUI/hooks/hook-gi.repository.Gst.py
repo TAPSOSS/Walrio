@@ -127,17 +127,28 @@ elif sys.platform == 'win32':
     print(f"MSYSTEM: {os.environ.get('MSYSTEM', 'not set')}")
     print(f"MSYSTEM_PREFIX: {os.environ.get('MSYSTEM_PREFIX', 'not set')}")
     
+    # Build list of paths to check
+    msys_paths = []
+    
     if in_msys2:
-        # In MSYS2 shell, use Unix-style paths
-        msys_prefix = os.environ.get('MSYSTEM_PREFIX', '/mingw64')
-        msys_paths = [msys_prefix, '/mingw64']
+        # In MSYS2 shell, check both Unix-style and Windows-style paths
+        msys_prefix_env = os.environ.get('MSYSTEM_PREFIX', '/mingw64')
+        msys_paths.append(msys_prefix_env)
+        msys_paths.append('/mingw64')
+        # Also try converting MSYS path to Windows path
+        if msys_prefix_env.startswith('/'):
+            # Try to find MSYS2 installation
+            for drive in ['D:/', 'C:/']:
+                for msys_dir in ['a/_temp/msys64', 'msys64']:
+                    win_path = os.path.join(drive, msys_dir, msys_prefix_env.lstrip('/'))
+                    msys_paths.append(win_path)
     else:
         # Outside MSYS2, use Windows paths
-        msys_paths = [
+        msys_paths.extend([
             'C:/msys64/mingw64',
-            'D:/a/_temp/msys64/msys64/mingw64',
+            'D:/a/_temp/msys64/mingw64',
             os.path.join(os.environ.get('MSYSTEM_PREFIX', 'C:/msys64/mingw64')),
-        ]
+        ])
     
     print(f"Checking MSYS paths: {msys_paths}")
     
@@ -184,5 +195,15 @@ elif sys.platform == 'win32':
         print("WARNING: No GStreamer files found on Windows!")
         print(f"Current working directory: {os.getcwd()}")
         print(f"sys.prefix: {sys.prefix}")
+    else:
+        # Debug: Show first few collected files
+        print("DEBUG: First 5 typelibs:")
+        for i, (src, dst) in enumerate(datas[:5]):
+            print(f"  {src} -> {dst}")
+        print("DEBUG: First 5 binaries:")
+        for i, (src, dst) in enumerate(binaries[:5]):
+            print(f"  {src} -> {dst}")
 
 print(f"GStreamer hook ({sys.platform}): Found {len(datas)} typelibs and {len([b for b in binaries if 'gst' in b[0].lower()])} GStreamer files")
+print(f"DEBUG: Total datas entries: {len(datas)}")
+print(f"DEBUG: Total binaries entries: {len(binaries)}")
