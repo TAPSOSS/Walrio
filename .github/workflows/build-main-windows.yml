@@ -93,31 +93,15 @@ jobs:
         shell: msys2 {0}
         run: |
           echo "=== Checking dist/WalrioMain contents ==="
-          ls -lh dist/WalrioMain/ | head -30
+          ls -lh dist/WalrioMain/
           echo ""
-          echo "=== Checking _internal directory ==="
-          ls -lh dist/WalrioMain/_internal/ | head -20
+          echo "=== GStreamer plugins bundled ==="
+          ls dist/WalrioMain/_internal/gst_plugins/ | wc -l
+          echo "plugins found in _internal/gst_plugins/"
           echo ""
-          echo "=== Checking for GStreamer plugins in _internal ==="
-          if [ -d "dist/WalrioMain/_internal/gst_plugins" ]; then
-            echo "gst_plugins directory exists in _internal"
-            ls dist/WalrioMain/_internal/gst_plugins/ | wc -l
-            echo "plugins found"
-          else
-            echo "ERROR: gst_plugins directory NOT found in _internal!"
-          fi
-          echo ""
-          echo "=== Checking for typelibs in _internal ==="
-          if [ -d "dist/WalrioMain/_internal/gi_typelibs" ]; then
-            echo "gi_typelibs directory exists in _internal"
-            ls dist/WalrioMain/_internal/gi_typelibs/ | wc -l
-            echo "typelibs found"
-          else
-            echo "ERROR: gi_typelibs directory NOT found in _internal!"
-          fi
-          echo ""
-          echo "=== Looking for any gst files in _internal ==="
-          find dist/WalrioMain/_internal -name "*gst*" -type f | head -10 || echo "No gst files found"
+          echo "=== GStreamer typelibs bundled ==="
+          ls dist/WalrioMain/_internal/gi_typelibs/ | wc -l
+          echo "typelibs found in _internal/gi_typelibs/"
           echo ""
           echo "=== Total dist size ==="
           du -sh dist/WalrioMain/
