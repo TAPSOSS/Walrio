@@ -95,22 +95,29 @@ jobs:
           echo "=== Checking dist/WalrioLite contents ==="
           ls -lh dist/WalrioLite/ | head -30
           echo ""
-          echo "=== Checking for GStreamer plugins ==="
-          if [ -d "dist/WalrioLite/gst_plugins" ]; then
-            echo "gst_plugins directory exists"
-            ls dist/WalrioLite/gst_plugins/ | wc -l
+          echo "=== Checking _internal directory ==="
+          ls -lh dist/WalrioLite/_internal/ | head -20
+          echo ""
+          echo "=== Checking for GStreamer plugins in _internal ==="
+          if [ -d "dist/WalrioLite/_internal/gst_plugins" ]; then
+            echo "gst_plugins directory exists in _internal"
+            ls dist/WalrioLite/_internal/gst_plugins/ | wc -l
             echo "plugins found"
           else
-            echo "ERROR: gst_plugins directory NOT found!"
+            echo "ERROR: gst_plugins directory NOT found in _internal!"
           fi
           echo ""
-          echo "=== Checking for typelibs ==="
-          if [ -d "dist/WalrioLite/gi_typelibs" ]; then
-            echo "gi_typelibs directory exists"
-            ls dist/WalrioLite/gi_typelibs/
+          echo "=== Checking for typelibs in _internal ==="
+          if [ -d "dist/WalrioLite/_internal/gi_typelibs" ]; then
+            echo "gi_typelibs directory exists in _internal"
+            ls dist/WalrioLite/_internal/gi_typelibs/ | wc -l
+            echo "typelibs found"
           else
-            echo "ERROR: gi_typelibs directory NOT found!"
+            echo "ERROR: gi_typelibs directory NOT found in _internal!"
           fi
+          echo ""
+          echo "=== Looking for any gst files in _internal ==="
+          find dist/WalrioLite/_internal -name "*gst*" -type f | head -10 || echo "No gst files found"
           echo ""
           echo "=== Total dist size ==="
           du -sh dist/WalrioLite/
