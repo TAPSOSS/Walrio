@@ -61,6 +61,10 @@ a = Analysis(
     binaries=gi_binaries,
     datas=[('../modules', 'modules'), ('../icons', 'icons')],
     hiddenimports=[
+        'PySide6',
+        'PySide6.QtCore',
+        'PySide6.QtGui',
+        'PySide6.QtWidgets',
         'gi',
         'gi._gi',
         'gi.repository',
