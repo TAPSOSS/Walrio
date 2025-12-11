@@ -107,12 +107,10 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
-                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ',
+                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+?! ',
                 '--rc', '/', '~',           # Forward slash to tilde
                 '--rc', '\\', '~',          # Backslash to tilde  
                 '--rc', '&', '+',           # Ampersand to plus
-                '--rc', '?', '',            # Remove question marks
-                '--rc', '!', '',            # Remove exclamation marks
                 '--rc', '|', '~',           # Pipe to tilde
                 '--rc', '.', '',            # Remove periods
                 '--rc', ',', '~',           # Comma to tilde

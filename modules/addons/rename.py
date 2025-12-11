@@ -8,7 +8,7 @@ Licensed under the BSD-3-Clause License (see LICENSE file for details)
 A tool to rename audio files to a standardized format: "(track name) - (album)"
 while removing special characters that can cause issues with music players.
 
-For file names, includes: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ[]()-_~@=+
+For file names, includes: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ[]()-_~@=+?!
 """
 
 import os
@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger('AudioRenamer')
 
 # Standard character set for file names (as defined by tapscodes)
-ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ')
+ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+?! ')
 
 # Audio file extensions to process
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
@@ -675,7 +675,7 @@ Conflict resolution examples (default: resolve conflicts enabled):
 
 Custom sanitization examples:
   --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic english set
-  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols
+  --sanitize "abcABC123[]()-_~@=+?! "        # Include brackets and symbols
   --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
   --s "あいうえおかきくけこ"              # Japanese characters
 
