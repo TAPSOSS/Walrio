@@ -1542,6 +1542,9 @@ Examples:
   # Display metadata
   python metadata.py --show song.mp3
   
+  # Show all raw tags (including non-standard tags)
+  python metadata.py --show-all-tags song.mp3
+  
   # Set title and artist
   python metadata.py --set-title "New Title" --set-artist "New Artist" song.mp3
   
@@ -1551,6 +1554,9 @@ Examples:
   # Remove album art
   python metadata.py --remove-album-art song.mp3
   
+  # Remove a specific tag (e.g., playcount)
+  python metadata.py --remove-tag FMPS_PLAYCOUNT song.flac
+  
   # Batch edit multiple files
   python metadata.py --set-album "Album Name" *.mp3
         """
@@ -1558,6 +1564,7 @@ Examples:
     
     parser.add_argument('files', nargs='*', help='Audio files to process')
     parser.add_argument('--show', action='store_true', help='Display current metadata')
+    parser.add_argument('--show-all-tags', action='store_true', help='Display all raw tags in the file')
     parser.add_argument('--duration', action='store_true', help='Show only duration in seconds')
     parser.add_argument('--set-title', help='Set title tag')
     parser.add_argument('--set-artist', help='Set artist tag')
@@ -1571,6 +1578,7 @@ Examples:
     parser.add_argument('--set-comment', help='Set comment tag')
     parser.add_argument('--set-album-art', help='Set album art from image file')
     parser.add_argument('--remove-album-art', action='store_true', help='Remove album art')
+    parser.add_argument('--remove-tag', help='Remove a specific tag by name')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
     
     args = parser.parse_args()
@@ -1591,6 +1599,22 @@ Examples:
                 editor.display_metadata(filepath)
             else:
                 logger.error(f"File not found: {filepath}")
+        return 0
+    
+    # Check if we're showing all raw tags
+    if args.show_all_tags:
+        for filepath in args.files:
+            if not os.path.exists(filepath):
+                logger.error(f"File not found: {filepath}")
+                continue
+            print(f"\nAll tags in: {os.path.basename(filepath)}")
+            print("=" * 50)
+            tags = editor.get_all_tags(filepath)
+            if tags:
+                for key, value in sorted(tags.items()):
+                    print(f"  {key}: {value}")
+            else:
+                print("  No tags found")
         return 0
     
     # Check if we're just getting duration
@@ -1652,6 +1676,11 @@ Examples:
         
         if args.remove_album_art:
             if editor.remove_album_art(filepath):
+                success_count += 1
+        
+        # Handle tag removal
+        if args.remove_tag:
+            if editor.remove_tag(filepath, args.remove_tag):
                 success_count += 1
     
     logger.info(f"Successfully processed {success_count} out of {len(args.files)} files")
