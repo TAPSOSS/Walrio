@@ -1162,6 +1162,102 @@ class MetadataEditor:
             logger.error(f"Error removing album art with FFmpeg: {str(e)}")
             return False
     
+    def get_all_tags(self, filepath: str) -> Dict[str, Any]:
+        """
+        Get all raw tags from an audio file (not just standardized metadata).
+        Returns all tag names and values as they appear in the file.
+        
+        Args:
+            filepath (str): Path to the audio file
+            
+        Returns:
+            Dict[str, Any]: Dictionary with all raw tag names and their values
+        """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return {}
+            
+        if not os.path.exists(filepath):
+            logger.error(f"File not found: {filepath}")
+            return {}
+        
+        try:
+            audio_file = MutagenFile(filepath)
+            if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
+                logger.warning(f"No tags found in {os.path.basename(filepath)}")
+                return {}
+            
+            # Extract all tags as-is
+            all_tags = {}
+            
+            # Handle ID3 tags (MP3)
+            if isinstance(audio_file.tags, ID3):
+                for key in audio_file.tags.keys():
+                    tag = audio_file.tags[key]
+                    # Convert tag values to readable format
+                    if hasattr(tag, 'text'):
+                        all_tags[key] = str(tag.text[0]) if tag.text else ''
+                    elif hasattr(tag, 'data'):
+                        all_tags[key] = f"<binary data: {len(tag.data)} bytes>"
+                    else:
+                        all_tags[key] = str(tag)
+            
+            # Handle Vorbis comments (FLAC, OGG, OPUS)
+            else:
+                for key in audio_file.tags.keys():
+                    value = audio_file.tags[key]
+                    if isinstance(value, list):
+                        all_tags[key] = value[0] if len(value) == 1 else value
+                    else:
+                        all_tags[key] = value
+            
+            return all_tags
+            
+        except Exception as e:
+            logger.error(f"Error reading all tags from {os.path.basename(filepath)}: {str(e)}")
+            return {}
+    
+    def remove_tag(self, filepath: str, tag_name: str) -> bool:
+        """
+        Remove a specific tag from an audio file.
+        
+        Args:
+            filepath (str): Path to the audio file
+            tag_name (str): Name of the tag to remove (case-sensitive)
+            
+        Returns:
+            bool: True if tag was successfully removed, False otherwise
+        """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("Mutagen library not available")
+            return False
+            
+        if not os.path.exists(filepath):
+            logger.error(f"File not found: {filepath}")
+            return False
+        
+        try:
+            audio_file = MutagenFile(filepath)
+            if audio_file is None or not hasattr(audio_file, 'tags') or audio_file.tags is None:
+                logger.warning(f"No tags found in {os.path.basename(filepath)}")
+                return False
+            
+            # Check if tag exists
+            if tag_name not in audio_file.tags:
+                logger.warning(f"Tag '{tag_name}' not found in {os.path.basename(filepath)}")
+                return False
+            
+            # Remove the tag
+            del audio_file.tags[tag_name]
+            audio_file.save()
+            
+            logger.info(f"Successfully removed tag '{tag_name}' from {os.path.basename(filepath)}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error removing tag '{tag_name}' from {os.path.basename(filepath)}: {str(e)}")
+            return False
+    
     def batch_edit_metadata(self, file_paths: List[str], metadata: Dict[str, Any]) -> Dict[str, int]:
         """
         Edit metadata for multiple files.
