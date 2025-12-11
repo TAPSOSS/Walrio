@@ -1557,15 +1557,19 @@ Examples:
   # Remove a specific tag (e.g., playcount)
   python metadata.py --remove-tag FMPS_PLAYCOUNT song.flac
   
+  # Remove tag from all files in directory recursively
+  python metadata.py --remove-tag fmps_playcount --recursive /path/to/music
+  
   # Batch edit multiple files
   python metadata.py --set-album "Album Name" *.mp3
         """
     )
     
-    parser.add_argument('files', nargs='*', help='Audio files to process')
+    parser.add_argument('files', nargs='*', help='Audio files or directories to process')
     parser.add_argument('--show', action='store_true', help='Display current metadata')
     parser.add_argument('--show-all-tags', action='store_true', help='Display all raw tags in the file')
     parser.add_argument('--duration', action='store_true', help='Show only duration in seconds')
+    parser.add_argument('--recursive', '-r', action='store_true', help='Process directories recursively')
     parser.add_argument('--set-title', help='Set title tag')
     parser.add_argument('--set-artist', help='Set artist tag')
     parser.add_argument('--set-album', help='Set album tag')
@@ -1592,9 +1596,29 @@ Examples:
     
     editor = MetadataEditor()
     
+    # Expand directories if recursive flag is set
+    file_list = []
+    audio_extensions = ['.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.aac', '.wv', '.ape', '.mpc', '.wav']
+    
+    for path in args.files:
+        if os.path.isdir(path):
+            if args.recursive:
+                for root, dirs, files in os.walk(path):
+                    for file in files:
+                        if any(file.lower().endswith(ext) for ext in audio_extensions):
+                            file_list.append(os.path.join(root, file))
+            else:
+                logger.warning(f"Skipping directory '{path}' (use --recursive to process directories)")
+        else:
+            file_list.append(path)
+    
+    if not file_list:
+        logger.error("No audio files found to process")
+        return 1
+    
     # Check if we're just displaying metadata
     if args.show:
-        for filepath in args.files:
+        for filepath in file_list:
             if os.path.exists(filepath):
                 editor.display_metadata(filepath)
             else:
@@ -1603,7 +1627,7 @@ Examples:
     
     # Check if we're showing all raw tags
     if args.show_all_tags:
-        for filepath in args.files:
+        for filepath in file_list:
             if not os.path.exists(filepath):
                 logger.error(f"File not found: {filepath}")
                 continue
@@ -1619,7 +1643,7 @@ Examples:
     
     # Check if we're just getting duration
     if args.duration:
-        for filepath in args.files:
+        for filepath in file_list:
             if os.path.exists(filepath):
                 audio_info = editor._get_audio_info(filepath)
                 duration = audio_info.get('duration', 0)
@@ -1655,7 +1679,7 @@ Examples:
     # Process files
     success_count = 0
     
-    for filepath in args.files:
+    for filepath in file_list:
         if not os.path.exists(filepath):
             logger.error(f"File not found: {filepath}")
             continue
@@ -1683,7 +1707,7 @@ Examples:
             if editor.remove_tag(filepath, args.remove_tag):
                 success_count += 1
     
-    logger.info(f"Successfully processed {success_count} out of {len(args.files)} files")
+    logger.info(f"Successfully processed {success_count} out of {len(file_list)} files")
     return 0 if success_count > 0 else 1
 
 
