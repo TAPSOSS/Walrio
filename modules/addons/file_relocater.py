@@ -409,7 +409,9 @@ class FileRelocater:
         
         # Check if target file already exists
         if os.path.exists(destination_filepath):
-            if self.options.get('skip_existing', True):
+            if self.options.get('force_overwrite', False):
+                logger.warning(f"Overwriting existing file: {destination_filepath}")
+            elif self.options.get('skip_existing', True):
                 logger.error(f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
                 self.conflict_count += 1
                 return True
@@ -654,9 +656,14 @@ Folder format tips:
     )
     parser.add_argument(
         "--skip-existing",
+        choices=["y", "n"],
+        default="y",
+        help="Skip files if target already exists: y=skip (default), n=auto-rename with counter"
+    )
+    parser.add_argument(
+        "--force-overwrite", "-f",
         action="store_true",
-        default=True,
-        help="Skip organization if target file already exists (default: True)"
+        help="Overwrite existing files at destination without prompting (replaces files)"
     )
     parser.add_argument(
         "--process-no-metadata", "--pnm",
@@ -865,7 +872,8 @@ def main():
         'recursive': args.recursive,
         'dry_run': args.dry_run,
         'copy_mode': args.copy == 'y',
-        'skip_existing': args.skip_existing,
+        'skip_existing': args.skip_existing == 'y',
+        'force_overwrite': args.force_overwrite,
         'skip_no_metadata': skip_no_metadata,
         'process_no_metadata': process_no_metadata,
         'folder_format': args.folder_format,
