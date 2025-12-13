@@ -100,13 +100,14 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'],
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y'],
             'delete_original_support': True  # This stage supports delete-original flag
         },
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
+                '--force-allow-special',
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+?! ',
                 '--rc', '/', '~',           # Forward slash to tilde
                 '--rc', '\\', '~',          # Backslash to tilde  
@@ -149,7 +150,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         {
             'name': 'applyloudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--backup', 'false']
+            'args': ['--replaygain', '--backup', 'false', '--force']
         },
         {
             'name': 'resizealbumart',
