@@ -41,7 +41,7 @@ ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
 # Default naming format
-DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
+DEFAULT_FORMAT = "{title} - {albumartist} - {album} - {artist} - {year}"
 
 # Pre-defined metadata tag mappings for common fields
 METADATA_TAG_MAPPINGS = {
