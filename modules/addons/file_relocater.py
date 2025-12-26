@@ -96,6 +96,7 @@ class FileRelocater:
         self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
+        self.error_messages = []  # Track all error messages for display at end
         self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
         self.playlist_updater = None  # Will be initialized if playlists are specified
         
@@ -255,7 +256,9 @@ class FileRelocater:
             return standardized_metadata
             
         except Exception as e:
-            logger.error(f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}")
+            error_msg = f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}"
+            logger.error(error_msg)
+            self.error_messages.append(error_msg)
             self.metadata_error_count += 1
             # Return a dictionary with "Unknown" values for all standard fields
             return {
@@ -403,7 +406,9 @@ class FileRelocater:
         try:
             os.makedirs(destination_folder, exist_ok=True)
         except OSError as e:
-            logger.error(f"Failed to create destination folder {destination_folder}: {str(e)}")
+            error_msg = f"Failed to create destination folder {destination_folder}: {str(e)}"
+            logger.error(error_msg)
+            self.error_messages.append(error_msg)
             self.error_count += 1
             return False
         
@@ -412,7 +417,9 @@ class FileRelocater:
             if self.options.get('force_overwrite', False):
                 logger.warning(f"Overwriting existing file: {destination_filepath}")
             elif self.options.get('skip_existing', True):
-                logger.error(f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}")
+                error_msg = f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}"
+                logger.error(error_msg)
+                self.error_messages.append(error_msg)
                 self.conflict_count += 1
                 return True
             else:
@@ -447,7 +454,9 @@ class FileRelocater:
             return True
             
         except OSError as e:
-            logger.error(f"Failed to move {source_filepath}: {str(e)}")
+            error_msg = f"Failed to move {source_filepath}: {str(e)}"
+            logger.error(error_msg)
+            self.error_messages.append(error_msg)
             self.error_count += 1
             return False
     
@@ -952,8 +961,15 @@ def main():
                 logger.error(f"  - {skipped_file}")
             issues_found = True
         
-        if issues_found:
-            logger.error("=" * 60)
+        if issues_found:            # Display all error messages collected during processing
+            if organizer.error_messages:
+                logger.error("="*60)
+                logger.error("DETAILED ERROR LIST:")
+                logger.error("="*60)
+                for error_msg in organizer.error_messages:
+                    logger.error(error_msg)
+                logger.error("="*60)
+                        logger.error("=" * 60)
             logger.error("ATTENTION: Issues were encountered during processing!")
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
