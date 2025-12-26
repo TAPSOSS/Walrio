@@ -961,7 +961,8 @@ def main():
                 logger.error(f"  - {skipped_file}")
             issues_found = True
         
-        if issues_found:            # Display all error messages collected during processing
+        if issues_found:
+            # Display all error messages collected during processing
             if organizer.error_messages:
                 logger.error("="*60)
                 logger.error("DETAILED ERROR LIST:")
@@ -969,13 +970,14 @@ def main():
                 for error_msg in organizer.error_messages:
                     logger.error(error_msg)
                 logger.error("="*60)
-                        logger.error("=" * 60)
+            
+            logger.error("="*60)
             logger.error("ATTENTION: Issues were encountered during processing!")
             logger.error("Please review the errors above and consider:")
             logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
             logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
             logger.error("- For skipped files: Use --process-no-metadata y to include files with no metadata")
-            logger.error("=" * 60)
+            logger.error("="*60)
             sys.exit(1)
         
     except Exception as e:
