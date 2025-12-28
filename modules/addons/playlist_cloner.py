@@ -20,7 +20,7 @@ from typing import List, Dict, Optional, Tuple
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from addons.convert import AudioConverter, SUPPORTED_OUTPUT_FORMATS, BITRATE_PRESETS
-from niche.resizealbumart import resize_album_art
+from addons.resizealbumart import resize_album_art
 
 # Configure logging
 logging.basicConfig(

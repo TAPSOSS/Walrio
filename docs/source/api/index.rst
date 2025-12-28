@@ -89,13 +89,13 @@ ReplayGain
    :undoc-members:
    :show-inheritance:
 
-Niche Modules
--------------
+Addon Modules (continued)
+--------------------------
 
 Apply Loudness
 ^^^^^^^^^^^^^^
 
-.. automodule:: modules.niche.applyloudness
+.. automodule:: modules.addons.applyloudness
    :members:
    :undoc-members:
    :show-inheritance:
@@ -103,10 +103,13 @@ Apply Loudness
 Resize Album Art
 ^^^^^^^^^^^^^^^^
 
-.. automodule:: modules.niche.resizealbumart
+.. automodule:: modules.addons.resizealbumart
    :members:
    :undoc-members:
    :show-inheritance:
+
+Niche Modules
+-------------
 
 Walrio Import
 ^^^^^^^^^^^^^

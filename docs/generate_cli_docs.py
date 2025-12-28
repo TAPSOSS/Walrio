@@ -275,9 +275,9 @@ Use the unified interface for easier access to all modules:
 
 **Available Module Categories:**
 
-* **ADDONS**: convert, rename, replaygain, imageconverter, file_relocater
-* **NICHE**: applyloudness, resizealbumart  
+* **ADDONS**: convert, rename, replaygain, imageconverter, file_relocater, applyloudness, resizealbumart
 * **CORE**: database, metadata, player, playlist, queue
+* **NICHE**: walrio_import
 
 Direct Module Access
 --------------------
