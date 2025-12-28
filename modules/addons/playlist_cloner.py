@@ -46,8 +46,8 @@ class PlaylistCloner:
                  dry_run: bool = False,
                  album_art_size: str = '600x600',
                  album_art_format: str = 'jpg',
-                 dont_resize: bool = False,
-                 dont_convert: bool = False):
+                 dont_resize: bool = True,
+                 dont_convert: bool = True):
         """
         Initialize the PlaylistCloner.
         
@@ -315,11 +315,14 @@ def parse_arguments():
         description="Clone audio files from a playlist to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone playlist to protable devices with default 256kbps AAC and 600x600 jpg album art
+  # Clone playlist (just copy files, no conversion or resizing by default)
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
-  # Clone with MP3 format at 320kbps
-  python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k
+  # Clone with 256kbps AAC conversion and 600x600 jpg album art resizing
+  python playlist_cloner.py my_playlist.m3u /output/ --format aac --bitrate 256k --album-art-size 600x600 --album-art-format jpg
+  
+  # Clone with MP3 format at 320kbps, no resizing
+  python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k --dont-resize
   
   # Clone with preserved folder structure and resize album art to 1000x1000
   python playlist_cloner.py my_playlist.m3u /output/ --preserve-structure --album-art-size 1000x1000 --album-art-format jpg
