@@ -45,7 +45,9 @@ class PlaylistCloner:
                  skip_existing: bool = True,
                  dry_run: bool = False,
                  album_art_size: str = '600x600',
-                 album_art_format: str = 'jpg'):
+                 album_art_format: str = 'jpg',
+                 dont_resize: bool = False,
+                 dont_convert: bool = False):
         """
         Initialize the PlaylistCloner.
         
@@ -59,6 +61,8 @@ class PlaylistCloner:
             dry_run (bool): If True, show what would be done without actually doing it
             album_art_size (str): Album art size for resizing (default: 600x600)
             album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
+            dont_resize (bool): Skip album art resizing (default: False)
+            dont_convert (bool): Skip format conversion, only copy files (default: False)
         """
         self.playlist_path = playlist_path
         self.output_dir = output_dir
@@ -69,6 +73,8 @@ class PlaylistCloner:
         self.dry_run = dry_run
         self.album_art_size = album_art_size
         self.album_art_format = album_art_format
+        self.dont_resize = dont_resize
+        self.dont_convert = dont_convert
         
         # Statistics
         self.total_files = 0
@@ -233,7 +239,7 @@ class PlaylistCloner:
                 continue
             
             # Check if conversion is needed
-            if self._needs_conversion(input_file):
+            if self._needs_conversion(input_file) and not self.dont_convert:
                 # Convert the file
                 output_subdir = os.path.dirname(output_path)
                 success, reason = converter.convert_file(input_file, output_subdir)
@@ -242,8 +248,8 @@ class PlaylistCloner:
                     logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
                     self.converted_files += 1
                     
-                    # Resize album art if requested
-                    if self.album_art_size:
+                    # Resize album art if requested and not disabled
+                    if self.album_art_size and not self.dont_resize:
                         try:
                             format_map = {
                                 'jpg': 'jpeg',
@@ -309,14 +315,14 @@ def parse_arguments():
         description="Clone audio files from a playlist to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone playlist to portable device with 192kbps Opus (default)
+  # Clone playlist to protable devices with default 256kbps AAC and 600x600 jpg album art
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
   # Clone with MP3 format at 320kbps
   python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k
   
-  # Clone with preserved folder structure
-  python playlist_cloner.py my_playlist.m3u /output/ --preserve-structure
+  # Clone with preserved folder structure and resize album art to 1000x1000
+  python playlist_cloner.py my_playlist.m3u /output/ --preserve-structure --album-art-size 1000x1000 --album-art-format jpg
   
   # Clone to FLAC (lossless) - good for archival
   python playlist_cloner.py my_playlist.m3u /backup/ --format flac
@@ -402,6 +408,20 @@ Common bitrate presets:
     )
     
     parser.add_argument(
+        '--dont-resize', '--dr',
+        action='store_true',
+        dest='dont_resize',
+        help='Skip album art resizing during cloning'
+    )
+    
+    parser.add_argument(
+        '--dont-convert', '--dc',
+        action='store_true',
+        dest='dont_convert',
+        help='Skip format conversion, only copy files'
+    )
+    
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
@@ -435,7 +455,9 @@ def main():
             skip_existing=skip_existing,
             dry_run=args.dry_run,
             album_art_size=args.album_art_size,
-            album_art_format=args.album_art_format
+            album_art_format=args.album_art_format,
+            dont_resize=args.dont_resize,
+            dont_convert=args.dont_convert
         )
         
         # Clone the playlist
