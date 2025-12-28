@@ -20,6 +20,7 @@ from typing import List, Dict, Optional, Tuple
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from addons.convert import AudioConverter, SUPPORTED_OUTPUT_FORMATS, BITRATE_PRESETS
+from niche.resizealbumart import resize_album_art
 
 # Configure logging
 logging.basicConfig(
@@ -42,7 +43,9 @@ class PlaylistCloner:
                  bitrate: str = '256k',
                  preserve_structure: bool = False,
                  skip_existing: bool = True,
-                 dry_run: bool = False):
+                 dry_run: bool = False,
+                 album_art_size: str = '600x600',
+                 album_art_format: str = 'jpg'):
         """
         Initialize the PlaylistCloner.
         
@@ -54,6 +57,8 @@ class PlaylistCloner:
             preserve_structure (bool): If True, preserve folder structure; if False, flatten
             skip_existing (bool): Skip files that already exist in destination
             dry_run (bool): If True, show what would be done without actually doing it
+            album_art_size (str): Album art size for resizing (default: 600x600)
+            album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
         """
         self.playlist_path = playlist_path
         self.output_dir = output_dir
@@ -62,6 +67,8 @@ class PlaylistCloner:
         self.preserve_structure = preserve_structure
         self.skip_existing = skip_existing
         self.dry_run = dry_run
+        self.album_art_size = album_art_size
+        self.album_art_format = album_art_format
         
         # Statistics
         self.total_files = 0
@@ -234,6 +241,35 @@ class PlaylistCloner:
                 if success and reason == 'converted':
                     logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
                     self.converted_files += 1
+                    
+                    # Resize album art if requested
+                    if self.album_art_size:
+                        try:
+                            format_map = {
+                                'jpg': 'jpeg',
+                                'jpeg': 'jpeg',
+                                'png': 'png',
+                                'gif': 'gif',
+                                'webp': 'webp',
+                            }
+                            resize_format = format_map.get(self.album_art_format.lower(), 'jpeg')
+                            
+                            logger.info(f"  Resizing album art to {self.album_art_size} ({self.album_art_format})")
+                            success = resize_album_art(
+                                audio_file=output_path,
+                                size=self.album_art_size,
+                                quality=100,
+                                format=resize_format,
+                                maintain_aspect=False,
+                                backup=False
+                            )
+                            
+                            if success:
+                                logger.info(f"  ✓ Album art resized successfully")
+                            else:
+                                logger.warning(f"  ⚠ Failed to resize album art")
+                        except Exception as e:
+                            logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
                 elif success and reason in ('already_target_format', 'skipped_existing'):
                     logger.info(f"  → Skipped: {reason}")
                     self.skipped_files += 1
@@ -354,6 +390,18 @@ Common bitrate presets:
     )
     
     parser.add_argument(
+        '--album-art-size', '-as',
+        default='600x600',
+        help='Album art size for resizing during cloning (default: 600x600)'
+    )
+    
+    parser.add_argument(
+        '--album-art-format', '-af',
+        default='jpg',
+        help='Album art format for resizing (jpg, png, etc.) (default: jpg)'
+    )
+    
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
@@ -385,7 +433,9 @@ def main():
             bitrate=args.bitrate,
             preserve_structure=args.preserve_structure,
             skip_existing=skip_existing,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            album_art_size=args.album_art_size,
+            album_art_format=args.album_art_format
         )
         
         # Clone the playlist
