@@ -38,8 +38,8 @@ class PlaylistCloner:
     def __init__(self, 
                  playlist_path: str,
                  output_dir: str,
-                 output_format: str = 'opus',
-                 bitrate: str = '192k',
+                 output_format: str = 'aac',
+                 bitrate: str = '256k',
                  preserve_structure: bool = False,
                  skip_existing: bool = True,
                  dry_run: bool = False):
@@ -49,8 +49,8 @@ class PlaylistCloner:
         Args:
             playlist_path (str): Path to the M3U playlist file
             output_dir (str): Destination directory for cloned files
-            output_format (str): Output audio format (default: opus)
-            bitrate (str): Bitrate for lossy formats (default: 192k)
+            output_format (str): Output audio format (default: aac)
+            bitrate (str): Bitrate for lossy formats (default: 256k)
             preserve_structure (bool): If True, preserve folder structure; if False, flatten
             skip_existing (bool): Skip files that already exist in destination
             dry_run (bool): If True, show what would be done without actually doing it
@@ -318,14 +318,14 @@ Common bitrate presets:
         '--format', '-f',
         dest='output_format',
         choices=list(SUPPORTED_OUTPUT_FORMATS.keys()),
-        default='opus',
-        help='Output audio format (default: opus)'
+        default='aac',
+        help='Output audio format (default: aac)'
     )
     
     parser.add_argument(
         '--bitrate', '-b',
-        default='192k',
-        help='Bitrate for lossy formats (e.g., 192k, 320k) (default: 192k)'
+        default='256k',
+        help='Bitrate for lossy formats (e.g., 192k, 320k) (default: 256k)'
     )
     
     parser.add_argument(
