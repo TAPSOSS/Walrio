@@ -21,7 +21,7 @@ import tempfile
 
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from modules.addons.replaygain import ReplayGainAnalyzer
+from modules.addons.replay_gain import ReplayGainAnalyzer
 from modules.core import metadata
 
 # Configure logging format

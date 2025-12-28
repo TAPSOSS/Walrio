@@ -21,7 +21,7 @@ from typing import List
 
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from modules.addons.imageconverter import convert_image
+from modules.addons.image_converter import convert_image
 from modules.core.metadata import MetadataEditor
 
 

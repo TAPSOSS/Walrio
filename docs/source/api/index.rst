@@ -68,7 +68,7 @@ File Relocater
 Image Converter
 ^^^^^^^^^^^^^^^
 
-.. automodule:: modules.addons.imageconverter
+.. automodule:: modules.addons.image_converter
    :members:
    :undoc-members:
    :show-inheritance:
@@ -84,7 +84,7 @@ Rename
 ReplayGain
 ^^^^^^^^^^
 
-.. automodule:: modules.addons.replaygain
+.. automodule:: modules.addons.replay_gain
    :members:
    :undoc-members:
    :show-inheritance:
@@ -95,7 +95,7 @@ Addon Modules (continued)
 Apply Loudness
 ^^^^^^^^^^^^^^
 
-.. automodule:: modules.addons.applyloudness
+.. automodule:: modules.addons.apply_loudness
    :members:
    :undoc-members:
    :show-inheritance:
@@ -103,7 +103,7 @@ Apply Loudness
 Resize Album Art
 ^^^^^^^^^^^^^^^^
 
-.. automodule:: modules.addons.resizealbumart
+.. automodule:: modules.addons.resize_album_art
    :members:
    :undoc-members:
    :show-inheritance:
