@@ -41,7 +41,7 @@ class PlaylistCloner:
                  output_dir: str,
                  output_format: str = 'aac',
                  bitrate: str = '256k',
-                 preserve_structure: bool = False,
+                 preserve_structure: bool = True,
                  skip_existing: bool = True,
                  dry_run: bool = False,
                  album_art_size: str = '600x600',
@@ -56,7 +56,7 @@ class PlaylistCloner:
             output_dir (str): Destination directory for cloned files
             output_format (str): Output audio format (default: aac)
             bitrate (str): Bitrate for lossy formats (default: 256k)
-            preserve_structure (bool): If True, preserve folder structure; if False, flatten
+            preserve_structure (bool): If True, preserve folder structure; if False, flatten (default: True)
             skip_existing (bool): Skip files that already exist in destination
             dry_run (bool): If True, show what would be done without actually doing it
             album_art_size (str): Album art size for resizing (default: 600x600)
@@ -374,9 +374,9 @@ Common bitrate presets:
     )
     
     parser.add_argument(
-        '--preserve-structure', '-p',
+        '--flatten', '-f',
         action='store_true',
-        help='Preserve the folder structure from source (default: flatten to output directory)'
+        help='Flatten folder structure (default: preserve structure from source)'
     )
     
     parser.add_argument(
@@ -447,6 +447,9 @@ def main():
     # Handle overwrite flag
     skip_existing = not args.overwrite if args.overwrite else args.skip_existing
     
+    # Handle flatten flag (inverts preserve_structure default)
+    preserve_structure = not args.flatten if args.flatten else True
+    
     try:
         # Create playlist cloner
         cloner = PlaylistCloner(
@@ -454,7 +457,7 @@ def main():
             output_dir=args.output_dir,
             output_format=args.output_format,
             bitrate=args.bitrate,
-            preserve_structure=args.preserve_structure,
+            preserve_structure=preserve_structure,
             skip_existing=skip_existing,
             dry_run=args.dry_run,
             album_art_size=args.album_art_size,
