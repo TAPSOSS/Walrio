@@ -275,7 +275,7 @@ Use the unified interface for easier access to all modules:
 
 **Available Module Categories:**
 
-* **ADDONS**: convert, rename, replaygain, imageconverter, file_relocater, applyloudness, resizealbumart
+* **ADDONS**: convert, rename, replay_gain, image_converter, file_relocater, apply_loudness, resize_album_art, playlist_case_conflicts, playlist_cleaner, playlist_cloner, playlist_deleter, playlist_fixer, playlist_overlap, playlist_updater
 * **CORE**: database, metadata, player, playlist, queue
 * **NICHE**: walrio_import
 

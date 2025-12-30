@@ -27,10 +27,17 @@ def get_module_title(module_name: str) -> str:
     # Handle special cases
     special_cases = {
         'file_relocater': 'File Relocater',
-        'imageconverter': 'Image Converter',
-        'replaygain': 'ReplayGain',
-        'applyloudness': 'Apply Loudness',
-        'resizealbumart': 'Resize Album Art',
+        'image_converter': 'Image Converter',
+        'replay_gain': 'ReplayGain',
+        'apply_loudness': 'Apply Loudness',
+        'resize_album_art': 'Resize Album Art',
+        'playlist_case_conflicts': 'Playlist Case Conflicts',
+        'playlist_cleaner': 'Playlist Cleaner',
+        'playlist_cloner': 'Playlist Cloner',
+        'playlist_deleter': 'Playlist Deleter',
+        'playlist_fixer': 'Playlist Fixer',
+        'playlist_overlap': 'Playlist Overlap',
+        'playlist_updater': 'Playlist Updater',
         'walrio_import': 'Walrio Import'
     }
     

@@ -52,7 +52,7 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
     cmd = ["python", walrio_path, module_name]
     
     # Add recursive flag if needed and supported
-    if recursive and module_name in ['convert', 'rename', 'replaygain', 'applyloudness', 'resizealbumart']:
+    if recursive and module_name in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
         cmd.append("--recursive")
     
     # Add input path
@@ -143,17 +143,17 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             'playlist_update': True  # This stage supports playlist updating
         },
         {
-            'name': 'replaygain',
+            'name': 'replay_gain',
             'description': 'Apply ReplayGain analysis (-16 LUFS)',
             'args': ['--tag', '--target-lufs', '-16']
         },
         {
-            'name': 'applyloudness',
+            'name': 'apply_loudness',
             'description': 'Apply loudness using ReplayGain tags',
             'args': ['--replaygain', '--backup', 'false', '--force']
         },
         {
-            'name': 'resizealbumart',
+            'name': 'resize_album_art',
             'description': 'Resize album art to 1000x1000 JPEG',
             'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '100']
         }
@@ -165,7 +165,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         walrio_path = get_walrio_path()
         for stage in pipeline_stages:
             cmd_parts = ["python", walrio_path, stage['name']]
-            if recursive and stage['name'] in ['convert', 'rename', 'replaygain', 'applyloudness', 'resizealbumart']:
+            if recursive and stage['name'] in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
                 cmd_parts.append("--recursive")
             cmd_parts.append(input_path)
             cmd_parts.extend(stage['args'])
