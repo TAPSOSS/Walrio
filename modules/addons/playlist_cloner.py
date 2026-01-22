@@ -312,14 +312,23 @@ def parse_arguments():
         argparse.Namespace: Parsed arguments
     """
     parser = argparse.ArgumentParser(
-        description="Clone audio files from a playlist to a new directory with optional format conversion",
+        description="Clone audio files from playlist(s) to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone playlist (just copy files, no conversion or resizing by default)
+  # Clone single playlist (just copy files, no conversion or resizing by default)
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
-  # Clone with 256kbps AAC conversion and 600x600 jpg album art resizing
-  python playlist_cloner.py my_playlist.m3u /output/ --format aac --bitrate 256k --album-art-size 600x600 --album-art-format jpg
+  # Clone multiple playlists
+  python playlist_cloner.py playlist1.m3u playlist2.m3u playlist3.m3u /output/
+  
+  # Clone all playlists from a directory
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/
+  
+  # Clone all playlists from directory with separate subdirectories for each
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --separate-dirs
+  
+  # Clone all playlists with 256kbps AAC conversion
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --format aac --bitrate 256k
   
   # Clone with MP3 format at 320kbps, no resizing
   python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k --dont-resize
@@ -331,7 +340,7 @@ def parse_arguments():
   python playlist_cloner.py my_playlist.m3u /backup/ --format flac
   
   # Dry run to see what would happen
-  python playlist_cloner.py my_playlist.m3u /output/ --dry-run
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --dry-run
 
 Supported output formats:
   mp3   - MP3 (MPEG Layer III)
@@ -351,12 +360,20 @@ Common bitrate presets:
     
     parser.add_argument(
         'playlist',
-        help='Path to the M3U playlist file'
+        nargs='*',
+        help='Path to one or more M3U playlist files (or use --playlist-dir)'
     )
     
     parser.add_argument(
         'output_dir',
+        nargs='?',
         help='Destination directory for cloned files'
+    )
+    
+    parser.add_argument(
+        '--playlist-dir', '--pd',
+        dest='playlist_dir',
+        help='Directory containing M3U playlist files to process'
     )
     
     parser.add_argument(
@@ -425,6 +442,13 @@ Common bitrate presets:
     )
     
     parser.add_argument(
+        '--separate-dirs', '--sd',
+        action='store_true',
+        dest='separate_dirs',
+        help='Create separate subdirectories for each playlist (uses playlist name as subdirectory)'
+    )
+    
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
@@ -450,27 +474,84 @@ def main():
     # Handle flatten flag (inverts preserve_structure default)
     preserve_structure = not args.flatten if args.flatten else True
     
-    try:
-        # Create playlist cloner
-        cloner = PlaylistCloner(
-            playlist_path=args.playlist,
-            output_dir=args.output_dir,
-            output_format=args.output_format,
-            bitrate=args.bitrate,
-            preserve_structure=preserve_structure,
-            skip_existing=skip_existing,
-            dry_run=args.dry_run,
-            album_art_size=args.album_art_size,
-            album_art_format=args.album_art_format,
-            dont_resize=args.dont_resize,
-            dont_convert=args.dont_convert
-        )
+    # Collect playlist files to process
+    playlist_files = []
+    
+    if args.playlist_dir:
+        # Process all .m3u and .m3u8 files in the directory
+        if not os.path.isdir(args.playlist_dir):
+            logger.error(f"Playlist directory not found: {args.playlist_dir}")
+            sys.exit(1)
         
-        # Clone the playlist
-        total, converted, copied, skipped, errors = cloner.clone_playlist()
+        for file in os.listdir(args.playlist_dir):
+            if file.lower().endswith(('.m3u', '.m3u8')):
+                playlist_files.append(os.path.join(args.playlist_dir, file))
+        
+        if not playlist_files:
+            logger.error(f"No playlist files found in: {args.playlist_dir}")
+            sys.exit(1)
+        
+        logger.info(f"Found {len(playlist_files)} playlist(s) in directory")
+    elif args.playlist:
+        # Process specified playlist file(s)
+        playlist_files = args.playlist
+    else:
+        logger.error("Please specify either a playlist file or use --playlist-dir")
+        sys.exit(1)
+    
+    # Validate output directory
+    if not args.output_dir:
+        logger.error("Output directory is required")
+        sys.exit(1)
+    
+    try:
+        # Process each playlist
+        total_errors = 0
+        total_playlists = len(playlist_files)
+        
+        for idx, playlist_path in enumerate(playlist_files, 1):
+            # Determine output directory for this playlist
+            if args.separate_dirs and total_playlists > 1:
+                # Create a subdirectory based on playlist name
+                playlist_name = os.path.splitext(os.path.basename(playlist_path))[0]
+                playlist_output_dir = os.path.join(args.output_dir, playlist_name)
+            else:
+                playlist_output_dir = args.output_dir
+            
+            if total_playlists > 1:
+                logger.info("\n" + "=" * 80)
+                logger.info(f"Processing playlist {idx}/{total_playlists}: {os.path.basename(playlist_path)}")
+                logger.info("=" * 80)
+            
+            # Create playlist cloner
+            cloner = PlaylistCloner(
+                playlist_path=playlist_path,
+                output_dir=playlist_output_dir,
+                output_format=args.output_format,
+                bitrate=args.bitrate,
+                preserve_structure=preserve_structure,
+                skip_existing=skip_existing,
+                dry_run=args.dry_run,
+                album_art_size=args.album_art_size,
+                album_art_format=args.album_art_format,
+                dont_resize=args.dont_resize,
+                dont_convert=args.dont_convert
+            )
+            
+            # Clone the playlist
+            total, converted, copied, skipped, errors = cloner.clone_playlist()
+            total_errors += errors
+        
+        # Final summary if multiple playlists
+        if total_playlists > 1:
+            logger.info("\n" + "=" * 80)
+            logger.info(f"All playlists processed! Total playlists: {total_playlists}")
+            if total_errors > 0:
+                logger.warning(f"Total errors across all playlists: {total_errors}")
+            logger.info("=" * 80)
         
         # Exit with error code if there were errors
-        if errors > 0:
+        if total_errors > 0:
             sys.exit(1)
         else:
             sys.exit(0)
