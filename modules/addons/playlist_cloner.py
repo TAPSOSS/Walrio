@@ -222,7 +222,47 @@ class PlaylistCloner:
         }
         converter = AudioConverter(converter_options)
         
-        # Process each file
+        # Step 1: Update playlist file first (before converting files)
+        if not self.dry_run:
+            output_ext = SUPPORTED_OUTPUT_FORMATS[self.output_format]['ext']
+            playlist_name = os.path.basename(self.playlist_path)
+            output_playlist_path = os.path.join(self.output_dir, playlist_name)
+            
+            logger.info(f"Updating playlist file: {playlist_name}")
+            
+            # Read original playlist
+            with open(self.playlist_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Update file extensions and paths in playlist
+            updated_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    # This is a file path - update extension and prepend Music/ folder
+                    base = os.path.splitext(stripped)[0]
+                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
+                    if stripped.startswith('../'):
+                        updated_line = f"{base}.{output_ext}\n"
+                    else:
+                        # Extract just the relative path portion and prepend Music/
+                        updated_line = f"Music/{base}.{output_ext}\n"
+                    updated_lines.append(updated_line)
+                else:
+                    # Comment or empty line - keep as is
+                    updated_lines.append(line)
+            
+            # Write updated playlist
+            with open(output_playlist_path, 'w', encoding='utf-8') as f:
+                f.writelines(updated_lines)
+            
+            logger.info(f"  ✓ Playlist file updated: {playlist_name}")
+            logger.info("=" * 80)
+        
+        # Step 2: Process each audio file
+        logger.info("Converting audio files...")
+        logger.info("=" * 80)
+        
         for idx, input_file in enumerate(file_paths, 1):
             output_path = self._get_output_path(input_file)
             filename = os.path.basename(input_file)
