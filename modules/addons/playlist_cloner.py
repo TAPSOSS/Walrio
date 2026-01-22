@@ -391,7 +391,7 @@ Common bitrate presets:
     )
     
     parser.add_argument(
-        '--flatten', '-f',
+        '--flatten', '--fl',
         action='store_true',
         help='Flatten folder structure (default: preserve structure from source)'
     )
