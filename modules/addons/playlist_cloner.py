@@ -410,7 +410,7 @@ Common bitrate presets:
     )
     
     parser.add_argument(
-        '--overwrite', '-o',
+        '--overwrite', '--ow',
         action='store_true',
         help='Overwrite existing files in destination'
     )
