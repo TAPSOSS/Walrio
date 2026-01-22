@@ -144,6 +144,9 @@ class PlaylistCloner:
         output_ext = SUPPORTED_OUTPUT_FORMATS[self.output_format]['ext']
         base_name = os.path.splitext(os.path.basename(input_file))[0]
         
+        # Create Music subfolder within output directory
+        music_output_dir = os.path.join(self.output_dir, 'Music')
+        
         if self.preserve_structure:
             # Preserve the directory structure relative to the playlist location
             playlist_dir = os.path.dirname(os.path.abspath(self.playlist_path))
@@ -152,16 +155,17 @@ class PlaylistCloner:
             # Try to get relative path from playlist directory
             try:
                 rel_path = os.path.relpath(os.path.dirname(input_abs), playlist_dir)
-                output_subdir = os.path.join(self.output_dir, rel_path)
+                output_subdir = os.path.join(music_output_dir, rel_path)
             except ValueError:
                 # If files are on different drives, just use basename
-                output_subdir = self.output_dir
+                output_subdir = music_output_dir
             
             os.makedirs(output_subdir, exist_ok=True)
             return os.path.join(output_subdir, f"{base_name}.{output_ext}")
         else:
-            # Flatten to output directory
-            return os.path.join(self.output_dir, f"{base_name}.{output_ext}")
+            # Flatten to Music directory
+            os.makedirs(music_output_dir, exist_ok=True)
+            return os.path.join(music_output_dir, f"{base_name}.{output_ext}")
     
     def _needs_conversion(self, input_file: str) -> bool:
         """
@@ -558,14 +562,19 @@ def clone_playlists_batch(playlist_files: List[str],
             with open(playlist_path, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             
-            # Update file extensions in playlist
+            # Update file extensions and paths in playlist
             updated_lines = []
             for line in lines:
                 stripped = line.strip()
                 if stripped and not stripped.startswith('#'):
-                    # This is a file path - update extension
+                    # This is a file path - update extension and prepend Music/ folder
                     base = os.path.splitext(stripped)[0]
-                    updated_line = f"{base}.{output_ext}\\n"
+                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
+                    if stripped.startswith('../'):
+                        updated_line = f"{base}.{output_ext}\\n"
+                    else:
+                        # Extract just the relative path portion and prepend Music/
+                        updated_line = f"Music/{base}.{output_ext}\\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
