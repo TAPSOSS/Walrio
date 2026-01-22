@@ -455,12 +455,244 @@ Common bitrate presets:
     )
     
     parser.add_argument(
+        '--batch', '--batch-mode',
+        action='store_true',
+        dest='batch_mode',
+        help='Use batch mode: update all playlists first, then convert unique files once (recommended for multiple playlists)'
+    )
+    
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Enable verbose logging'
     )
     
     return parser.parse_args()
+
+
+def clone_playlists_batch(playlist_files: List[str], 
+                          output_dir: str,
+                          output_format: str = 'opus',
+                          bitrate: str = '160k',
+                          preserve_structure: bool = True,
+                          skip_existing: bool = True,
+                          dry_run: bool = False,
+                          album_art_size: str = '600x600',
+                          album_art_format: str = 'jpg',
+                          dont_resize: bool = True,
+                          dont_convert: bool = False,
+                          separate_dirs: bool = False) -> Tuple[int, int, int, int, int]:
+    """
+    Clone multiple playlists in an optimized batch mode.
+    First updates all playlist files, then converts unique files only once.
+    
+    Args:
+        playlist_files (List[str]): List of playlist file paths
+        output_dir (str): Output directory
+        output_format (str): Target audio format
+        bitrate (str): Bitrate for lossy formats
+        preserve_structure (bool): Preserve directory structure
+        skip_existing (bool): Skip existing files
+        dry_run (bool): Preview mode
+        album_art_size (str): Album art resize dimensions
+        album_art_format (str): Album art format
+        dont_resize (bool): Skip album art resizing
+        dont_convert (bool): Skip conversion, only copy
+        separate_dirs (bool): Create separate directories per playlist
+        
+    Returns:
+        Tuple of (total, converted, copied, skipped, errors)
+    """
+    logger.info("=" * 80)
+    logger.info("BATCH MODE: Processing all playlists efficiently")
+    logger.info("=" * 80)
+    
+    # Step 1: Collect all unique files from all playlists
+    logger.info("Step 1: Scanning all playlists to find unique files...")
+    all_files = set()
+    playlist_mappings = {}  # Maps playlist to its files
+    
+    for playlist_path in playlist_files:
+        logger.info(f"  Scanning: {os.path.basename(playlist_path)}")
+        cloner = PlaylistCloner(
+            playlist_path=playlist_path,
+            output_dir=output_dir,
+            output_format=output_format,
+            bitrate=bitrate,
+            preserve_structure=preserve_structure,
+            skip_existing=skip_existing,
+            dry_run=dry_run,
+            album_art_size=album_art_size,
+            album_art_format=album_art_format,
+            dont_resize=dont_resize,
+            dont_convert=dont_convert
+        )
+        
+        file_paths = cloner._load_playlist_paths()
+        playlist_mappings[playlist_path] = file_paths
+        all_files.update(file_paths)
+    
+    total_files = len(all_files)
+    logger.info(f"Found {total_files} unique files across {len(playlist_files)} playlists")
+    
+    # Step 2: Update all playlist files to reference new format
+    logger.info("\\nStep 2: Updating playlist files to reference new format...")
+    output_ext = SUPPORTED_OUTPUT_FORMATS[output_format]['ext']
+    
+    for playlist_path in playlist_files:
+        playlist_name = os.path.basename(playlist_path)
+        
+        # Determine output playlist directory
+        if separate_dirs:
+            playlist_basename = os.path.splitext(playlist_name)[0]
+            playlist_output_dir = os.path.join(output_dir, playlist_basename)
+        else:
+            playlist_output_dir = output_dir
+        
+        output_playlist_path = os.path.join(playlist_output_dir, playlist_name)
+        
+        if not dry_run:
+            os.makedirs(playlist_output_dir, exist_ok=True)
+            
+            # Read original playlist
+            with open(playlist_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Update file extensions in playlist
+            updated_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    # This is a file path - update extension
+                    base = os.path.splitext(stripped)[0]
+                    updated_line = f"{base}.{output_ext}\\n"
+                    updated_lines.append(updated_line)
+                else:
+                    # Comment or empty line - keep as is
+                    updated_lines.append(line)
+            
+            # Write updated playlist
+            with open(output_playlist_path, 'w', encoding='utf-8') as f:
+                f.writelines(updated_lines)
+            
+            logger.info(f"  ✓ Updated: {playlist_name}")
+        else:
+            logger.info(f"  Would update: {playlist_name}")
+    
+    # Step 3: Convert all unique files once
+    logger.info("\\nStep 3: Converting unique audio files...")
+    logger.info("=" * 80)
+    
+    converter_options = {
+        'output_format': output_format,
+        'bitrate': bitrate,
+        'metadata': 'y',
+        'skip_existing': skip_existing,
+        'force_overwrite': False,
+    }
+    converter = AudioConverter(converter_options)
+    
+    converted_count = 0
+    copied_count = 0
+    skipped_count = 0
+    error_count = 0
+    
+    # Use first playlist's cloner for structure logic
+    first_cloner = PlaylistCloner(
+        playlist_path=playlist_files[0],
+        output_dir=output_dir,
+        output_format=output_format,
+        bitrate=bitrate,
+        preserve_structure=preserve_structure,
+        skip_existing=skip_existing,
+        dry_run=dry_run,
+        album_art_size=album_art_size,
+        album_art_format=album_art_format,
+        dont_resize=dont_resize,
+        dont_convert=dont_convert
+    )
+    
+    for idx, input_file in enumerate(sorted(all_files), 1):
+        filename = os.path.basename(input_file)
+        logger.info(f"[{idx}/{total_files}] Processing: {filename}")
+        
+        # Determine output path
+        output_path = first_cloner._get_output_path(input_file)
+        
+        # Check if output file already exists
+        if skip_existing and os.path.exists(output_path):
+            logger.info(f"  → Skipped (already exists): {os.path.basename(output_path)}")
+            skipped_count += 1
+            continue
+        
+        if dry_run:
+            if first_cloner._needs_conversion(input_file):
+                logger.info(f"  → Would convert to: {os.path.basename(output_path)}")
+            else:
+                logger.info(f"  → Would copy to: {os.path.basename(output_path)}")
+            continue
+        
+        # Convert or copy file
+        if first_cloner._needs_conversion(input_file) and not dont_convert:
+            output_subdir = os.path.dirname(output_path)
+            success, reason = converter.convert_file(input_file, output_subdir)
+            
+            if success and reason == 'converted':
+                logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                converted_count += 1
+                
+                # Resize album art if requested
+                if album_art_size and not dont_resize:
+                    try:
+                        format_map = {
+                            'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png',
+                            'gif': 'gif', 'webp': 'webp',
+                        }
+                        resize_format = format_map.get(album_art_format.lower(), 'jpeg')
+                        
+                        logger.info(f"  Resizing album art to {album_art_size} ({album_art_format})")
+                        success = resize_album_art(
+                            audio_file=output_path,
+                            size=album_art_size,
+                            quality=100,
+                            format=resize_format,
+                            maintain_aspect=False,
+                            backup=False
+                        )
+                        
+                        if success:
+                            logger.info(f"  ✓ Album art resized successfully")
+                        else:
+                            logger.warning(f"  ⚠ Failed to resize album art")
+                    except Exception as e:
+                        logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
+            elif success and reason in ('already_target_format', 'skipped_existing'):
+                logger.info(f"  → Skipped: {reason}")
+                skipped_count += 1
+            else:
+                logger.error(f"  ✗ Conversion failed")
+                error_count += 1
+        else:
+            # Copy the file
+            try:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                shutil.copy2(input_file, output_path)
+                logger.info(f"  ✓ Copied to: {os.path.basename(output_path)}")
+                copied_count += 1
+            except Exception as e:
+                logger.error(f"  ✗ Copy failed: {str(e)}")
+                error_count += 1
+    
+    logger.info("=" * 80)
+    logger.info(f"Batch cloning completed!")
+    logger.info(f"Total unique files: {total_files}")
+    logger.info(f"Converted: {converted_count}")
+    logger.info(f"Copied: {copied_count}")
+    logger.info(f"Skipped: {skipped_count}")
+    logger.info(f"Errors: {error_count}")
+    logger.info(f"Playlists updated: {len(playlist_files)}")
+    
+    return total_files, converted_count, copied_count, skipped_count, error_count
 
 
 def main():
@@ -521,24 +753,15 @@ def main():
         total_errors = 0
         total_playlists = len(playlist_files)
         
-        for idx, playlist_path in enumerate(playlist_files, 1):
-            # Determine output directory for this playlist
-            if args.separate_dirs and total_playlists > 1:
-                # Create a subdirectory based on playlist name
-                playlist_name = os.path.splitext(os.path.basename(playlist_path))[0]
-                playlist_output_dir = os.path.join(output_dir, playlist_name)
-            else:
-                playlist_output_dir = output_dir
+        # Use batch mode if explicitly requested or if processing multiple playlists from directory
+        use_batch_mode = args.batch_mode or (args.playlist_dir and total_playlists > 1)
+        
+        if use_batch_mode and total_playlists > 1:
+            logger.info(f"Using BATCH MODE for {total_playlists} playlists (converts each unique file only once)")
             
-            if total_playlists > 1:
-                logger.info("\n" + "=" * 80)
-                logger.info(f"Processing playlist {idx}/{total_playlists}: {os.path.basename(playlist_path)}")
-                logger.info("=" * 80)
-            
-            # Create playlist cloner
-            cloner = PlaylistCloner(
-                playlist_path=playlist_path,
-                output_dir=playlist_output_dir,
+            total, converted, copied, skipped, errors = clone_playlists_batch(
+                playlist_files=playlist_files,
+                output_dir=output_dir,
                 output_format=args.output_format,
                 bitrate=args.bitrate,
                 preserve_structure=preserve_structure,
@@ -547,20 +770,52 @@ def main():
                 album_art_size=args.album_art_size,
                 album_art_format=args.album_art_format,
                 dont_resize=args.dont_resize,
-                dont_convert=args.dont_convert
+                dont_convert=args.dont_convert,
+                separate_dirs=args.separate_dirs
             )
+            total_errors = errors
+        else:
+            # Original sequential mode
+            for idx, playlist_path in enumerate(playlist_files, 1):
+                # Determine output directory for this playlist
+                if args.separate_dirs and total_playlists > 1:
+                    # Create a subdirectory based on playlist name
+                    playlist_name = os.path.splitext(os.path.basename(playlist_path))[0]
+                    playlist_output_dir = os.path.join(output_dir, playlist_name)
+                else:
+                    playlist_output_dir = output_dir
+                
+                if total_playlists > 1:
+                    logger.info("\n" + "=" * 80)
+                    logger.info(f"Processing playlist {idx}/{total_playlists}: {os.path.basename(playlist_path)}")
+                    logger.info("=" * 80)
+                
+                # Create playlist cloner
+                cloner = PlaylistCloner(
+                    playlist_path=playlist_path,
+                    output_dir=playlist_output_dir,
+                    output_format=args.output_format,
+                    bitrate=args.bitrate,
+                    preserve_structure=preserve_structure,
+                    skip_existing=skip_existing,
+                    dry_run=args.dry_run,
+                    album_art_size=args.album_art_size,
+                    album_art_format=args.album_art_format,
+                    dont_resize=args.dont_resize,
+                    dont_convert=args.dont_convert
+                )
+                
+                # Clone the playlist
+                total, converted, copied, skipped, errors = cloner.clone_playlist()
+                total_errors += errors
             
-            # Clone the playlist
-            total, converted, copied, skipped, errors = cloner.clone_playlist()
-            total_errors += errors
-        
-        # Final summary if multiple playlists
-        if total_playlists > 1:
-            logger.info("\n" + "=" * 80)
-            logger.info(f"All playlists processed! Total playlists: {total_playlists}")
-            if total_errors > 0:
-                logger.warning(f"Total errors across all playlists: {total_errors}")
-            logger.info("=" * 80)
+            # Final summary if multiple playlists
+            if total_playlists > 1:
+                logger.info("\n" + "=" * 80)
+                logger.info(f"All playlists processed! Total playlists: {total_playlists}")
+                if total_errors > 0:
+                    logger.warning(f"Total errors across all playlists: {total_errors}")
+                logger.info("=" * 80)
         
         # Exit with error code if there were errors
         if total_errors > 0:
