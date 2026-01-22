@@ -44,7 +44,7 @@ class PlaylistCloner:
                  preserve_structure: bool = True,
                  skip_existing: bool = True,
                  dry_run: bool = False,
-                 album_art_size: str = '600x600',
+                 album_art_size: str = '1000x1000',
                  album_art_format: str = 'jpg',
                  dont_resize: bool = True,
                  dont_convert: bool = True):
@@ -59,7 +59,7 @@ class PlaylistCloner:
             preserve_structure (bool): If True, preserve folder structure; if False, flatten (default: True)
             skip_existing (bool): Skip files that already exist in destination
             dry_run (bool): If True, show what would be done without actually doing it
-            album_art_size (str): Album art size for resizing (default: 600x600)
+            album_art_size (str): Album art size for resizing (default: 1000x1000)
             album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
             dont_resize (bool): Skip album art resizing (default: False)
             dont_convert (bool): Skip format conversion, only copy files (default: False)
@@ -427,8 +427,8 @@ Common bitrate presets:
     
     parser.add_argument(
         '--album-art-size', '-as',
-        default='600x600',
-        help='Album art size for resizing during cloning (default: 600x600)'
+        default='1000x1000',
+        help='Album art size for resizing during cloning (default: 1000x1000)'
     )
     
     parser.add_argument(
@@ -481,7 +481,7 @@ def clone_playlists_batch(playlist_files: List[str],
                           preserve_structure: bool = True,
                           skip_existing: bool = True,
                           dry_run: bool = False,
-                          album_art_size: str = '600x600',
+                          album_art_size: str = '1000x1000',
                           album_art_format: str = 'jpg',
                           dont_resize: bool = True,
                           dont_convert: bool = False,
