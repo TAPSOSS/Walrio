@@ -367,13 +367,19 @@ Common bitrate presets:
     parser.add_argument(
         'output_dir',
         nargs='?',
-        help='Destination directory for cloned files'
+        help='Destination directory for cloned files (or use --output)'
     )
     
     parser.add_argument(
         '--playlist-dir', '--pd',
         dest='playlist_dir',
         help='Directory containing M3U playlist files to process'
+    )
+    
+    parser.add_argument(
+        '--output', '-o',
+        dest='output_option',
+        help='Output directory (alternative to positional argument)'
     )
     
     parser.add_argument(
@@ -499,10 +505,16 @@ def main():
         logger.error("Please specify either a playlist file or use --playlist-dir")
         sys.exit(1)
     
-    # Validate output directory
-    if not args.output_dir:
-        logger.error("Output directory is required")
-        sys.exit(1)
+    # Validate output directory - accept either positional or --output option
+    output_dir = args.output_option if args.output_option else args.output_dir
+    if not output_dir:
+        # Default to "cloned_library" subfolder in the playlist directory
+        if args.playlist_dir:
+            output_dir = os.path.join(args.playlist_dir, "cloned_library")
+            logger.info(f"No output directory specified, using default: {output_dir}")
+        else:
+            logger.error("Output directory is required (specify as positional argument or use --output)")
+            sys.exit(1)
     
     try:
         # Process each playlist
@@ -514,9 +526,9 @@ def main():
             if args.separate_dirs and total_playlists > 1:
                 # Create a subdirectory based on playlist name
                 playlist_name = os.path.splitext(os.path.basename(playlist_path))[0]
-                playlist_output_dir = os.path.join(args.output_dir, playlist_name)
+                playlist_output_dir = os.path.join(output_dir, playlist_name)
             else:
-                playlist_output_dir = args.output_dir
+                playlist_output_dir = output_dir
             
             if total_playlists > 1:
                 logger.info("\n" + "=" * 80)
