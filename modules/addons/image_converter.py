@@ -405,8 +405,11 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert single image to 1000x1000 JXL (default behavior)
+  # Convert single image to 1000x1000 JXL lossless (default behavior)
   python imageconverter.py image.png
+
+  # Convert to JXL with lossy compression for smaller file size
+  python imageconverter.py image.png --quality 90
 
   # Convert to different format, keeping default 1000x1000 size
   python imageconverter.py image.png --format webp
@@ -420,7 +423,7 @@ Examples:
   # Convert and resize by percentage
   python imageconverter.py image.png --size 50%
 
-  # Batch convert all images in directory to default 1000x1000 JXL
+  # Batch convert all images in directory to default 1000x1000 JXL lossless
   python imageconverter.py /path/to/images --recursive
 
   # Convert with custom quality and strip metadata
@@ -433,6 +436,12 @@ Supported formats: {}
 
 Note: By default, images maintain their aspect ratio when resized (e.g., 800x600 fits within those dimensions).
 Use --stretch true to force exact dimensions and stretch the image instead.
+
+JXL Quality Modes:
+  Quality 100 (default) - Lossless compression, perfect quality, larger files
+  Quality 90-99        - Near-lossless, visually identical, smaller than lossless
+  Quality 70-89        - High quality lossy, good balance of size/quality
+  Quality < 70         - Lower quality lossy, smallest file sizes
 
 ImageMagick geometry examples:
   800x600   - Fit within 800x600 maintaining aspect ratio (default behavior)
@@ -478,7 +487,7 @@ ImageMagick geometry examples:
         '-q', '--quality',
         type=int,
         default=100,
-        help='Quality for lossy formats (1-100, default: 100)'
+        help='Quality setting (1-100, default: 100). For JXL: 100=lossless, <100=lossy. For JPEG/WebP: higher=better quality'
     )
     
     parser.add_argument(

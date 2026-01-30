@@ -110,7 +110,7 @@ def is_audio_file(filepath: str) -> bool:
 
 def resize_album_art(audio_file: str, 
                     size: str = "1000x1000",
-                    quality: int = 95,
+                    quality: int = 100,
                     format: str = "jxl",
                     maintain_aspect: bool = False,
                     backup: bool | str = False) -> bool:
@@ -120,7 +120,7 @@ def resize_album_art(audio_file: str,
     Args:
         audio_file (str): Path to the audio file
         size (str): Target size (e.g., "1000x1000")
-        quality (int): JPEG quality (1-100)
+        quality (int): Quality setting (1-100). For JXL: 100=lossless, <100=lossy
         format (str): Output format for the resized image
         maintain_aspect (bool): Whether to maintain aspect ratio
         backup (bool): Whether to create a backup of the original file
@@ -210,7 +210,7 @@ def resize_album_art(audio_file: str,
 
 def process_directory(directory: str,
                      size: str = "1000x1000",
-                     quality: int = 95,
+                     quality: int = 100,
                      format: str = "jxl", 
                      maintain_aspect: bool = False,
                      backup: bool | str = False,
@@ -221,7 +221,7 @@ def process_directory(directory: str,
     Args:
         directory (str): Directory path to process
         size (str): Target size for album art
-        quality (int): JPEG quality
+        quality (int): Quality setting (1-100). For JXL: 100=lossless, <100=lossy
         format (str): Output format for resized images
         maintain_aspect (bool): Whether to maintain aspect ratio
         backup (bool | str): Whether to create backups, or directory path for backups
@@ -284,10 +284,10 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Resize album art to default 1000x1000 JXL in a single file
+  # Resize album art to default 1000x1000 JXL lossless in a single file
   python resizealbumart.py song.mp3
 
-  # Resize to custom dimensions with quality setting
+  # Resize to custom dimensions with lossy compression
   python resizealbumart.py song.mp3 --size 800x800 --quality 90
 
   # Maintain aspect ratio instead of stretching
@@ -324,8 +324,8 @@ Supported audio formats: {}
     parser.add_argument(
         '-q', '--quality',
         type=int,
-        default=95,
-        help='JPEG quality for resized images (1-100, default: 95)'
+        default=100,
+        help='Quality setting for resized images (1-100, default: 100). For JXL: 100=lossless, <100=lossy'
     )
     
     parser.add_argument(
