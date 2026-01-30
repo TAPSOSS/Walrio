@@ -111,7 +111,7 @@ def is_audio_file(filepath: str) -> bool:
 def resize_album_art(audio_file: str, 
                     size: str = "1000x1000",
                     quality: int = 95,
-                    format: str = "jpeg",
+                    format: str = "jxl",
                     maintain_aspect: bool = False,
                     backup: bool | str = False) -> bool:
     """
@@ -211,7 +211,7 @@ def resize_album_art(audio_file: str,
 def process_directory(directory: str,
                      size: str = "1000x1000",
                      quality: int = 95,
-                     format: str = "jpeg", 
+                     format: str = "jxl", 
                      maintain_aspect: bool = False,
                      backup: bool | str = False,
                      recursive: bool = False) -> tuple[int, int]:
@@ -284,7 +284,7 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Resize album art to default 1000x1000 JPEG in a single file
+  # Resize album art to default 1000x1000 JXL in a single file
   python resizealbumart.py song.mp3
 
   # Resize to custom dimensions with quality setting
@@ -302,7 +302,7 @@ Examples:
   # Store backups in a specific directory
   python resizealbumart.py song.mp3 --backup /path/to/backups
 
-  # Use PNG format instead of JPEG
+  # Use PNG format instead of JXL
   python resizealbumart.py song.mp3 --format png
 
 Supported audio formats: {}
@@ -330,9 +330,9 @@ Supported audio formats: {}
     
     parser.add_argument(
         '-f', '--format',
-        default='jpeg',
-        choices=['jpeg', 'jpg', 'png', 'webp'],
-        help='Output format for resized album art (default: jpeg)'
+        default='jxl',
+        choices=['jxl', 'jpeg', 'jpg', 'png', 'webp'],
+        help='Output format for resized album art (default: jxl)'
     )
     
     parser.add_argument(
