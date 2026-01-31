@@ -11,7 +11,7 @@ It processes input directories through the following stages in order:
 2. Rename files with standardized character filtering
 3. Apply ReplayGain analysis with -16 LUFS target
 4. Apply loudness normalization using ReplayGain tags
-5. Resize album artwork to 1000x1000 JXL format
+5. Resize album artwork to 1000x1000 PNG format
 '''
 
 import sys
@@ -155,8 +155,8 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         },
         {
             'name': 'resize_album_art',
-            'description': 'Resize album art to 1000x1000 JXL',
-            'args': ['--size', '1000x1000', '--format', 'jxl', '--quality', '100']
+            'description': 'Resize album art to 1000x1000 PNG',
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
         }
     ]
     
@@ -233,7 +233,7 @@ Pipeline Stages (executed in order):
   2. Rename files with character filtering
   3. Apply ReplayGain analysis (-16 LUFS target)
   4. Apply loudness normalization using ReplayGain tags
-  5. Resize album artwork to 1000x1000 JXL
+  5. Resize album artwork to 1000x1000 PNG
 
 Examples:
   # Process a single directory
