@@ -61,10 +61,10 @@ def get_supported_formats() -> Dict[str, str]:
         dict: Dictionary of format extensions and their descriptions
     """
     return {
-        'jxl': 'JXL - JPEG XL (lossy/lossless)',
+        'png': 'PNG - Portable Network Graphics (lossless)',
         'jpeg': 'JPEG - Joint Photographic Experts Group (lossy)',
         'jpg': 'JPG - JPEG alias (lossy)',
-        'png': 'PNG - Portable Network Graphics (lossless)',
+        'jxl': 'JXL - JPEG XL (lossy/lossless)',
         'webp': 'WebP - Google WebP format (lossy/lossless)',
         'bmp': 'BMP - Windows Bitmap (lossless)',
         'tiff': 'TIFF - Tagged Image File Format (lossless)',
@@ -227,7 +227,7 @@ def convert_image(input_path: str,
         # Determine output path and format
         if output_path is None:
             input_stem = Path(input_path).stem
-            output_format = output_format or 'jxl'
+            output_format = output_format or 'png'
             output_path = f"{input_stem}_converted.{output_format}"
         
         if output_format is None:
@@ -281,7 +281,7 @@ def convert_image(input_path: str,
 
 def convert_batch(input_paths: List[str],
                  output_dir: str = None,
-                 output_format: str = 'jxl',
+                 output_format: str = 'png',
                  geometry: str = None,
                  quality: int = 100,
                  auto_orient: bool = True,
@@ -405,11 +405,11 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert single image to 1000x1000 JXL lossless (default behavior)
+  # Convert single image to 1000x1000 PNG lossless (default behavior)
   python imageconverter.py image.png
 
   # Convert to JXL with lossy compression for smaller file size
-  python imageconverter.py image.png --quality 90
+  python imageconverter.py image.png --format jxl --quality 90
 
   # Convert to different format, keeping default 1000x1000 size
   python imageconverter.py image.png --format webp
@@ -423,7 +423,7 @@ Examples:
   # Convert and resize by percentage
   python imageconverter.py image.png --size 50%
 
-  # Batch convert all images in directory to default 1000x1000 JXL lossless
+  # Batch convert all images in directory to default 1000x1000 PNG lossless
   python imageconverter.py /path/to/images --recursive
 
   # Convert with custom quality and strip metadata
@@ -461,8 +461,8 @@ ImageMagick geometry examples:
     
     parser.add_argument(
         '-f', '--format',
-        default='jxl',
-        help='Output format (default: jxl)'
+        default='png',
+        help='Output format (default: png)'
     )
     
     parser.add_argument(
