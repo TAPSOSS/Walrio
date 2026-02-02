@@ -522,9 +522,10 @@ class AudioRenamer:
             else:
                 # Track path mapping for playlist updates
                 if self.playlist_updater:
-                    old_path = os.path.abspath(filepath)
-                    new_path = os.path.abspath(new_filepath)
+                    old_path = os.path.normpath(os.path.abspath(filepath))
+                    new_path = os.path.normpath(os.path.abspath(new_filepath))
                     self.path_mapping[old_path] = new_path
+                    logger.debug(f"Added to path_mapping: {old_path} -> {new_path}")
                 
                 os.rename(filepath, new_filepath)
                 logger.info(f"Renamed: {os.path.basename(filepath)} -> {new_filename}")
