@@ -109,7 +109,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             'args': [
                 '--auto-sanitize',
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
-                '--rc', '?', '',            # Remove question marks
+                '--rc', '?', '~',           # Replace question marks
                 '--rc', '/', '~',           # Forward slash to tilde
                 '--rc', '\\', '~',          # Backslash to tilde  
                 '--rc', '&', '+',           # Ampersand to plus
