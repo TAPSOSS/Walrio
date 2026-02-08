@@ -33,3 +33,18 @@ Walrio uses/requires/bundles the following projects (and [python](https://www.py
 - **ImageMagick**: https://github.com/ImageMagick/ImageMagick
 ### Python/Pip-Installable
 Check the [requirements.txt](requirements.txt) file to see what to install with pip/python in order to use this library.
+
+## File Structure
+
+### Modules
+The main folder with all the seperate walrio music modules you can use and walrio.py,
+the global file that lets you easily run any file without having the CD into each folder.
+
+#### Addons
+Files that are non-essential for playing music but are still very nice to have/relevant for maintaining a music library (converter files, replay gain, move files, etc.). Can require modules from the addons folder itself or the core modules.
+
+#### Core
+The core set of modules that are absolutely essential to playing your music files from your media library. Often required for addons/niche modules to function.
+
+#### Niche
+Very specific workflow related files or extremely niche functionality. Generally files combining multiple different core and addon modules together into a singular unified workflow or something to connect your music to external programs/hardware.
