@@ -1,109 +1,176 @@
 #!/usr/bin/env python3
-import os
-import sys
+"""
+Playlist Cloner - Clones M3U playlists with optional file copying and format conversion
+"""
+
 import argparse
-import logging
-import shutil
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+import shutil
+import subprocess
+import sys
 
-def parse_arguments():
-    """
-    Parse command line arguments.
+
+class PlaylistCloner:
+    """Clones M3U playlist with optional file operations"""
     
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
-    pass
+    def __init__(self, playlist_path: Path):
+        self.playlist_path = playlist_path
+        self.entries = []
+        
+    def load(self) -> None:
+        """Load playlist entries"""
+        if not self.playlist_path.exists():
+            raise FileNotFoundError(f"Playlist not found: {self.playlist_path}")
+            
+        with open(self.playlist_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.rstrip('\n\r')
+                if line and not line.startswith('#'):
+                    self.entries.append(line)
+    
+    def clone(self, output_dir: Path, copy_files: bool = False, 
+              convert_format: str = None, make_relative: bool = True) -> tuple:
+        """
+        Clone playlist to new directory
+        
+        Args:
+            output_dir: Destination directory
+            copy_files: Copy audio files along with playlist
+            convert_format: Convert audio to this format (e.g., 'mp3', 'flac')
+            make_relative: Use relative paths in cloned playlist
+            
+        Returns:
+            Tuple of (new_playlist_path, files_copied, files_converted)
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Create new playlist path
+        new_playlist = output_dir / self.playlist_path.name
+        new_entries = []
+        files_copied = 0
+        files_converted = 0
+        
+        for entry in self.entries:
+            entry_path = Path(entry)
+            
+            # Make absolute if relative
+            if not entry_path.is_absolute():
+                entry_path = (self.playlist_path.parent / entry_path).resolve()
+            
+            if not entry_path.exists():
+                print(f"Warning: File not found: {entry_path}", file=sys.stderr)
+                continue
+            
+            if copy_files:
+                # Determine output filename
+                if convert_format:
+                    output_filename = entry_path.stem + f'.{convert_format}'
+                else:
+                    output_filename = entry_path.name
+                
+                output_file = output_dir / output_filename
+                
+                # Copy or convert
+                if convert_format and entry_path.suffix.lower() != f'.{convert_format}':
+                    # Use FFmpeg for conversion
+                    try:
+                        subprocess.run([
+                            'ffmpeg', '-i', str(entry_path),
+                            '-codec:a', 'copy' if convert_format == entry_path.suffix[1:] else 'libmp3lame',
+                            '-q:a', '2',
+                            str(output_file)
+                        ], check=True, capture_output=True)
+                        files_converted += 1
+                    except subprocess.CalledProcessError as e:
+                        print(f"Warning: Conversion failed for {entry_path}: {e}", file=sys.stderr)
+                        continue
+                else:
+                    shutil.copy2(entry_path, output_file)
+                    files_copied += 1
+                
+                # Add to new playlist
+                if make_relative:
+                    try:
+                        new_path = output_file.relative_to(output_dir)
+                    except ValueError:
+                        new_path = output_file
+                else:
+                    new_path = output_file
+                
+                new_entries.append(str(new_path))
+            else:
+                # Just reference original files
+                if make_relative:
+                    try:
+                        new_path = entry_path.relative_to(output_dir)
+                    except ValueError:
+                        new_path = entry_path
+                else:
+                    new_path = entry_path
+                
+                new_entries.append(str(new_path))
+        
+        # Save new playlist
+        with open(new_playlist, 'w', encoding='utf-8') as f:
+            for entry in new_entries:
+                f.write(f"{entry}\n")
+        
+        return new_playlist, files_copied, files_converted
 
-def clone_playlists_batch(playlist_files, output_dir, output_format=None, bitrate=None, preserve_structure=None, skip_existing=None, dry_run=None, album_art_size=None, album_art_format=None, dont_resize=None, dont_convert=None, separate_dirs=None):
+
+def clone_playlist(playlist_path: Path, output_dir: Path, copy_files: bool = False,
+                   convert_format: str = None, make_relative: bool = True) -> tuple:
     """
-    Clone multiple playlists in an optimized batch mode.
-    First updates all playlist files, then converts unique files only once.
+    Clone M3U playlist
     
     Args:
-        playlist_files (List[str]): List of playlist file paths
-        output_dir (str): Output directory
-        output_format (str): Target audio format
-        bitrate (str): Bitrate for lossy formats
-        preserve_structure (bool): Preserve directory structure
-        skip_existing (bool): Skip existing files
-        dry_run (bool): Preview mode
-        album_art_size (str): Album art resize dimensions
-        album_art_format (str): Album art format
-        dont_resize (bool): Skip album art resizing
-        dont_convert (bool): Skip conversion, only copy
-        separate_dirs (bool): Create separate directories per playlist
+        playlist_path: Source playlist
+        output_dir: Destination directory
+        copy_files: Copy audio files
+        convert_format: Convert to format
+        make_relative: Use relative paths
         
     Returns:
-        Tuple of (total, converted, copied, skipped, errors)
+        Tuple of (new_playlist, files_copied, files_converted)
     """
-    pass
+    cloner = PlaylistCloner(playlist_path)
+    cloner.load()
+    return cloner.clone(output_dir, copy_files, convert_format, make_relative)
+
 
 def main():
-    """
-    Main entry point for the playlist cloner.
-    """
-    pass
-
-def __init__(self, playlist_path, output_dir, output_format=None, bitrate=None, preserve_structure=None, skip_existing=None, dry_run=None, album_art_size=None, album_art_format=None, dont_resize=None, dont_convert=None):
-    """
-    Initialize the PlaylistCloner.
+    parser = argparse.ArgumentParser(
+        description='Clone M3U playlist with optional file copying and conversion'
+    )
+    parser.add_argument('playlist', type=Path, help='Source M3U playlist')
+    parser.add_argument('output_dir', type=Path, help='Destination directory')
+    parser.add_argument('-c', '--copy', action='store_true', help='Copy audio files')
+    parser.add_argument('-f', '--format', help='Convert audio to format (e.g., mp3, flac)')
+    parser.add_argument('-a', '--absolute', action='store_true', help='Use absolute paths in playlist')
     
-    Args:
-        playlist_path (str): Path to the M3U playlist file
-        output_dir (str): Destination directory for cloned files
-        output_format (str): Output audio format (default: aac)
-        bitrate (str): Bitrate for lossy formats (default: 256k)
-        preserve_structure (bool): If True, preserve folder structure; if False, flatten (default: True)
-        skip_existing (bool): Skip files that already exist in destination
-        dry_run (bool): If True, show what would be done without actually doing it
-        album_art_size (str): Album art size for resizing (default: 1000x1000)
-        album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
-        dont_resize (bool): Skip album art resizing (default: False)
-        dont_convert (bool): Skip format conversion, only copy files (default: False)
-    """
-    pass
-
-def _load_playlist_paths(self):
-    """
-    Load file paths from the M3U playlist.
+    args = parser.parse_args()
     
-    Returns:
-        List[str]: List of absolute file paths
-    """
-    pass
-
-def _get_output_path(self, input_file):
-    """
-    Determine the output path for a file.
-    
-    Args:
-        input_file (str): Input file path
+    try:
+        new_playlist, copied, converted = clone_playlist(
+            args.playlist,
+            args.output_dir,
+            args.copy,
+            args.format,
+            not args.absolute
+        )
         
-    Returns:
-        str: Output file path
-    """
-    pass
-
-def _needs_conversion(self, input_file):
-    """
-    Check if file needs conversion or can be copied.
-    
-    Args:
-        input_file (str): Input file path
+        print(f"Cloned playlist to: {new_playlist}")
+        if args.copy:
+            print(f"Files copied: {copied}")
+            if args.format:
+                print(f"Files converted: {converted}")
         
-    Returns:
-        bool: True if conversion needed, False if can be copied
-    """
-    pass
-
-def clone_playlist(self):
-    """
-    Clone all files from the playlist to the output directory.
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     
-    Returns:
-        Tuple[int, int, int, int]: (total, converted, copied, skipped, errors)
-    """
-    pass
+    return 0
 
+
+if __name__ == '__main__':
+    sys.exit(main())
