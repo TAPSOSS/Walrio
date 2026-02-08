@@ -1,294 +1,480 @@
 #!/usr/bin/env python3
 """
-Apply Loudness - Apply loudness normalization to audio files using FFmpeg
+Apply Loudness - Apply gain adjustments to audio files using ReplayGain or fixed values
 """
 
-import argparse
-from pathlib import Path
-import subprocess
+import os
 import sys
-import json
+import argparse
+import subprocess
+import shutil
 import tempfile
+from pathlib import Path
+from typing import Optional, Dict, Any, Tuple, List
+
+# Add parent directory for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from modules.addons.replay_gain import ReplayGainAnalyzer
+from modules.core import metadata
+
+SUPPORTED_EXTENSIONS = {'.flac', '.mp3', '.m4a', '.wav', '.ogg', '.opus'}
 
 
-class LoudnessNormalizer:
-    """Applies loudness normalization using FFmpeg"""
+class LoudnessApplicator:
+    """Applies loudness adjustments using FFmpeg volume filter"""
     
-    def __init__(self, target_loudness: float = -14.0, dual_pass: bool = True):
+    def __init__(self, create_backup: bool = True):
         """
         Args:
-            target_loudness: Target loudness in LUFS (default: -14.0)
-            dual_pass: Use dual-pass normalization for better quality
+            create_backup: Create backup files before modification
         """
-        self.target_loudness = target_loudness
-        self.dual_pass = dual_pass
+        self.create_backup = create_backup
+        self.processed_count = 0
+        self.error_count = 0
+        self.backup_count = 0
         self._check_ffmpeg()
     
-    def _check_ffmpeg(self) -> None:
-        """Check if FFmpeg is available"""
-        try:
-            result = subprocess.run(
-                ['ffmpeg', '-version'],
-                capture_output=True,
-                check=True
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("FFmpeg not found. Install with: apt install ffmpeg")
+    def _check_ffmpeg(self):
+        """Check FFmpeg availability"""
+        for tool in ['ffmpeg', 'ffprobe']:
+            try:
+                subprocess.run([tool, '-version'], capture_output=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                raise RuntimeError(f"{tool} not found. Install FFmpeg.")
     
-    def measure_loudness(self, file_path: Path) -> dict:
+    def is_supported_file(self, filepath: str) -> bool:
+        """Check if file is supported"""
+        return Path(filepath).suffix.lower() in SUPPORTED_EXTENSIONS
+    
+    def get_replaygain_value(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
         """
-        Measure loudness of audio file
+        Get ReplayGain value using analyzer
         
         Args:
-            file_path: Audio file path
+            filepath: Audio file path
+            target_lufs: Target LUFS for calculation
             
         Returns:
-            Dictionary with loudness measurements
+            Gain in dB or None if failed
         """
-        cmd = [
-            'ffmpeg', '-i', str(file_path),
-            '-af', 'loudnorm=print_format=json',
-            '-f', 'null', '-'
-        ]
-        
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False  # Don't check return code, FFmpeg returns error but we just need stderr
-            )
+            analyzer = ReplayGainAnalyzer(target_lufs=target_lufs)
+            result = analyzer.analyze_file(filepath)
             
-            # Parse JSON from stderr
-            output = result.stderr
+            if result is None:
+                return None
             
-            # Extract JSON (it's at the end of stderr)
-            json_start = output.rfind('[Parsed_loudnorm')
-            if json_start == -1:
-                raise RuntimeError("Could not parse loudness data")
+            gain_db = result.get('gain_db')
+            if gain_db is None:
+                return None
             
-            json_start = output.find('{', json_start)
-            json_end = output.rfind('}') + 1
+            if isinstance(gain_db, str):
+                gain_db = float(gain_db)
             
-            if json_start == -1 or json_end == 0:
-                raise RuntimeError("Could not parse loudness data")
-            
-            json_str = output[json_start:json_end]
-            data = json.loads(json_str)
-            
-            return {
-                'input_i': float(data.get('input_i', 0)),
-                'input_tp': float(data.get('input_tp', 0)),
-                'input_lra': float(data.get('input_lra', 0)),
-                'input_thresh': float(data.get('input_thresh', 0)),
-                'target_offset': float(data.get('target_offset', 0))
-            }
+            return gain_db
             
         except Exception as e:
-            raise RuntimeError(f"Failed to measure loudness: {e}")
+            print(f"Error getting ReplayGain for {os.path.basename(filepath)}: {e}", file=sys.stderr)
+            return None
     
-    def normalize_file(self, input_path: Path, output_path: Path = None,
-                      overwrite: bool = False) -> Path:
-        """
-        Normalize audio file loudness
-        
-        Args:
-            input_path: Input audio file
-            output_path: Output path (defaults to input with _normalized suffix)
-            overwrite: Overwrite existing files
-            
-        Returns:
-            Path to output file
-        """
-        if not input_path.exists():
-            raise FileNotFoundError(f"Input file not found: {input_path}")
-        
-        # Determine output path
-        if output_path is None:
-            stem = input_path.stem
-            output_path = input_path.with_stem(f"{stem}_normalized")
-        
-        # Check if output exists
-        if output_path.exists() and not overwrite:
-            raise FileExistsError(f"Output exists: {output_path}")
-        
-        if self.dual_pass:
-            # First pass: measure
-            measurements = self.measure_loudness(input_path)
-            
-            # Second pass: normalize with measurements
-            filter_str = (
-                f"loudnorm=linear=true:i={self.target_loudness}:"
-                f"lra=7:tp=-2:"
-                f"measured_I={measurements['input_i']}:"
-                f"measured_LRA={measurements['input_lra']}:"
-                f"measured_tp={measurements['input_tp']}:"
-                f"measured_thresh={measurements['input_thresh']}"
-            )
-        else:
-            # Single pass
-            filter_str = f"loudnorm=i={self.target_loudness}:lra=7:tp=-2"
-        
-        # Build FFmpeg command
-        cmd = [
-            'ffmpeg', '-i', str(input_path),
-            '-af', filter_str,
-            '-ar', '48000'  # Standard sample rate
-        ]
-        
-        if overwrite:
-            cmd.append('-y')
-        
-        cmd.append(str(output_path))
-        
-        # Execute
+    def get_audio_properties(self, filepath: str) -> Dict[str, Any]:
+        """Get audio properties using FFprobe"""
         try:
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return output_path
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "a:0",
+                "-show_entries", "stream=bits_per_raw_sample,bits_per_sample,sample_rate,channels",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(filepath)
+            ]
             
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Normalization failed: {e.stderr}")
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            
+            if result.returncode != 0:
+                return {}
+            
+            lines = result.stdout.strip().splitlines()
+            properties = {}
+            
+            if len(lines) >= 1 and lines[0].isdigit():
+                properties['bits_per_raw_sample'] = int(lines[0])
+            if len(lines) >= 2 and lines[1].isdigit():
+                properties['bits_per_sample'] = int(lines[1])
+            if len(lines) >= 3 and lines[2].isdigit():
+                properties['sample_rate'] = int(lines[2])
+            if len(lines) >= 4 and lines[3].isdigit():
+                properties['channels'] = int(lines[3])
+            
+            return properties
+            
+        except Exception:
+            return {}
     
-    def normalize_directory(self, input_dir: Path, output_dir: Path = None,
-                           recursive: bool = True, overwrite: bool = False,
-                           in_place: bool = False) -> dict:
+    def _has_album_art(self, filepath: str) -> bool:
+        """Check if file has album art"""
+        try:
+            cmd = [
+                "ffprobe", "-v", "error",
+                "-select_streams", "v:0",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                str(filepath)
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            return result.returncode == 0 and "video" in result.stdout.lower()
+            
+        except Exception:
+            return False
+    
+    def _handle_opus_album_art(self, original_filepath: str, opus_filepath: str):
+        """Handle album art for Opus files"""
+        if not self._has_album_art(original_filepath):
+            return
+        
+        temp_art_file = f"{opus_filepath}.albumart.jpg"
+        
+        try:
+            # Extract album art
+            art_cmd = [
+                'ffmpeg', '-y', '-i', str(original_filepath),
+                '-an', '-vcodec', 'copy',
+                '-map', '0:v:0',
+                temp_art_file
+            ]
+            
+            art_process = subprocess.run(
+                art_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60
+            )
+            
+            if art_process.returncode == 0 and os.path.exists(temp_art_file):
+                # Embed using metadata module
+                if hasattr(metadata, 'set_album_art'):
+                    metadata.set_album_art(opus_filepath, temp_art_file)
+                
+        except subprocess.TimeoutExpired:
+            pass
+        except Exception:
+            pass
+        finally:
+            if os.path.exists(temp_art_file):
+                try:
+                    os.remove(temp_art_file)
+                except:
+                    pass
+    
+    def apply_gain_to_file(self, filepath: str, gain_db: float, output_dir: Optional[str] = None) -> bool:
         """
-        Normalize all audio files in directory
+        Apply gain to file using FFmpeg
         
         Args:
-            input_dir: Input directory
-            output_dir: Output directory (defaults to input_dir)
-            recursive: Process subdirectories
-            overwrite: Overwrite existing files
-            in_place: Normalize in place (replace originals)
+            filepath: Audio file path
+            gain_db: Gain in dB to apply
+            output_dir: Output directory (None for in-place)
             
         Returns:
-            Dictionary with normalization stats
+            True if successful
         """
-        if not input_dir.is_dir():
-            raise NotADirectoryError(f"Not a directory: {input_dir}")
+        if not self.is_supported_file(filepath):
+            return False
         
-        output_dir = output_dir or input_dir
-        output_dir.mkdir(parents=True, exist_ok=True)
+        if abs(gain_db) < 0.01:
+            print(f"Skipping {os.path.basename(filepath)} - no significant gain change ({gain_db:.2f} dB)")
+            return True
         
-        # Find audio files
-        audio_exts = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav'}
+        try:
+            file_path = Path(filepath)
+            ext = file_path.suffix.lower()
+            
+            # Determine output path
+            if output_dir:
+                output_path = Path(output_dir)
+                output_path.mkdir(parents=True, exist_ok=True)
+                out_file = output_path / file_path.name
+            else:
+                out_file = file_path
+            
+            # Create backup if in-place and requested
+            if self.create_backup and not output_dir:
+                backup_file = file_path.with_suffix(f"{ext}.backup")
+                if not backup_file.exists():
+                    shutil.copy2(filepath, backup_file)
+                    self.backup_count += 1
+            
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as temp_file:
+                temp_path = temp_file.name
+            
+            try:
+                audio_props = self.get_audio_properties(filepath)
+                
+                # Build FFmpeg command
+                ffmpeg_cmd = [
+                    "ffmpeg", "-y", "-i", str(filepath),
+                    "-map_metadata", "0",
+                    "-af", f"volume={gain_db}dB",
+                ]
+                
+                # Handle Opus separately (album art issues)
+                if ext == ".opus":
+                    ffmpeg_cmd.extend(["-map", "0:a:0"])
+                else:
+                    ffmpeg_cmd.extend(["-map", "0"])
+                    ffmpeg_cmd.extend(["-c:v", "copy"])
+                
+                # Format-specific encoding
+                if ext == ".mp3":
+                    ffmpeg_cmd += ["-c:a", "libmp3lame"]
+                elif ext == ".flac":
+                    ffmpeg_cmd += ["-c:a", "flac"]
+                    # Preserve bit depth
+                    if 'bits_per_raw_sample' in audio_props or 'bits_per_sample' in audio_props:
+                        bit_depth = audio_props.get('bits_per_raw_sample', audio_props.get('bits_per_sample', 16))
+                        if bit_depth == 16:
+                            ffmpeg_cmd += ["-sample_fmt", "s16"]
+                        elif bit_depth >= 24:
+                            ffmpeg_cmd += ["-sample_fmt", "s32"]
+                elif ext == ".m4a":
+                    ffmpeg_cmd += ["-c:a", "aac"]
+                elif ext == ".ogg":
+                    ffmpeg_cmd += ["-c:a", "libvorbis"]
+                elif ext == ".opus":
+                    ffmpeg_cmd += ["-c:a", "libopus"]
+                elif ext == ".wav":
+                    if 'bits_per_sample' in audio_props:
+                        bit_depth = audio_props['bits_per_sample']
+                        if bit_depth == 16:
+                            ffmpeg_cmd += ["-c:a", "pcm_s16le"]
+                        elif bit_depth == 24:
+                            ffmpeg_cmd += ["-c:a", "pcm_s24le"]
+                        elif bit_depth == 32:
+                            ffmpeg_cmd += ["-c:a", "pcm_s32le"]
+                        else:
+                            ffmpeg_cmd += ["-c:a", "pcm_s16le"]
+                    else:
+                        ffmpeg_cmd += ["-c:a", "pcm_s16le"]
+                
+                ffmpeg_cmd.append(temp_path)
+                
+                result = subprocess.run(
+                    ffmpeg_cmd,
+                    capture_output=True,
+                    text=False,
+                    check=False
+                )
+                
+                if result.returncode != 0:
+                    return False
+                
+                # Handle Opus album art
+                if ext == ".opus":
+                    self._handle_opus_album_art(filepath, temp_path)
+                
+                # Move to final location
+                shutil.move(temp_path, str(out_file))
+                
+                self.processed_count += 1
+                print(f"Applied {gain_db:+.2f} dB to {os.path.basename(filepath)}")
+                
+                return True
+                
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                        
+        except Exception as e:
+            self.error_count += 1
+            print(f"Error processing {os.path.basename(filepath)}: {e}", file=sys.stderr)
+            return False
+    
+    def process_files(self, file_paths: List[str], gain_db: Optional[float] = None,
+                     use_replaygain: bool = False, target_lufs: int = -18,
+                     output_dir: Optional[str] = None) -> Tuple[int, int]:
+        """
+        Process multiple files
+        
+        Args:
+            file_paths: List of file paths
+            gain_db: Fixed gain in dB
+            use_replaygain: Use ReplayGain values
+            target_lufs: Target LUFS for ReplayGain
+            output_dir: Output directory
+            
+        Returns:
+            (successful_count, total_count)
+        """
+        supported_files = [f for f in file_paths if self.is_supported_file(f)]
+        
+        if not supported_files:
+            print("No supported audio files to process", file=sys.stderr)
+            return (0, 0)
+        
+        print(f"Processing {len(supported_files)} files")
+        
+        successful_count = 0
+        
+        for i, filepath in enumerate(supported_files, 1):
+            print(f"[{i}/{len(supported_files)}] {os.path.basename(filepath)}")
+            
+            # Determine gain
+            if use_replaygain:
+                file_gain = self.get_replaygain_value(filepath, target_lufs)
+                if file_gain is None:
+                    print(f"  Could not get ReplayGain value, skipping")
+                    continue
+            else:
+                file_gain = gain_db
+            
+            # Apply gain
+            if self.apply_gain_to_file(filepath, file_gain, output_dir):
+                successful_count += 1
+        
+        return (successful_count, len(supported_files))
+    
+    def process_directory(self, directory: str, recursive: bool = True,
+                         gain_db: Optional[float] = None, use_replaygain: bool = False,
+                         target_lufs: int = -18, output_dir: Optional[str] = None) -> Tuple[int, int]:
+        """Process all files in directory"""
+        if not os.path.isdir(directory):
+            print(f"Directory does not exist: {directory}", file=sys.stderr)
+            return (0, 0)
+        
+        file_paths = []
         
         if recursive:
-            pattern = '**/*'
+            for root, _, files in os.walk(directory):
+                for file in files:
+                    filepath = os.path.join(root, file)
+                    if self.is_supported_file(filepath):
+                        file_paths.append(filepath)
         else:
-            pattern = '*'
+            for file in os.listdir(directory):
+                filepath = os.path.join(directory, file)
+                if self.is_supported_file(filepath):
+                    file_paths.append(filepath)
         
-        files = []
-        for ext in audio_exts:
-            files.extend(input_dir.glob(f'{pattern}{ext}'))
-        
-        # Normalize each file
-        stats = {'normalized': 0, 'errors': 0}
-        
-        for file_path in files:
-            try:
-                # Preserve directory structure
-                rel_path = file_path.relative_to(input_dir)
-                
-                if in_place:
-                    # Use temp file then replace
-                    with tempfile.NamedTemporaryFile(
-                        suffix=file_path.suffix,
-                        delete=False
-                    ) as tmp:
-                        temp_path = Path(tmp.name)
-                    
-                    self.normalize_file(file_path, temp_path, True)
-                    temp_path.replace(file_path)
-                    output_path = file_path
-                else:
-                    stem = file_path.stem
-                    output_path = output_dir / rel_path.with_stem(f"{stem}_normalized")
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    self.normalize_file(file_path, output_path, overwrite)
-                
-                print(f"Normalized: {file_path} -> {output_path}")
-                stats['normalized'] += 1
-                
-            except Exception as e:
-                print(f"Error normalizing {file_path}: {e}", file=sys.stderr)
-                stats['errors'] += 1
-        
-        return stats
-
-
-def apply_loudness(input_path: Path, target_loudness: float = -14.0,
-                  output_path: Path = None, dual_pass: bool = True,
-                  recursive: bool = True, overwrite: bool = False,
-                  in_place: bool = False) -> dict:
-    """
-    Apply loudness normalization
-    
-    Args:
-        input_path: Input file or directory
-        target_loudness: Target loudness in LUFS
-        output_path: Output path
-        dual_pass: Use dual-pass normalization
-        recursive: Process subdirectories
-        overwrite: Overwrite existing
-        in_place: Replace originals
-        
-    Returns:
-        Normalization statistics
-    """
-    normalizer = LoudnessNormalizer(target_loudness, dual_pass)
-    
-    if input_path.is_dir():
-        return normalizer.normalize_directory(
-            input_path, output_path, recursive, overwrite, in_place
-        )
-    else:
-        normalizer.normalize_file(input_path, output_path, overwrite)
-        return {'normalized': 1, 'errors': 0}
+        return self.process_files(file_paths, gain_db, use_replaygain, target_lufs, output_dir)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Apply loudness normalization to audio files'
+        description='Apply gain adjustments to audio files',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  # Apply fixed +3 dB gain
+  %(prog)s music/ --gain 3
+
+  # Use ReplayGain values
+  %(prog)s music/ --replaygain
+
+  # Use ReplayGain with custom target
+  %(prog)s music/ --replaygain --target-lufs -16
+
+  # Save to output directory
+  %(prog)s music/ --gain 2 --output output/
+
+Supported: FLAC, MP3, M4A, WAV, OGG, Opus
+"""
     )
-    parser.add_argument('input', type=Path, help='Input file or directory')
-    parser.add_argument('-o', '--output', type=Path, help='Output file or directory')
-    parser.add_argument('-t', '--target', type=float, default=-14.0,
-                       help='Target loudness in LUFS (default: -14.0)')
-    parser.add_argument('-s', '--single-pass', action='store_true',
-                       help='Use single-pass (faster but lower quality)')
-    parser.add_argument('-r', '--recursive', action='store_true',
-                       help='Process subdirectories')
-    parser.add_argument('-f', '--force', action='store_true',
-                       help='Overwrite existing files')
-    parser.add_argument('-i', '--in-place', action='store_true',
-                       help='Normalize in place (replace originals)')
+    
+    parser.add_argument("input", nargs="+", help="Files or directories to process")
+    
+    # Gain mode (mutually exclusive)
+    gain_group = parser.add_mutually_exclusive_group(required=True)
+    gain_group.add_argument("--gain", type=float, help="Fixed gain in dB (e.g., +3, -2.5)")
+    gain_group.add_argument("--replaygain", action="store_true", help="Use ReplayGain values")
+    
+    # Options
+    parser.add_argument("--target-lufs", "--lufs", type=int, default=-18,
+                       help="Target LUFS for ReplayGain (default: -18)")
+    parser.add_argument("--output", "-o", metavar="DIR",
+                       help="Output directory (default: modify in-place)")
+    parser.add_argument("--recursive", "-r", action="store_true", default=False,
+                       help="Process directories recursively")
+    parser.add_argument("--backup", choices=['true', 'false'], default='true',
+                       help="Create backup files (default: true)")
+    parser.add_argument("--dry-run", action="store_true",
+                       help="Show what would be processed")
+    parser.add_argument("--force", "-f", action="store_true",
+                       help="Skip confirmation prompts")
+    parser.add_argument("--quiet", "-q", action="store_true",
+                       help="Suppress progress messages")
+    parser.add_argument("--verbose", "-v", action="store_true",
+                       help="Show detailed information")
     
     args = parser.parse_args()
     
+    # Determine if creating backups
+    create_backup = args.backup == 'true'
+    
     try:
-        stats = apply_loudness(
-            args.input,
-            args.target,
-            args.output,
-            not args.single_pass,
-            args.recursive,
-            args.force,
-            args.in_place
-        )
+        applicator = LoudnessApplicator(create_backup=create_backup)
         
-        print(f"\nNormalization complete:")
-        print(f"  Normalized: {stats['normalized']}")
-        if stats['errors']:
-            print(f"  Errors: {stats['errors']}")
+        # Dry run check
+        if args.dry_run:
+            print("DRY RUN MODE - No files will be modified")
+            return 0
+        
+        # Confirmation for destructive operations
+        if not args.output and not args.force and not create_backup:
+            response = input("Modify files in-place without backups? (yes/no): ")
+            if response.lower() not in ['yes', 'y']:
+                print("Aborted")
+                return 0
+        
+        total_successful = 0
+        total_files = 0
+        
+        # Process inputs
+        for input_path in args.input:
+            if os.path.isdir(input_path):
+                success, total = applicator.process_directory(
+                    input_path,
+                    args.recursive,
+                    args.gain,
+                    args.replaygain,
+                    args.target_lufs,
+                    args.output
+                )
+            elif os.path.isfile(input_path):
+                # Determine gain
+                if args.replaygain:
+                    gain = applicator.get_replaygain_value(input_path, args.target_lufs)
+                    if gain is None:
+                        print(f"Could not get ReplayGain for {input_path}", file=sys.stderr)
+                        continue
+                else:
+                    gain = args.gain
+                
+                success = 1 if applicator.apply_gain_to_file(input_path, gain, args.output) else 0
+                total = 1
+            else:
+                print(f"Not found: {input_path}", file=sys.stderr)
+                continue
+            
+            total_successful += success
+            total_files += total
+        
+        # Summary
+        print(f"\nProcessed: {total_successful}/{total_files} files")
+        if create_backup and applicator.backup_count > 0:
+            print(f"Backups created: {applicator.backup_count}")
+        if applicator.error_count > 0:
+            print(f"Errors: {applicator.error_count}")
             return 1
+        
+        return 0
         
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
-    
-    return 0
 
 
 if __name__ == '__main__':

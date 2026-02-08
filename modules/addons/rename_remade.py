@@ -1,301 +1,574 @@
 #!/usr/bin/env python3
 """
-Rename - Rename audio files based on metadata tags
+Rename - Rename audio files based on metadata tags with sanitization and playlist updating
 """
 
 import argparse
-from pathlib import Path
+import json
+import logging
+import os
+import re
+import subprocess
 import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+
+# Add parent directory for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 try:
-    from mutagen import File as MutagenFile
+    from addons.playlist_updater import PlaylistUpdater
 except ImportError:
-    print("Error: mutagen required. Install with: pip install mutagen", file=sys.stderr)
-    sys.exit(1)
+    PlaylistUpdater = None
+    logging.warning("PlaylistUpdater not available - playlist updating disabled")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('AudioRenamer')
+
+# Standard character set for safe filenames
+ALLOWED_FILE_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ')
+
+# Audio file extensions
+AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
+
+# Default naming format
+DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
+
+# Metadata tag mappings for common fields
+METADATA_TAG_MAPPINGS = {
+    'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
+    'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
+    'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
+    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist', 'ALBUM ARTIST'],
+    'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
+    'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
+    'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
+    'disc': ['disc', 'Disc', 'DISC', 'discnumber', 'DiscNumber', 'disc_number', 'TPOS'],
+    'composer': ['composer', 'Composer', 'COMPOSER', 'TCOM'],
+    'comment': ['comment', 'Comment', 'COMMENT', 'COMM'],
+}
 
 
-class FileRenamer:
-    """Renames audio files based on metadata"""
+class AudioRenamer:
+    """
+    Audio file renamer with character sanitization and playlist updating
+    """
     
-    def __init__(self, pattern: str = "{track} - {artist} - {title}"):
+    def __init__(self, format_string: str = DEFAULT_FORMAT, 
+                 char_replacements: Optional[Dict[str, str]] = None,
+                 dont_sanitize: bool = False,
+                 auto_sanitize: bool = False,
+                 force_allow_special: bool = False,
+                 skip_no_metadata: bool = False,
+                 full_date: bool = False,
+                 update_playlists: Optional[List[Path]] = None,
+                 dry_run: bool = False):
         """
         Args:
-            pattern: Filename pattern using {artist}, {album}, {title}, {track}, etc.
+            format_string: Pattern like "{track} - {artist} - {title}"
+            char_replacements: Dict of characters to replace (e.g., {':': '-'})
+            dont_sanitize: Skip character filtering (only apply replacements)
+            auto_sanitize: Auto-sanitize without prompting
+            force_allow_special: Always allow special characters
+            skip_no_metadata: Skip files with missing critical metadata
+            full_date: Keep full date instead of just year
+            update_playlists: List of playlist files to update with new paths
+            dry_run: Preview changes without applying
         """
-        self.pattern = pattern
+        self.format_string = format_string
+        self.char_replacements = char_replacements or {}
+        self.dont_sanitize = dont_sanitize
+        self.auto_sanitize = auto_sanitize
+        self.force_allow_special = force_allow_special
+        self.skip_no_metadata = skip_no_metadata
+        self.full_date = full_date
+        self.dry_run = dry_run
+        
+        # Stats
+        self.renamed_count = 0
+        self.error_count = 0
+        self.skipped_count = 0
+        self.metadata_error_count = 0
+        self.conflict_count = 0
+        
+        # Interactive prompt state
+        self.allow_special_all = False
+        self.skip_special_all = False
+        
+        # Path mapping for playlist updates
+        self.path_mapping = {}
+        
+        # Playlist updater
+        self.playlist_updater = None
+        if update_playlists and PlaylistUpdater:
+            self.playlist_updater = PlaylistUpdater(update_playlists, dry_run)
+        
+        self._check_ffprobe()
     
-    def extract_metadata(self, file_path: Path) -> dict:
+    def _check_ffprobe(self):
+        """Check FFprobe availability"""
+        try:
+            subprocess.run(['ffprobe', '-version'], 
+                          capture_output=True, check=True)
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise RuntimeError("FFprobe not found. Install FFmpeg.")
+    
+    def prompt_allow_special_chars(self, original: str, sanitized: str) -> bool:
         """
-        Extract metadata from audio file
+        Prompt whether to allow special characters
         
         Args:
-            file_path: Audio file path
+            original: Original filename
+            sanitized: Sanitized filename
             
         Returns:
-            Dictionary with metadata fields
+            True to keep special chars, False to use sanitized
+        """
+        if self.force_allow_special:
+            return True
+        if self.allow_special_all:
+            return True
+        if self.skip_special_all:
+            return False
+        
+        print(f"\nSpecial characters detected:")
+        print(f"  Original:  {original}")
+        print(f"  Sanitized: {sanitized}")
+        
+        while True:
+            response = input("Keep special characters? (y/n/ya/na): ").lower().strip()
+            
+            if response in ['y', 'yes']:
+                return True
+            elif response in ['n', 'no']:
+                return False
+            elif response in ['ya', 'yesall', 'yes to all']:
+                self.allow_special_all = True
+                return True
+            elif response in ['na', 'noall', 'no to all']:
+                self.skip_special_all = True
+                return False
+            else:
+                print("Enter y, n, ya, or na")
+    
+    def sanitize_filename(self, text: str) -> str:
+        """
+        Sanitize text for use as filename
+        
+        Args:
+            text: Text to sanitize
+            
+        Returns:
+            Sanitized text
+        """
+        if not text:
+            return "Unknown"
+        
+        original_text = text
+        
+        # Apply character replacements
+        sanitized = text
+        for old_char, new_char in self.char_replacements.items():
+            sanitized = sanitized.replace(old_char, new_char)
+        
+        # Apply character filtering if enabled
+        if not self.dont_sanitize:
+            final_sanitized = ""
+            for char in sanitized:
+                if char in ALLOWED_FILE_CHARS:
+                    final_sanitized += char
+                elif char in "?!/\\|.,&%*\":;'><":
+                    # Remove problematic characters
+                    pass
+                else:
+                    # Replace with space
+                    final_sanitized += " "
+        else:
+            final_sanitized = sanitized
+        
+        # Clean up multiple spaces
+        final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
+        
+        # Check for meaningful differences and prompt if needed
+        if (final_sanitized != original_text and 
+            not self.dont_sanitize and 
+            not self.auto_sanitize):
+            
+            original_cleaned = re.sub(r'\s+', ' ', original_text).strip()
+            if final_sanitized != original_cleaned:
+                if self.prompt_allow_special_chars(original_text, final_sanitized):
+                    # Keep special chars with replacements
+                    result = original_text
+                    for old_char, new_char in self.char_replacements.items():
+                        result = result.replace(old_char, new_char)
+                    final_sanitized = re.sub(r'\s+', ' ', result).strip()
+        
+        return final_sanitized or "Unknown"
+    
+    def get_file_metadata(self, filepath: Path) -> Dict[str, str]:
+        """
+        Extract metadata using FFprobe
+        
+        Args:
+            filepath: Audio file path
+            
+        Returns:
+            Metadata dictionary
         """
         try:
-            audio = MutagenFile(file_path, easy=True)
-            if audio is None:
-                return {}
+            cmd = [
+                'ffprobe', '-v', 'quiet', 
+                '-print_format', 'json', 
+                '-show_format', str(filepath)
+            ]
             
-            # Extract common fields
-            metadata = {
-                'artist': 'Unknown',
-                'album': 'Unknown',
-                'title': file_path.stem,
-                'track': '00',
-                'year': '',
-                'genre': ''
-            }
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            file_info = json.loads(result.stdout)
             
-            # Try to get artist
-            for key in ['artist', 'albumartist', 'TPE1', 'TPE2', '\xa9ART', 'ARTIST']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    metadata['artist'] = str(val)
-                    break
-            
-            # Try to get album
-            for key in ['album', 'TALB', '\xa9alb', 'ALBUM']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    metadata['album'] = str(val)
-                    break
-            
-            # Try to get title
-            for key in ['title', 'TIT2', '\xa9nam', 'TITLE']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    metadata['title'] = str(val)
-                    break
-            
-            # Try to get track number
-            for key in ['tracknumber', 'TRCK', 'trkn', 'TRACKNUMBER']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    # Extract number from "5/12" format
-                    track_str = str(val).split('/')[0].zfill(2)
-                    metadata['track'] = track_str
-                    break
-            
-            # Try to get year
-            for key in ['date', 'year', 'TDRC', '\xa9day', 'DATE', 'YEAR']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    metadata['year'] = str(val)[:4]  # Extract year part
-                    break
-            
-            # Try to get genre
-            for key in ['genre', 'TCON', '\xa9gen', 'GENRE']:
-                if key in audio:
-                    val = audio[key]
-                    if isinstance(val, list):
-                        val = val[0]
-                    metadata['genre'] = str(val)
-                    break
+            metadata = {}
+            if 'format' in file_info and 'tags' in file_info['format']:
+                tags = file_info['format']['tags']
+                
+                # Map pre-defined fields
+                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
+                    for tag_key in tag_variants:
+                        if tag_key in tags:
+                            metadata[field_name] = tags[tag_key]
+                            break
+                
+                # Special handling for year
+                if 'year' in metadata and not self.full_date:
+                    date_value = metadata['year']
+                    year_match = re.search(r'\b(19|20)\d{2}\b', str(date_value))
+                    if year_match:
+                        metadata['year'] = year_match.group(0)
+                
+                # Store all raw tags for custom access
+                for key, value in tags.items():
+                    metadata[key] = value
             
             return metadata
             
-        except Exception as e:
-            print(f"Warning: Could not read metadata from {file_path}: {e}", file=sys.stderr)
-            return {
-                'artist': 'Unknown',
-                'album': 'Unknown',
-                'title': file_path.stem,
-                'track': '00',
-                'year': '',
-                'genre': ''
-            }
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            logger.warning(f"Could not read metadata from {filepath.name}: {e}")
+            self.metadata_error_count += 1
+            return {}
     
-    def sanitize_filename(self, name: str) -> str:
-        """Remove invalid filename characters"""
-        invalid_chars = '<>:"/\\|?*'
-        for char in invalid_chars:
-            name = name.replace(char, '_')
-        return name.strip()
-    
-    def build_filename(self, metadata: dict, original_ext: str) -> str:
+    def generate_new_filename(self, filepath: Path) -> Optional[str]:
         """
-        Build filename from pattern and metadata
+        Generate new filename from metadata
         
         Args:
-            metadata: Metadata dictionary
-            original_ext: Original file extension
+            filepath: Audio file
             
         Returns:
-            New filename
+            New filename or None if cannot generate
         """
-        # Format pattern with metadata
-        filename = self.pattern.format(**metadata)
+        metadata = self.get_file_metadata(filepath)
+        file_ext = filepath.suffix.lower()
         
-        # Sanitize
-        filename = self.sanitize_filename(filename)
+        # Parse format fields
+        import string
+        formatter = string.Formatter()
+        format_fields = [field_name for _, field_name, _, _ 
+                        in formatter.parse(self.format_string) if field_name]
         
-        # Add extension
-        return filename + original_ext
+        # Build format values
+        missing_fields = []
+        format_values = {}
+        
+        for field in format_fields:
+            if field in metadata and metadata[field].strip():
+                format_values[field] = self.sanitize_filename(metadata[field].strip())
+            else:
+                if field in METADATA_TAG_MAPPINGS:
+                    missing_fields.append(field)
+                    format_values[field] = ""
+                else:
+                    logger.warning(f"Custom field '{field}' not found in {filepath.name}")
+                    format_values[field] = ""
+        
+        if missing_fields:
+            logger.warning(f"Missing fields {missing_fields} in {filepath.name}")
+        
+        # Skip if missing critical metadata
+        if self.skip_no_metadata:
+            critical_fields = {'title', 'album'} & set(format_fields)
+            if critical_fields and any(not format_values.get(field, '') for field in critical_fields):
+                return None
+        
+        # Handle no metadata case
+        if all(not value for value in format_values.values()):
+            if not self.skip_no_metadata:
+                original_name = filepath.stem
+                if 'title' in format_values:
+                    format_values['title'] = self.sanitize_filename(original_name)
+                for field in format_values:
+                    if not format_values[field] and field != 'title':
+                        format_values[field] = f"Unknown {field.title()}"
+            else:
+                return None
+        
+        try:
+            # Apply format
+            new_filename_base = self.format_string.format(**format_values)
+            new_filename_base = re.sub(r'\s+', ' ', new_filename_base).strip()
+            new_filename_base = new_filename_base.strip(' -_')
+            
+            if not new_filename_base:
+                new_filename_base = "Unknown"
+            
+            return f"{new_filename_base}{file_ext}"
+            
+        except (KeyError, Exception) as e:
+            logger.error(f"Error formatting filename for {filepath.name}: {e}")
+            return None
     
-    def rename_file(self, file_path: Path, dry_run: bool = False) -> tuple:
+    def resolve_filename_conflict(self, filepath: Path, new_filename: str, 
+                                  directory: Path) -> str:
         """
-        Rename a single file based on metadata
+        Resolve conflicts by adding counter to title
         
         Args:
-            file_path: Source file
-            dry_run: Don't actually rename
+            filepath: Original file
+            new_filename: Proposed filename
+            directory: Target directory
             
         Returns:
-            Tuple of (old_path, new_path, success)
+            Unique filename
         """
-        # Extract metadata
-        metadata = self.extract_metadata(file_path)
+        new_filepath = directory / new_filename
         
-        # Build new filename
-        new_filename = self.build_filename(metadata, file_path.suffix)
-        new_path = file_path.parent / new_filename
+        if not new_filepath.exists():
+            return new_filename
         
-        # Check if already correct
-        if new_path == file_path:
-            return (file_path, new_path, True)
+        file_ext = Path(new_filename).suffix
+        metadata = self.get_file_metadata(filepath)
         
-        # Check if target exists
-        if new_path.exists():
-            print(f"Warning: Target exists: {new_path}", file=sys.stderr)
-            return (file_path, new_path, False)
+        # Parse format fields
+        import string
+        formatter = string.Formatter()
+        format_fields = [field_name for _, field_name, _, _ 
+                        in formatter.parse(self.format_string) if field_name]
         
-        if dry_run:
-            return (file_path, new_path, True)
+        counter = 2
+        
+        # Try to add counter to title field
+        if 'title' in format_fields and 'title' in metadata:
+            original_title = metadata['title']
+            
+            while new_filepath.exists():
+                modified_metadata = metadata.copy()
+                modified_metadata['title'] = f"{original_title} ({counter})"
+                
+                # Build format values with modified title
+                format_values = {}
+                for field in format_fields:
+                    if field in modified_metadata and modified_metadata[field].strip():
+                        format_values[field] = self.sanitize_filename(modified_metadata[field].strip())
+                    else:
+                        format_values[field] = ""
+                
+                try:
+                    new_filename_base = self.format_string.format(**format_values)
+                    new_filename_base = re.sub(r'\s+', ' ', new_filename_base).strip()
+                    new_filename_base = new_filename_base.strip(' -_')
+                    
+                    if not new_filename_base:
+                        new_filename_base = "Unknown"
+                    
+                    new_filename = f"{new_filename_base}{file_ext}"
+                    new_filepath = directory / new_filename
+                    counter += 1
+                    
+                except Exception:
+                    break
+            else:
+                return new_filename
+        
+        # Fallback: add counter to whole filename
+        counter = 2
+        filename_base = Path(new_filename).stem
+        new_filename = f"{filename_base} ({counter}){file_ext}"
+        new_filepath = directory / new_filename
+        
+        while new_filepath.exists():
+            counter += 1
+            new_filename = f"{filename_base} ({counter}){file_ext}"
+            new_filepath = directory / new_filename
+        
+        self.conflict_count += 1
+        return new_filename
+    
+    def rename_file(self, filepath: Path) -> bool:
+        """
+        Rename single audio file
+        
+        Args:
+            filepath: File to rename
+            
+        Returns:
+            True if renamed successfully
+        """
+        if filepath.suffix.lower() not in AUDIO_EXTENSIONS:
+            return False
+        
+        new_filename = self.generate_new_filename(filepath)
+        if not new_filename:
+            logger.info(f"Skipped {filepath.name} (no metadata)")
+            self.skipped_count += 1
+            return False
+        
+        # Check if already has desired name
+        if filepath.name == new_filename:
+            logger.debug(f"Skipped {filepath.name} (already correct)")
+            self.skipped_count += 1
+            return False
+        
+        # Resolve conflicts
+        directory = filepath.parent
+        new_filename = self.resolve_filename_conflict(filepath, new_filename, directory)
+        new_filepath = directory / new_filename
         
         # Rename
         try:
-            file_path.rename(new_path)
-            return (file_path, new_path, True)
+            if self.dry_run:
+                logger.info(f"[DRY RUN] {filepath.name} -> {new_filename}")
+            else:
+                filepath.rename(new_filepath)
+                logger.info(f"Renamed: {filepath.name} -> {new_filename}")
+                
+                # Track for playlist updates
+                self.path_mapping[str(filepath.resolve())] = str(new_filepath.resolve())
+            
+            self.renamed_count += 1
+            return True
             
         except Exception as e:
-            print(f"Error renaming {file_path}: {e}", file=sys.stderr)
-            return (file_path, new_path, False)
+            logger.error(f"Error renaming {filepath.name}: {e}")
+            self.error_count += 1
+            return False
     
-    def rename_directory(self, directory: Path, recursive: bool = True,
-                        dry_run: bool = False) -> dict:
+    def rename_directory(self, directory: Path, recursive: bool = True) -> Dict[str, int]:
         """
         Rename all audio files in directory
         
         Args:
-            directory: Directory path
+            directory: Directory to process
             recursive: Process subdirectories
-            dry_run: Preview changes without renaming
             
         Returns:
-            Dictionary with rename stats
+            Statistics dictionary
         """
+        if not directory.is_dir():
+            raise NotADirectoryError(f"Not a directory: {directory}")
+        
         # Find audio files
-        audio_exts = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav'}
-        
         if recursive:
-            pattern = '**/*'
+            files = []
+            for ext in AUDIO_EXTENSIONS:
+                files.extend(directory.rglob(f'*{ext}'))
         else:
-            pattern = '*'
-        
-        files = []
-        for ext in audio_exts:
-            files.extend(directory.glob(f'{pattern}{ext}'))
+            files = []
+            for ext in AUDIO_EXTENSIONS:
+                files.extend(directory.glob(f'*{ext}'))
         
         # Rename each file
-        stats = {'renamed': 0, 'skipped': 0, 'errors': 0}
-        
         for file_path in files:
-            old_path, new_path, success = self.rename_file(file_path, dry_run)
-            
-            if old_path == new_path:
-                stats['skipped'] += 1
-            elif success:
-                action = "Would rename" if dry_run else "Renamed"
-                print(f"{action}: {old_path.name} -> {new_path.name}")
-                stats['renamed'] += 1
-            else:
-                stats['errors'] += 1
+            self.rename_file(file_path)
         
-        return stats
-
-
-def rename_files(input_path: Path, pattern: str = None, recursive: bool = True,
-                dry_run: bool = False) -> dict:
-    """
-    Rename audio files based on metadata
-    
-    Args:
-        input_path: File or directory
-        pattern: Filename pattern
-        recursive: Process subdirectories
-        dry_run: Preview without renaming
+        # Update playlists
+        if self.playlist_updater and self.path_mapping:
+            logger.info("Updating playlists...")
+            self.playlist_updater.update_all(self.path_mapping)
         
-    Returns:
-        Rename statistics
-    """
-    if pattern is None:
-        pattern = "{track} - {artist} - {title}"
-    
-    renamer = FileRenamer(pattern)
-    
-    if input_path.is_dir():
-        return renamer.rename_directory(input_path, recursive, dry_run)
-    else:
-        old_path, new_path, success = renamer.rename_file(input_path, dry_run)
-        if old_path == new_path:
-            print(f"Filename already correct: {old_path.name}")
-            return {'renamed': 0, 'skipped': 1, 'errors': 0}
-        elif success:
-            action = "Would rename" if dry_run else "Renamed"
-            print(f"{action}: {old_path.name} -> {new_path.name}")
-            return {'renamed': 1, 'skipped': 0, 'errors': 0}
-        else:
-            return {'renamed': 0, 'skipped': 0, 'errors': 1}
+        return {
+            'renamed': self.renamed_count,
+            'skipped': self.skipped_count,
+            'errors': self.error_count,
+            'conflicts': self.conflict_count,
+            'metadata_errors': self.metadata_error_count
+        }
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Rename audio files based on metadata',
-        epilog='Pattern variables: {artist}, {album}, {title}, {track}, {year}, {genre}'
+        description='Rename audio files based on metadata'
     )
-    parser.add_argument('input', type=Path, help='Input file or directory')
-    parser.add_argument('-p', '--pattern',
-                       default='{track} - {artist} - {title}',
-                       help='Filename pattern (default: {track} - {artist} - {title})')
+    parser.add_argument('input', type=Path, help='File or directory to rename')
+    parser.add_argument('-f', '--format', default=DEFAULT_FORMAT,
+                       help=f'Filename format (default: {DEFAULT_FORMAT})')
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process subdirectories')
-    parser.add_argument('-n', '--dry-run', action='store_true',
+    parser.add_argument('--dry-run', action='store_true',
                        help='Preview without renaming')
+    parser.add_argument('--rc', action='append', nargs=2, metavar=('OLD', 'NEW'),
+                       help='Replace character OLD with NEW (e.g., --rc : -)')
+    parser.add_argument('--dont-sanitize', action='store_true',
+                       help='Skip character filtering')
+    parser.add_argument('--auto-sanitize', action='store_true',
+                       help='Auto-sanitize without prompting')
+    parser.add_argument('--force-allow-special', action='store_true',
+                       help='Always allow special characters')
+    parser.add_argument('--skip-no-metadata', action='store_true',
+                       help='Skip files missing critical metadata')
+    parser.add_argument('--full-date', action='store_true',
+                       help='Keep full date instead of just year')
+    parser.add_argument('-p', '--update-playlists', action='append', type=Path,
+                       help='Update specified playlists with new paths')
     
     args = parser.parse_args()
     
+    # Build character replacements
+    char_replacements = {}
+    if args.rc:
+        for old, new in args.rc:
+            char_replacements[old] = new
+    
     try:
-        stats = rename_files(
-            args.input,
-            args.pattern,
-            args.recursive,
-            args.dry_run
+        renamer = AudioRenamer(
+            format_string=args.format,
+            char_replacements=char_replacements,
+            dont_sanitize=args.dont_sanitize,
+            auto_sanitize=args.auto_sanitize,
+            force_allow_special=args.force_allow_special,
+            skip_no_metadata=args.skip_no_metadata,
+            full_date=args.full_date,
+            update_playlists=args.update_playlists,
+            dry_run=args.dry_run
         )
         
-        print(f"\n{'Would rename' if args.dry_run else 'Renamed'}: {stats['renamed']} files")
-        print(f"Skipped: {stats['skipped']}")
+        if args.input.is_dir():
+            stats = renamer.rename_directory(args.input, args.recursive)
+        else:
+            renamer.rename_file(args.input)
+            stats = {
+                'renamed': renamer.renamed_count,
+                'skipped': renamer.skipped_count,
+                'errors': renamer.error_count,
+                'conflicts': renamer.conflict_count,
+                'metadata_errors': renamer.metadata_error_count
+            }
+        
+        print(f"\nRename complete:")
+        print(f"  Renamed: {stats['renamed']}")
+        print(f"  Skipped: {stats['skipped']}")
+        print(f"  Conflicts resolved: {stats['conflicts']}")
         if stats['errors']:
-            print(f"Errors: {stats['errors']}")
-            return 1
+            print(f"  Errors: {stats['errors']}")
+        if stats['metadata_errors']:
+            print(f"  Metadata errors: {stats['metadata_errors']}")
+        
+        return 1 if stats['errors'] else 0
         
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Error: {e}")
         return 1
-    
-    return 0
 
 
 if __name__ == '__main__':
