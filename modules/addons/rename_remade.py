@@ -1,156 +1,302 @@
 #!/usr/bin/env python3
-import os
-import sys
+"""
+Rename - Rename audio files based on metadata tags
+"""
+
 import argparse
-import subprocess
-import logging
-import json
-import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+import sys
 
-def parse_arguments():
-    """
-    Parse command line arguments.
+try:
+    from mutagen import File as MutagenFile
+except ImportError:
+    print("Error: mutagen required. Install with: pip install mutagen", file=sys.stderr)
+    sys.exit(1)
+
+
+class FileRenamer:
+    """Renames audio files based on metadata"""
     
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
-    pass
+    def __init__(self, pattern: str = "{track} - {artist} - {title}"):
+        """
+        Args:
+            pattern: Filename pattern using {artist}, {album}, {title}, {track}, etc.
+        """
+        self.pattern = pattern
+    
+    def extract_metadata(self, file_path: Path) -> dict:
+        """
+        Extract metadata from audio file
+        
+        Args:
+            file_path: Audio file path
+            
+        Returns:
+            Dictionary with metadata fields
+        """
+        try:
+            audio = MutagenFile(file_path, easy=True)
+            if audio is None:
+                return {}
+            
+            # Extract common fields
+            metadata = {
+                'artist': 'Unknown',
+                'album': 'Unknown',
+                'title': file_path.stem,
+                'track': '00',
+                'year': '',
+                'genre': ''
+            }
+            
+            # Try to get artist
+            for key in ['artist', 'albumartist', 'TPE1', 'TPE2', '\xa9ART', 'ARTIST']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    metadata['artist'] = str(val)
+                    break
+            
+            # Try to get album
+            for key in ['album', 'TALB', '\xa9alb', 'ALBUM']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    metadata['album'] = str(val)
+                    break
+            
+            # Try to get title
+            for key in ['title', 'TIT2', '\xa9nam', 'TITLE']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    metadata['title'] = str(val)
+                    break
+            
+            # Try to get track number
+            for key in ['tracknumber', 'TRCK', 'trkn', 'TRACKNUMBER']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    # Extract number from "5/12" format
+                    track_str = str(val).split('/')[0].zfill(2)
+                    metadata['track'] = track_str
+                    break
+            
+            # Try to get year
+            for key in ['date', 'year', 'TDRC', '\xa9day', 'DATE', 'YEAR']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    metadata['year'] = str(val)[:4]  # Extract year part
+                    break
+            
+            # Try to get genre
+            for key in ['genre', 'TCON', '\xa9gen', 'GENRE']:
+                if key in audio:
+                    val = audio[key]
+                    if isinstance(val, list):
+                        val = val[0]
+                    metadata['genre'] = str(val)
+                    break
+            
+            return metadata
+            
+        except Exception as e:
+            print(f"Warning: Could not read metadata from {file_path}: {e}", file=sys.stderr)
+            return {
+                'artist': 'Unknown',
+                'album': 'Unknown',
+                'title': file_path.stem,
+                'track': '00',
+                'year': '',
+                'genre': ''
+            }
+    
+    def sanitize_filename(self, name: str) -> str:
+        """Remove invalid filename characters"""
+        invalid_chars = '<>:"/\\|?*'
+        for char in invalid_chars:
+            name = name.replace(char, '_')
+        return name.strip()
+    
+    def build_filename(self, metadata: dict, original_ext: str) -> str:
+        """
+        Build filename from pattern and metadata
+        
+        Args:
+            metadata: Metadata dictionary
+            original_ext: Original file extension
+            
+        Returns:
+            New filename
+        """
+        # Format pattern with metadata
+        filename = self.pattern.format(**metadata)
+        
+        # Sanitize
+        filename = self.sanitize_filename(filename)
+        
+        # Add extension
+        return filename + original_ext
+    
+    def rename_file(self, file_path: Path, dry_run: bool = False) -> tuple:
+        """
+        Rename a single file based on metadata
+        
+        Args:
+            file_path: Source file
+            dry_run: Don't actually rename
+            
+        Returns:
+            Tuple of (old_path, new_path, success)
+        """
+        # Extract metadata
+        metadata = self.extract_metadata(file_path)
+        
+        # Build new filename
+        new_filename = self.build_filename(metadata, file_path.suffix)
+        new_path = file_path.parent / new_filename
+        
+        # Check if already correct
+        if new_path == file_path:
+            return (file_path, new_path, True)
+        
+        # Check if target exists
+        if new_path.exists():
+            print(f"Warning: Target exists: {new_path}", file=sys.stderr)
+            return (file_path, new_path, False)
+        
+        if dry_run:
+            return (file_path, new_path, True)
+        
+        # Rename
+        try:
+            file_path.rename(new_path)
+            return (file_path, new_path, True)
+            
+        except Exception as e:
+            print(f"Error renaming {file_path}: {e}", file=sys.stderr)
+            return (file_path, new_path, False)
+    
+    def rename_directory(self, directory: Path, recursive: bool = True,
+                        dry_run: bool = False) -> dict:
+        """
+        Rename all audio files in directory
+        
+        Args:
+            directory: Directory path
+            recursive: Process subdirectories
+            dry_run: Preview changes without renaming
+            
+        Returns:
+            Dictionary with rename stats
+        """
+        # Find audio files
+        audio_exts = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav'}
+        
+        if recursive:
+            pattern = '**/*'
+        else:
+            pattern = '*'
+        
+        files = []
+        for ext in audio_exts:
+            files.extend(directory.glob(f'{pattern}{ext}'))
+        
+        # Rename each file
+        stats = {'renamed': 0, 'skipped': 0, 'errors': 0}
+        
+        for file_path in files:
+            old_path, new_path, success = self.rename_file(file_path, dry_run)
+            
+            if old_path == new_path:
+                stats['skipped'] += 1
+            elif success:
+                action = "Would rename" if dry_run else "Renamed"
+                print(f"{action}: {old_path.name} -> {new_path.name}")
+                stats['renamed'] += 1
+            else:
+                stats['errors'] += 1
+        
+        return stats
 
-def parse_character_replacements(replace_char_list, no_defaults=None):
+
+def rename_files(input_path: Path, pattern: str = None, recursive: bool = True,
+                dry_run: bool = False) -> dict:
     """
-    Parse character replacement arguments from command line.
+    Rename audio files based on metadata
     
     Args:
-        replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include any default replacements (deprecated parameter)
+        input_path: File or directory
+        pattern: Filename pattern
+        recursive: Process subdirectories
+        dry_run: Preview without renaming
         
     Returns:
-        dict: Dictionary mapping old characters to new characters
+        Rename statistics
     """
-    pass
+    if pattern is None:
+        pattern = "{track} - {artist} - {title}"
+    
+    renamer = FileRenamer(pattern)
+    
+    if input_path.is_dir():
+        return renamer.rename_directory(input_path, recursive, dry_run)
+    else:
+        old_path, new_path, success = renamer.rename_file(input_path, dry_run)
+        if old_path == new_path:
+            print(f"Filename already correct: {old_path.name}")
+            return {'renamed': 0, 'skipped': 1, 'errors': 0}
+        elif success:
+            action = "Would rename" if dry_run else "Renamed"
+            print(f"{action}: {old_path.name} -> {new_path.name}")
+            return {'renamed': 1, 'skipped': 0, 'errors': 0}
+        else:
+            return {'renamed': 0, 'skipped': 0, 'errors': 1}
+
 
 def main():
-    """
-    Main function for the audio renamer.
-    """
-    pass
-
-def __init__(self, options):
-    """
-    Initialize the AudioRenamer with the specified options.
+    parser = argparse.ArgumentParser(
+        description='Rename audio files based on metadata',
+        epilog='Pattern variables: {artist}, {album}, {title}, {track}, {year}, {genre}'
+    )
+    parser.add_argument('input', type=Path, help='Input file or directory')
+    parser.add_argument('-p', '--pattern',
+                       default='{track} - {artist} - {title}',
+                       help='Filename pattern (default: {track} - {artist} - {title})')
+    parser.add_argument('-r', '--recursive', action='store_true',
+                       help='Process subdirectories')
+    parser.add_argument('-n', '--dry-run', action='store_true',
+                       help='Preview without renaming')
     
-    Args:
-        options (dict): Dictionary of renaming options
-    """
-    pass
-
-def _check_ffprobe(self):
-    """
-    Check if FFprobe is available for metadata extraction.
+    args = parser.parse_args()
     
-    Raises:
-        RuntimeError: If FFprobe is not found.
-    """
-    pass
-
-def prompt_allow_special_chars(self, original_name, sanitized_name):
-    """
-    Prompt user whether to allow special characters when sanitization removes them.
-    
-    Args:
-        original_name (str): Original filename before sanitization
-        sanitized_name (str): Filename after sanitization
+    try:
+        stats = rename_files(
+            args.input,
+            args.pattern,
+            args.recursive,
+            args.dry_run
+        )
         
-    Returns:
-        bool: True if should allow special chars, False if should use sanitized version
-    """
-    pass
-
-def sanitize_filename(self, text):
-    """
-    Clean a string to be safe for use as a filename.
-    
-    Args:
-        text (str): Text to sanitize
+        print(f"\n{'Would rename' if args.dry_run else 'Renamed'}: {stats['renamed']} files")
+        print(f"Skipped: {stats['skipped']}")
+        if stats['errors']:
+            print(f"Errors: {stats['errors']}")
+            return 1
         
-    Returns:
-        str: Sanitized text
-    """
-    pass
-
-def get_file_metadata(self, filepath):
-    """
-    Extract metadata from an audio file using FFprobe.
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     
-    Args:
-        filepath (str): Path to the audio file
-        
-    Returns:
-        dict: Dictionary containing all available metadata
-    """
-    pass
-
-def generate_new_filename(self, filepath):
-    """
-    Generate a new filename based on metadata using the specified format.
-    
-    Args:
-        filepath (str): Path to the audio file
-        
-    Returns:
-        str or None: New filename, or None if format cannot be resolved
-    """
-    pass
-
-def resolve_filename_conflict(self, filepath, new_filename, directory):
-    """
-    Resolve filename conflicts by adding a counter to the title portion of the filename.
-    
-    Args:
-        filepath (str): Original file path
-        new_filename (str): Proposed new filename
-        directory (str): Target directory
-        
-    Returns:
-        str: Resolved filename with counter added to title if needed
-    """
-    pass
-
-def rename_file(self, filepath):
-    """
-    Rename a single audio file based on its metadata.
-    
-    Args:
-        filepath (str): Path to the audio file
-        
-    Returns:
-        bool: True if rename was successful, False otherwise
-    """
-    pass
-
-def rename_directory(self, directory):
-    """
-    Rename all audio files in a directory.
-    
-    Args:
-        directory (str): Directory containing audio files
-        
-    Returns:
-        tuple: (number of successful renames, total number of files processed)
-    """
-    pass
-
-def update_playlists(self):
-    """
-    Update all loaded playlists with new file paths using the PlaylistUpdater.
-    
-    Returns:
-        int: Number of playlists successfully updated
-    """
-    pass
+    return 0
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())
