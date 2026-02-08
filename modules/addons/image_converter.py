@@ -61,9 +61,10 @@ def get_supported_formats() -> Dict[str, str]:
         dict: Dictionary of format extensions and their descriptions
     """
     return {
+        'png': 'PNG - Portable Network Graphics (lossless)',
         'jpeg': 'JPEG - Joint Photographic Experts Group (lossy)',
         'jpg': 'JPG - JPEG alias (lossy)',
-        'png': 'PNG - Portable Network Graphics (lossless)',
+        'jxl': 'JXL - JPEG XL (lossy/lossless)',
         'webp': 'WebP - Google WebP format (lossy/lossless)',
         'bmp': 'BMP - Windows Bitmap (lossless)',
         'tiff': 'TIFF - Tagged Image File Format (lossless)',
@@ -226,7 +227,7 @@ def convert_image(input_path: str,
         # Determine output path and format
         if output_path is None:
             input_stem = Path(input_path).stem
-            output_format = output_format or 'jpeg'
+            output_format = output_format or 'png'
             output_path = f"{input_stem}_converted.{output_format}"
         
         if output_format is None:
@@ -254,7 +255,7 @@ def convert_image(input_path: str,
             cmd.extend(['-background', background_color, '-flatten'])
         
         # Set quality for lossy formats
-        if output_format in ('jpeg', 'webp'):
+        if output_format in ('jpeg', 'webp', 'jxl'):
             cmd.extend(['-quality', str(quality)])
         
         # Set output format and path
@@ -280,7 +281,7 @@ def convert_image(input_path: str,
 
 def convert_batch(input_paths: List[str],
                  output_dir: str = None,
-                 output_format: str = 'jpeg',
+                 output_format: str = 'png',
                  geometry: str = None,
                  quality: int = 100,
                  auto_orient: bool = True,
@@ -404,8 +405,11 @@ def parse_arguments():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Convert single image to 1000x1000 JPEG (default behavior)
+  # Convert single image to 1000x1000 PNG lossless (default behavior)
   python imageconverter.py image.png
+
+  # Convert to JXL with lossy compression for smaller file size
+  python imageconverter.py image.png --format jxl --quality 90
 
   # Convert to different format, keeping default 1000x1000 size
   python imageconverter.py image.png --format webp
@@ -419,7 +423,7 @@ Examples:
   # Convert and resize by percentage
   python imageconverter.py image.png --size 50%
 
-  # Batch convert all images in directory to default 1000x1000 JPEG
+  # Batch convert all images in directory to default 1000x1000 PNG lossless
   python imageconverter.py /path/to/images --recursive
 
   # Convert with custom quality and strip metadata
@@ -432,6 +436,12 @@ Supported formats: {}
 
 Note: By default, images maintain their aspect ratio when resized (e.g., 800x600 fits within those dimensions).
 Use --stretch true to force exact dimensions and stretch the image instead.
+
+JXL Quality Modes:
+  Quality 100 (default) - Lossless compression, perfect quality, larger files
+  Quality 90-99        - Near-lossless, visually identical, smaller than lossless
+  Quality 70-89        - High quality lossy, good balance of size/quality
+  Quality < 70         - Lower quality lossy, smallest file sizes
 
 ImageMagick geometry examples:
   800x600   - Fit within 800x600 maintaining aspect ratio (default behavior)
@@ -451,8 +461,8 @@ ImageMagick geometry examples:
     
     parser.add_argument(
         '-f', '--format',
-        default='jpeg',
-        help='Output format (default: jpeg)'
+        default='png',
+        help='Output format (default: png)'
     )
     
     parser.add_argument(
@@ -469,15 +479,15 @@ ImageMagick geometry examples:
     parser.add_argument(
         '--stretch', '--st',
         choices=['true', 'false'],
-        default='false',
-        help='Stretch images to exact dimensions instead of maintaining aspect ratio (default: false)'
+        default='true',
+        help='Stretch images to exact dimensions instead of maintaining aspect ratio (default: true)'
     )
     
     parser.add_argument(
         '-q', '--quality',
         type=int,
         default=100,
-        help='Quality for lossy formats (1-100, default: 100)'
+        help='Quality setting (1-100, default: 100). For JXL: 100=lossless, <100=lossy. For JPEG/WebP: higher=better quality'
     )
     
     parser.add_argument(

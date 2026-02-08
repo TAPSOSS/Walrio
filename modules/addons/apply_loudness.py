@@ -21,7 +21,7 @@ import tempfile
 
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from modules.addons.replaygain import ReplayGainAnalyzer
+from modules.addons.replay_gain import ReplayGainAnalyzer
 from modules.core import metadata
 
 # Configure logging format
@@ -619,6 +619,11 @@ Requirements:
         action="store_true",
         help="Show what would be processed without actually modifying files"
     )
+    parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="Skip confirmation prompt for destructive operations"
+    )
     
     # Output options
     parser.add_argument(
@@ -689,33 +694,36 @@ def main():
         if args.dry_run:
             logger.info("DRY RUN MODE - No files will be modified")
         else:
-            # Warning for destructive operations
-            print("\n" + "="*60)
-            print("WARNING: DESTRUCTIVE OPERATION")
-            print("="*60)
-            print("Applying gain directly to audio files can permanently damage them")
-            print("and may cause irreversible audio quality loss or clipping.")
-            print("")
-            print("This operation will modify your audio files directly.")
-            if not create_backup:
-                print("Backup creation is DISABLED - original files will be lost!")
-            else:
-                print("Backup files will be created (.backup extension)")
-            print("")
-            print("Are you absolutely sure you want to continue?")
-            print("="*60)
-            
-            # Get user confirmation
-            while True:
-                response = input("Type 'y' to confirm or 'n' to cancel: ").strip().lower()
-                if response == 'y':
-                    print("Proceeding with gain application...")
-                    break
-                elif response == 'n':
-                    print("Operation cancelled by user.")
-                    sys.exit(0)
+            # Warning for destructive operations (skip if --force)
+            if not args.force:
+                print("\n" + "="*60)
+                print("WARNING: DESTRUCTIVE OPERATION")
+                print("="*60)
+                print("Applying gain directly to audio files can permanently damage them")
+                print("and may cause irreversible audio quality loss or clipping.")
+                print("")
+                print("This operation will modify your audio files directly.")
+                if not create_backup:
+                    print("Backup creation is DISABLED - original files will be lost!")
                 else:
-                    print("Please enter 'y' to confirm or 'n' to cancel.")
+                    print("Backup files will be created (.backup extension)")
+                print("")
+                print("Are you absolutely sure you want to continue?")
+                print("="*60)
+                
+                # Get user confirmation
+                while True:
+                    response = input("Type 'y' to confirm or 'n' to cancel: ").strip().lower()
+                    if response == 'y':
+                        print("Proceeding with gain application...")
+                        break
+                    elif response == 'n':
+                        print("Operation cancelled by user.")
+                        sys.exit(0)
+                    else:
+                        print("Please enter 'y' to confirm or 'n' to cancel.")
+            else:
+                logger.info("Skipping confirmation prompt (--force enabled)")
         
         # Process all inputs
         total_successful = 0

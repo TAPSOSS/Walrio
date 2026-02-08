@@ -112,6 +112,34 @@ def get_all_modules() -> Dict[str, str]:
         for module_name, module_info in modules.items():
             all_modules[module_name] = module_info['path']
     
+    # Add aliases for common variations (without underscores)
+    module_aliases = {
+        'replaygain': 'replay_gain',
+        'applyloudness': 'apply_loudness',
+        'filerelocater': 'file_relocater',
+        'imageconverter': 'image_converter',
+        'resizealbum': 'resize_album_art',
+        'resizealbumart': 'resize_album_art',
+        'playlistcase': 'playlist_case_conflicts',
+        'playlistcaseconflicts': 'playlist_case_conflicts',
+        'playlistclean': 'playlist_cleaner',
+        'playlistcleaner': 'playlist_cleaner',
+        'playlistclone': 'playlist_cloner',
+        'playlistcloner': 'playlist_cloner',
+        'playlistdelete': 'playlist_deleter',
+        'playlistdeleter': 'playlist_deleter',
+        'playlistfix': 'playlist_fixer',
+        'playlistfixer': 'playlist_fixer',
+        'playlistoverlap': 'playlist_overlap',
+        'playlistupdate': 'playlist_updater',
+        'playlistupdater': 'playlist_updater',
+        'walrioimport': 'walrio_import',
+    }
+    
+    for alias, actual_name in module_aliases.items():
+        if actual_name in all_modules:
+            all_modules[alias] = all_modules[actual_name]
+    
     return all_modules
 
 def get_module_path(module_name: str) -> str:

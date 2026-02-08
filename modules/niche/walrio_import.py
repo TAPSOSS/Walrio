@@ -11,7 +11,7 @@ It processes input directories through the following stages in order:
 2. Rename files with standardized character filtering
 3. Apply ReplayGain analysis with -16 LUFS target
 4. Apply loudness normalization using ReplayGain tags
-5. Resize album artwork to 1000x1000 JPEG format
+5. Resize album artwork to 1000x1000 PNG format
 '''
 
 import sys
@@ -52,7 +52,7 @@ def run_walrio_command(module_name, input_path, extra_args=None, recursive=False
     cmd = ["python", walrio_path, module_name]
     
     # Add recursive flag if needed and supported
-    if recursive and module_name in ['convert', 'rename', 'replaygain', 'applyloudness', 'resizealbumart']:
+    if recursive and module_name in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
         cmd.append("--recursive")
     
     # Add input path
@@ -100,19 +100,19 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'],
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y'],
             'delete_original_support': True  # This stage supports delete-original flag
         },
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
-                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+ ',
+                '--auto-sanitize',
+                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
+                '--rc', '?', '~',           # Replace question marks
                 '--rc', '/', '~',           # Forward slash to tilde
                 '--rc', '\\', '~',          # Backslash to tilde  
                 '--rc', '&', '+',           # Ampersand to plus
-                '--rc', '?', '',            # Remove question marks
-                '--rc', '!', '',            # Remove exclamation marks
                 '--rc', '|', '~',           # Pipe to tilde
                 '--rc', '.', '',            # Remove periods
                 '--rc', ',', '~',           # Comma to tilde
@@ -144,19 +144,19 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             'playlist_update': True  # This stage supports playlist updating
         },
         {
-            'name': 'replaygain',
+            'name': 'replay_gain',
             'description': 'Apply ReplayGain analysis (-16 LUFS)',
             'args': ['--tag', '--target-lufs', '-16']
         },
         {
-            'name': 'applyloudness',
+            'name': 'apply_loudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--backup', 'false']
+            'args': ['--replaygain', '--backup', 'false', '--force']
         },
         {
-            'name': 'resizealbumart',
-            'description': 'Resize album art to 1000x1000 JPEG',
-            'args': ['--size', '1000x1000', '--format', 'jpg', '--quality', '100']
+            'name': 'resize_album_art',
+            'description': 'Resize album art to 1000x1000 PNG',
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
         }
     ]
     
@@ -166,7 +166,7 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         walrio_path = get_walrio_path()
         for stage in pipeline_stages:
             cmd_parts = ["python", walrio_path, stage['name']]
-            if recursive and stage['name'] in ['convert', 'rename', 'replaygain', 'applyloudness', 'resizealbumart']:
+            if recursive and stage['name'] in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
                 cmd_parts.append("--recursive")
             cmd_parts.append(input_path)
             cmd_parts.extend(stage['args'])
@@ -233,7 +233,7 @@ Pipeline Stages (executed in order):
   2. Rename files with character filtering
   3. Apply ReplayGain analysis (-16 LUFS target)
   4. Apply loudness normalization using ReplayGain tags
-  5. Resize album artwork to 1000x1000 JPEG
+  5. Resize album artwork to 1000x1000 PNG
 
 Examples:
   # Process a single directory
