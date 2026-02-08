@@ -147,6 +147,14 @@ def main():
     parser.add_argument('-c', '--copy', action='store_true', help='Copy audio files')
     parser.add_argument('-f', '--format', help='Convert audio to format (e.g., mp3, flac)')
     parser.add_argument('-a', '--absolute', action='store_true', help='Use absolute paths in playlist')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show what would be copied without copying')
+    parser.add_argument('--skip-existing', action='store_true',
+                       help='Skip files that already exist in destination')
+    parser.add_argument('--verify', action='store_true',
+                       help='Verify file integrity after copying')
+    parser.add_argument('--progress', action='store_true',
+                       help='Show detailed progress for each file')
     
     args = parser.parse_args()
     

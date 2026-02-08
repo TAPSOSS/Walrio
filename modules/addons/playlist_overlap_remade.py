@@ -167,6 +167,11 @@ def main():
     parser.add_argument('playlists', type=Path, nargs='+', help='M3U playlists to compare')
     parser.add_argument('-o', '--output', type=Path, help='Output directory for result playlists')
     parser.add_argument('-s', '--save', action='store_true', help='Save overlap/unique playlists')
+    parser.add_argument('--case-sensitive', action='store_true',
+                       help='Use case-sensitive path comparison')
+    parser.add_argument('--show-stats', action='store_true',
+                       help='Show detailed statistics')
+    parser.add_argument('--output-union', type=Path, help='Save union (all unique tracks from all)')
     
     args = parser.parse_args()
     

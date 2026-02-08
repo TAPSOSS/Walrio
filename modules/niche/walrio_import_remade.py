@@ -58,21 +58,23 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
     """
     Run complete import pipeline
     
     Pipeline stages:
-    1. Convert to FLAC
-    2. Rename with sanitization
-    3. Apply ReplayGain
-    4. Apply loudness normalization
-    5. Resize album art
+    1. Convert to FLAC 48kHz/16-bit
+    2. Rename with comprehensive character sanitization
+    3. Apply ReplayGain analysis (-16 LUFS)
+    4. Apply loudness normalization using ReplayGain tags
+    5. Resize album art to 1000x1000 PNG
     
     Args:
         input_path: Input file/directory
         recursive: Process recursively
         dry_run: Show commands without executing
+        playlist_dir: Directory containing playlists to update after rename
+        delete_originals: Delete original files after conversion
         
     Returns:
         True if all stages succeeded
@@ -82,34 +84,66 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False):
     print(f"Dry run: {dry_run}")
     print("=" * 60)
     
-    # Define pipeline stages
+    # Define pipeline stages with comprehensive configuration
     stages = [
         {
             'name': 'convert',
-            'description': 'Convert to FLAC',
-            'args': ['flac']
+            'description': 'Convert to FLAC 48kHz/16-bit',
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite']
         },
         {
             'name': 'rename',
-            'description': 'Rename files from metadata',
-            'args': []
+            'description': 'Rename with character filtering',
+            'args': [
+                '--auto-sanitize',
+                '--rc', '?', '~',
+                '--rc', '/', '~',
+                '--rc', '\\', '~',
+                '--rc', '&', '+',
+                '--rc', '|', '~',
+                '--rc', '.', '',
+                '--rc', ',', '~',
+                '--rc', '%', '',
+                '--rc', '*', '',
+                '--rc', '"', '',
+                '--rc', ':', '~',
+                '--rc', ';', '~',
+                '--rc', "'", '',
+                '--rc', '>', '',
+                '--rc', '<', '',
+                # Accented characters
+                '--rc', 'á', 'a', '--rc', 'à', 'a', '--rc', 'ä', 'a',
+                '--rc', 'é', 'e', '--rc', 'è', 'e', '--rc', 'ë', 'e',
+                '--rc', 'í', 'i', '--rc', 'ì', 'i', '--rc', 'ï', 'i',
+                '--rc', 'ó', 'o', '--rc', 'ò', 'o', '--rc', 'ö', 'o',
+                '--rc', 'ú', 'u', '--rc', 'ù', 'u', '--rc', 'ü', 'u',
+                '--rc', 'ñ', 'n', '--rc', 'ç', 'c',
+            ]
         },
         {
             'name': 'replay_gain',
-            'description': 'Apply ReplayGain',
-            'args': []
+            'description': 'Apply ReplayGain analysis (-16 LUFS)',
+            'args': ['--tag', '--target-lufs', '-16']
         },
         {
             'name': 'apply_loudness',
-            'description': 'Apply loudness normalization',
-            'args': []
+            'description': 'Apply loudness using ReplayGain tags',
+            'args': ['--replaygain', '--backup', 'false']
         },
         {
             'name': 'resize_album_art',
-            'description': 'Resize album art',
-            'args': ['--size', '1000']
+            'description': 'Resize album art to 1000x1000 PNG',
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
         }
     ]
+    
+    # Add delete-originals to convert if requested
+    if delete_originals:
+        stages[0]['args'].append('--delete-original')
+    
+    # Add playlist updating to rename if specified
+    if playlist_dir:
+        stages[1]['args'].extend(['--update-playlists', str(playlist_dir)])
     
     if dry_run:
         print("\nDRY RUN - Commands that would be executed:\n")
@@ -148,11 +182,21 @@ def main():
                        help='Process directories recursively')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
+    parser.add_argument('-p', '--playlist-dir', type=Path,
+                       help='Directory containing playlists to update after rename')
+    parser.add_argument('--delete-originals', action='store_true',
+                       help='Delete original files after conversion')
     
     args = parser.parse_args()
     
     try:
-        success = run_import_pipeline(args.input, args.recursive, args.dry_run)
+        success = run_import_pipeline(
+            args.input, 
+            args.recursive, 
+            args.dry_run,
+            args.playlist_dir,
+            args.delete_originals
+        )
         return 0 if success else 1
         
     except Exception as e:

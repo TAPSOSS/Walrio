@@ -162,6 +162,16 @@ def main():
     )
     parser.add_argument('playlist', type=Path, help='M3U playlist file')
     parser.add_argument('-o', '--output', type=Path, help='Output playlist (default: overwrite input)')
+    parser.add_argument('--list-only', '--dont-clean', action='store_true',
+                       help='Only list issues without cleaning')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show what would be removed without modifying')
+    parser.add_argument('--duplicates-only', action='store_true',
+                       help='Only check/clean duplicate entries')
+    parser.add_argument('--unavailable-only', action='store_true',
+                       help='Only check/clean unavailable file entries')
+    parser.add_argument('--no-backup', action='store_true',
+                       help='Skip creating backup file before cleaning')
     parser.add_argument('--skip-missing', action='store_true', help='Skip removing missing files')
     parser.add_argument('--skip-duplicates', action='store_true', help='Skip removing duplicates')
     parser.add_argument('--skip-invalid', action='store_true', help='Skip removing invalid extensions')
