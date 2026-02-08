@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-File Relocater
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to move audio files into folder structures based on metadata.
-Moves files from a source library into organized subfolders under a specified root directory.
-
-Default folder structure: /(album)_(albumartist)_(year) with sanitized folder names but can be changed by user.
-"""
 
 import os
 import sys

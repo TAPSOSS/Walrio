@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Resize Album Art Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A utility to extract album art from audio files, resize it using imageconverter,
-and embed it back into the original audio file. Useful for standardizing
-album art sizes across a music collection.
-"""
 
 import os
 import sys

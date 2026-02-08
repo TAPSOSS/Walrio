@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Playlist Overlap Finder
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-This script finds songs that appear in multiple playlists (overlap) and creates
-a new playlist containing only those overlapping songs.
-"""
 
 import os
 import sys

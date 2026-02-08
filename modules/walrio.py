@@ -1,13 +1,5 @@
 #!/usr/bin/env python3
-"""
-Walrio - Unified Audio Processing Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
 
-A unified command-line interface for all Walrio audio processing modules.
-Provides a single entry point to access everything.
-"""
 
 import os
 import sys

@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Playlist Fixer
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to scan playlists for missing songs and attempt to resolve them by searching
-for matching files or prompting the user for replacements.
-"""
 
 import os
 import sys

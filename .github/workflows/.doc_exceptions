@@ -1,0 +1,5 @@
+# documentation and filetypes to be exempt from emoji checks (uses gitignore styling)
+*.md
+*.db
+*.spec
+*.txt

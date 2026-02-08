@@ -1,0 +1,522 @@
+name: PR Checklist Validator
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  validate-pr:
+    # Only run on PR comments that contain "bot, check"
+    if: github.event.issue.pull_request && contains(github.event.comment.body, 'bot, check')
+    runs-on: ubuntu-latest
+    
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    
+    steps:
+      - name: React to comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Add rocket reaction to the comment
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+            
+            // Post initial comment with link to workflow run
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🚀 Running PR validation checks...\n\n[View workflow run](${runUrl})`
+            });
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get PR details
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            return pullRequest.body || '';
+          result-encoding: string
+      
+      - name: Validate PR
+        id: validate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prBody = `${{ steps.pr.outputs.result }}`;
+            let errors = [];
+            
+            // Check for description
+            const descriptionMatch = prBody.match(/## Description\s*([\s\S]*?)## Type of Change/);
+            if (descriptionMatch) {
+              const description = descriptionMatch[1];
+              // Remove HTML comments and whitespace
+              const cleanDescription = description.replace(/<!--[\s\S]*?-->/g, '').trim();
+              if (cleanDescription.length === 0) {
+                errors.push('❌ No description provided. Please add a description of your changes.');
+              }
+            } else {
+              errors.push('❌ Could not find description section.');
+            }
+            
+            // Check Type of Change section (at least 1 must be checked)
+            const typeOfChangeMatch = prBody.match(/## Type of Change\s*([\s\S]*?)## Checklist/);
+            if (typeOfChangeMatch) {
+              const typeSection = typeOfChangeMatch[1];
+              const checkedTypes = typeSection.match(/- \[[xX]\]/g);
+              if (!checkedTypes || checkedTypes.length === 0) {
+                errors.push('❌ No "Type of Change" selected. Please mark at least one type.');
+              }
+            } else {
+              errors.push('❌ Could not find "Type of Change" section.');
+            }
+            
+            // Check Checklist section (all must be checked)
+            const checklistMatch = prBody.match(/## Checklist\s*([\s\S]*?)(?:## |$)/);
+            if (checklistMatch) {
+              const checklistSection = checklistMatch[1];
+              const uncheckedBoxes = checklistSection.match(/- \[ \]/g);
+              if (uncheckedBoxes && uncheckedBoxes.length > 0) {
+                errors.push(`❌ ${uncheckedBoxes.length} checklist item(s) not completed. Please complete all checklist items.`);
+              }
+            } else {
+              errors.push('❌ Could not find "Checklist" section.');
+            }
+            
+            return {
+              valid: errors.length === 0,
+              errors: errors
+            };
+      
+      - name: Check for emojis in changed files
+        id: emoji-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Get PR details for head SHA
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const headSha = pullRequest.head.sha;
+            
+            // Read exceptions file
+            let exceptions = [];
+            const exceptionsPath = '.github/workflows/.doc_exceptions';
+            if (fs.existsSync(exceptionsPath)) {
+              const exceptionsContent = fs.readFileSync(exceptionsPath, 'utf8');
+              exceptions = exceptionsContent
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line && !line.startsWith('#'));
+            }
+            
+            // Function to check if file matches any exception pattern
+            function isExcepted(filePath, patterns) {
+              for (const pattern of patterns) {
+                // Convert gitignore-style patterns to regex
+                let regexPattern = pattern
+                  .replace(/\./g, '\\.')
+                  .replace(/\*/g, '.*')
+                  .replace(/\?/g, '.');
+                
+                const regex = new RegExp('^' + regexPattern + '$');
+                if (regex.test(filePath) || regex.test(path.basename(filePath))) {
+                  return true;
+                }
+              }
+              return false;
+            }
+            
+            // Get changed files in the PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            // Emoji regex pattern (covers most common emojis)
+            const emojiRegex = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F018}-\u{1F270}\u{238C}-\u{2454}\u{20D0}-\u{20FF}\u{FE0F}]/gu;
+            
+            let emojiFindings = [];
+            
+            for (const file of files) {
+              // Skip deleted files and excepted files
+              if (file.status === 'removed' || isExcepted(file.filename, exceptions)) {
+                continue;
+              }
+              
+              try {
+                // Get file content
+                const { data: fileContent } = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path: file.filename,
+                  ref: headSha
+                });
+                
+                const content = Buffer.from(fileContent.content, 'base64').toString('utf8');
+                const lines = content.split('\n');
+                
+                // Check each line for emojis
+                lines.forEach((line, index) => {
+                  const matches = line.match(emojiRegex);
+                  if (matches) {
+                    emojiFindings.push({
+                      file: file.filename,
+                      line: index + 1,
+                      emojis: matches,
+                      content: line.trim()
+                    });
+                  }
+                });
+              } catch (error) {
+                // Skip files that can't be read (binary files, etc.)
+                console.log(`Skipping file ${file.filename}: ${error.message}`);
+              }
+            }
+            
+            return {
+              hasEmojis: emojiFindings.length > 0,
+              findings: emojiFindings
+            };
+      
+      - name: Check Python docstrings
+        id: docstring-check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Get PR details for head SHA
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            const headSha = pullRequest.head.sha;
+            
+            // Read exceptions file
+            let exceptions = [];
+            const exceptionsPath = '.github/workflows/.doc_exceptions';
+            if (fs.existsSync(exceptionsPath)) {
+              const exceptionsContent = fs.readFileSync(exceptionsPath, 'utf8');
+              exceptions = exceptionsContent
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line && !line.startsWith('#'));
+            }
+            
+            // Function to check if file matches any exception pattern
+            function isExcepted(filePath, patterns) {
+              for (const pattern of patterns) {
+                // Convert gitignore-style patterns to regex
+                let regexPattern = pattern
+                  .replace(/\./g, '\\.')
+                  .replace(/\*/g, '.*')
+                  .replace(/\?/g, '.');
+                
+                const regex = new RegExp('^' + regexPattern + '$');
+                if (regex.test(filePath) || regex.test(path.basename(filePath))) {
+                  return true;
+                }
+              }
+              return false;
+            }
+            
+            // Get changed files in the PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number
+            });
+            
+            let docstringIssues = [];
+            
+            for (const file of files) {
+              // Only check Python files that weren't deleted or excepted
+              if (!file.filename.endsWith('.py') || file.status === 'removed' || isExcepted(file.filename, exceptions)) {
+                continue;
+              }
+              
+              try {
+                // Get file content
+                const { data: fileContent } = await github.rest.repos.getContent({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  path: file.filename,
+                  ref: headSha
+                });
+                
+                const content = Buffer.from(fileContent.content, 'base64').toString('utf8');
+                const lines = content.split('\n');
+                
+                // Function to check if a line starts a class or function definition
+                function parseDefinitions(lines) {
+                  const issues = [];
+                  let i = 0;
+                  
+                  while (i < lines.length) {
+                    const line = lines[i];
+                    const trimmed = line.trim();
+                    
+                    // Check for class or function definition (not nested in strings)
+                    const classMatch = trimmed.match(/^class\s+(\w+)/);
+                    const funcMatch = trimmed.match(/^def\s+(\w+)\s*\((.*?)\)/);
+                    
+                    if (classMatch || funcMatch) {
+                      const defType = classMatch ? 'class' : 'function';
+                      const name = classMatch ? classMatch[1] : funcMatch[1];
+                      const lineNum = i + 1;
+                      
+                      // Skip private methods/functions (starting with _)
+                      if (name.startsWith('_') && !name.startsWith('__')) {
+                        i++;
+                        continue;
+                      }
+                      
+                      // Look for docstring on next non-empty line
+                      let j = i + 1;
+                      while (j < lines.length && lines[j].trim() === '') {
+                        j++;
+                      }
+                      
+                      if (j >= lines.length) {
+                        issues.push({
+                          line: lineNum,
+                          type: defType,
+                          name: name,
+                          issue: 'No docstring found'
+                        });
+                        i++;
+                        continue;
+                      }
+                      
+                      const nextLine = lines[j].trim();
+                      
+                      // Check if there's a docstring
+                      if (!nextLine.startsWith('"""') && !nextLine.startsWith("'''")) {
+                        issues.push({
+                          line: lineNum,
+                          type: defType,
+                          name: name,
+                          issue: 'No docstring found'
+                        });
+                        i++;
+                        continue;
+                      }
+                      
+                      // Extract full docstring
+                      const quoteType = nextLine.startsWith('"""') ? '"""' : "'''";
+                      let docstring = '';
+                      let docstringStart = j;
+                      
+                      // Single-line docstring
+                      if (nextLine.startsWith(quoteType) && nextLine.endsWith(quoteType) && nextLine.length > 6) {
+                        docstring = nextLine.slice(3, -3).trim();
+                      } else {
+                        // Multi-line docstring
+                        let k = j;
+                        let foundEnd = false;
+                        while (k < lines.length) {
+                          const currentLine = lines[k];
+                          docstring += currentLine + '\n';
+                          if (k > j && currentLine.trim().endsWith(quoteType)) {
+                            foundEnd = true;
+                            break;
+                          }
+                          k++;
+                        }
+                        if (!foundEnd) {
+                          issues.push({
+                            line: lineNum,
+                            type: defType,
+                            name: name,
+                            issue: 'Unclosed docstring'
+                          });
+                          i++;
+                          continue;
+                        }
+                      }
+                      
+                      // Validate docstring content
+                      if (docstring.trim().length === 0) {
+                        issues.push({
+                          line: lineNum,
+                          type: defType,
+                          name: name,
+                          issue: 'Empty docstring'
+                        });
+                        i++;
+                        continue;
+                      }
+                      
+                      // For functions, check for Args and Returns sections if needed
+                      if (funcMatch) {
+                        const params = funcMatch[2];
+                        const hasParams = params.trim().length > 0 && 
+                                         params.trim() !== 'self' && 
+                                         params.trim() !== 'cls';
+                        
+                        // Check for Args section if function has parameters
+                        if (hasParams && !docstring.includes('Args:') && !docstring.includes('Arguments:')) {
+                          issues.push({
+                            line: lineNum,
+                            type: defType,
+                            name: name,
+                            issue: 'Missing Args: section for parameters'
+                          });
+                        }
+                        
+                        // Check for Returns section if function has return type annotation
+                        const fullDef = line + (lines[i + 1] || '');
+                        if (fullDef.includes('->') && fullDef.includes('-> None') === false) {
+                          if (!docstring.includes('Returns:') && !docstring.includes('Return:')) {
+                            issues.push({
+                              line: lineNum,
+                              type: defType,
+                              name: name,
+                              issue: 'Missing Returns: section for return value'
+                            });
+                          }
+                        }
+                      }
+                    }
+                    
+                    i++;
+                  }
+                  
+                  return issues;
+                }
+                
+                const issues = parseDefinitions(lines);
+                
+                if (issues.length > 0) {
+                  docstringIssues.push({
+                    file: file.filename,
+                    issues: issues
+                  });
+                }
+                
+              } catch (error) {
+                console.log(`Skipping file ${file.filename}: ${error.message}`);
+              }
+            }
+            
+            return {
+              hasIssues: docstringIssues.length > 0,
+              findings: docstringIssues
+            };
+      
+      - name: Post validation result
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const validation = JSON.parse(`${{ steps.validate.outputs.result }}`);
+            const emojiCheck = JSON.parse(`${{ steps.emoji-check.outputs.result }}`);
+            const docstringCheck = JSON.parse(`${{ steps.docstring-check.outputs.result }}`);
+            
+            // Track individual test results
+            const hasDescription = !validation.errors.some(err => err.includes('description'));
+            const hasCheckboxes = !validation.errors.some(err => err.includes('Type of Change') || err.includes('checklist'));
+            const noEmojis = !emojiCheck.hasEmojis;
+            const hasDocstrings = !docstringCheck.hasIssues;
+            
+            let allErrors = [...validation.errors];
+            
+            // Add emoji findings to errors
+            if (emojiCheck.hasEmojis) {
+              allErrors.push('❌ **Emojis found in code files:**');
+              
+              // Group by file
+              const fileGroups = {};
+              emojiCheck.findings.forEach(finding => {
+                if (!fileGroups[finding.file]) {
+                  fileGroups[finding.file] = [];
+                }
+                fileGroups[finding.file].push(finding);
+              });
+              
+              // Format error message
+              for (const [file, findings] of Object.entries(fileGroups)) {
+                allErrors.push(`\n**${file}:**`);
+                findings.forEach(finding => {
+                  const emojiList = [...new Set(finding.emojis)].join(' ');
+                  allErrors.push(`  - Line ${finding.line}: Found ${emojiList}`);
+                });
+              }
+            }
+            
+            // Add docstring findings to errors
+            if (docstringCheck.hasIssues) {
+              allErrors.push('\n❌ **Python docstring issues (Google style required):**');
+              
+              docstringCheck.findings.forEach(fileData => {
+                allErrors.push(`\n**${fileData.file}:**`);
+                fileData.issues.forEach(issue => {
+                  allErrors.push(`  - Line ${issue.line} (${issue.type} \`${issue.name}\`): ${issue.issue}`);
+                });
+              });
+              
+              allErrors.push('\n*Every function and class needs a docstring with:*');
+              allErrors.push('  - A 1-line summary of what it does');
+              allErrors.push('  - `Args:` section for each parameter');
+              allErrors.push('  - `Returns:` section if it returns a value');
+            }
+            
+            let commentBody;
+            if (allErrors.length === 0) {
+              commentBody = '✅ **PR validation passed!**\n\n' +
+                            '- ✅ PR has description\n' +
+                            '- ✅ PR checkboxes checked\n' +
+                            '- ✅ No emojis in code files\n' +
+                            '- ✅ Python docstrings properly formatted\n\n' +
+                            'This PR is ready for human review.';
+            } else {
+              // Build status summary
+              const statusSummary = 
+                `- ${hasDescription ? '✅' : '❌'} PR has description\n` +
+                `- ${hasCheckboxes ? '✅' : '❌'} PR checkboxes checked\n` +
+                `- ${noEmojis ? '✅' : '❌'} No emojis in code files\n` +
+                `- ${hasDocstrings ? '✅' : '❌'} Python docstrings properly formatted\n`;
+              
+              commentBody = '⚠️ **PR validation failed**\n\n' +
+                            statusSummary + '\n' +
+                            'Please address the following issues:\n\n' + 
+                            allErrors.join('\n') + 
+                            '\n\nOnce fixed, comment "bot, check" again to re-validate.';
+            }
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });
+            
+            // Fail the workflow if validation failed
+            if (allErrors.length > 0) {
+              core.setFailed('PR validation failed');
+            }

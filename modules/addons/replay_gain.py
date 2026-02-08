@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-ReplayGain LUFS Analyzer
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to analyze audio files for ReplayGain values using LUFS (Loudness Units relative to Full Scale).
-Uses rsgain tool for analysis and can optionally apply ReplayGain tags to files.
-
-This implementation is inspired by the MuseAmp project by tapscodes.
-"""
 
 import os
 import sys

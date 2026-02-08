@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Audio File Converter using FFmpeg
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A flexible audio conversion tool that supports multiple input formats and provides
-various conversion options including output format selection, metadata preservation,
-bitrate adjustment, and bit depth selection.
-"""
 
 import os
 import sys

@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Apply Loudness Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to apply gain adjustments directly to audio files using FFmpeg while preserving metadata and album art.
-Can apply gain based on ReplayGain values or direct dB adjustments.
-"""
 
 import os
 import sys

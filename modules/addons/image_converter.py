@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Image Converter
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A utility for converting images between different formats and resizing them using ImageMagick.
-Supports common image formats like JPEG, PNG, WebP, BMP, TIFF, and GIF.
-Provides options for quality control, size adjustment, and batch processing.
-"""
 
 import os
 import sys

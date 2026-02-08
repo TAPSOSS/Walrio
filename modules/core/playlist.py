@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-"""
-Playlist Manager
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A script that creates and manages M3U playlists from the audio library database.
-"""
 
 import sys
 import os

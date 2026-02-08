@@ -1,18 +1,4 @@
 
-'''
-Walrio Import Pipeline - Complete audio library import processing
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-This script orchestrates a complete import pipeline for audio files through the Walrio system.
-It processes input directories through the following stages in order:
-1. Convert to FLAC format with 48kHz/16-bit specifications
-2. Rename files with standardized character filtering
-3. Apply ReplayGain analysis with -16 LUFS target
-4. Apply loudness normalization using ReplayGain tags
-5. Resize album artwork to 1000x1000 PNG format
-'''
 
 import sys
 import argparse
