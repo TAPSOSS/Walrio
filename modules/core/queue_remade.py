@@ -7,9 +7,16 @@ import random
 import hashlib
 import time
 from pathlib import Path
+from enum import Enum
 from .player import play_audio
 from .playlist import load_m3u_playlist
 from . import metadata
+
+class RepeatMode(Enum):
+    """Repeat modes for audio playback"""
+    OFF = "off"
+    TRACK = "track"
+    QUEUE = "queue"
 
 class QueueManager:
     """Manages audio playback queue with shuffle, repeat, and history tracking."""
@@ -18,7 +25,7 @@ class QueueManager:
         """Initialize QueueManager with a list of songs."""
         self.songs = songs or []
         self.current_index = 0
-        self.repeat_mode = "off"  # "off", "track", or "queue"
+        self.repeat_mode = RepeatMode.OFF
         self.shuffle = False
         self.shuffle_history = []
         self.history = []
@@ -26,8 +33,9 @@ class QueueManager:
     
     def set_repeat_mode(self, mode):
         """Set repeat mode: "off", "track", or "queue"."""
-        if mode in ["off", "track", "queue"]:
-            self.repeat_mode = mode
+        if isinstance(mode, str):
+            mode = RepeatMode(mode.lower())
+        self.repeat_mode = mode
     
     def set_shuffle_mode(self, enabled):
         """Set shuffle mode on/off."""
@@ -37,7 +45,7 @@ class QueueManager:
     
     def is_shuffle_effective(self):
         """Check if shuffle is actively being used."""
-        return self.shuffle and len(self.songs) > 1
+        return self.shuffle and self.repeat_mode == RepeatMode.OFF
     
     def current_song(self):
         """Get the currently playing song."""
@@ -73,7 +81,7 @@ class QueueManager:
             return True
         
         # Handle track repeat
-        if self.repeat_mode == "track":
+        if self.repeat_mode == RepeatMode.TRACK:
             return True  # Stay on same track
         
         # Handle shuffle
@@ -90,7 +98,7 @@ class QueueManager:
         
         # Check if we reached the end
         if self.current_index >= len(self.songs):
-            if self.repeat_mode == "queue":
+            if self.repeat_mode == RepeatMode.QUEUE:
                 self.current_index = 0
                 return True
             return False  # Reached end
@@ -149,6 +157,43 @@ class QueueManager:
                 self.current_index = max(0, self.current_index - 1)
             return True
         return False
+    
+    def shuffle_physically(self):
+        """Shuffle the entire queue by randomly reordering all songs."""
+        if not self.songs:
+            return False
+        
+        # Get current song before shuffle
+        current_song = self.current_song()
+        
+        # Shuffle the songs list
+        random.shuffle(self.songs)
+        
+        # Find new index of current song
+        if current_song:
+            for i, song in enumerate(self.songs):
+                if song == current_song:
+                    self.current_index = i
+                    break
+        else:
+            self.current_index = 0
+        
+        print("Queue physically shuffled")
+        return True
+    
+    def jump_random(self):
+        """Jump to a completely random song in the queue."""
+        if not self.songs:
+            return False
+        
+        random_index = random.randint(0, len(self.songs) - 1)
+        self.history.append(self.current_index)
+        self.current_index = random_index
+        
+        song = self.current_song()
+        if song:
+            print(f"Jumped to random song: {song.get('title', 'Unknown')}")
+        return True
     
     def clear(self):
         """Clear the entire queue."""
@@ -348,11 +393,110 @@ def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_ind
 
 def interactive_mode(conn):
     """
-    Interactive mode for queue management. Provides a command-line interface for managing audio queues with
-    real-time controls for playback, queueing, and browsing.
+    Interactive mode for queue management.
+    
+    Provides a command-line interface for managing audio queues with
+    commands for filtering, loading, and playing songs.
+    
+    Args:
+        conn (sqlite3.Connection): Database connection object.
     """
-    print("Interactive queue mode not fully implemented in this efficient rewrite.")
-    print("Use command-line arguments to play queues.")
+    queue = []
+    filters = {}
+    
+    print("\n=== Interactive Audio Queue Mode ===")
+    print("Commands:")
+    print("  list - Show all songs in library")
+    print("  filter - Set filters (artist, album, genre)")
+    print("  load - Load songs based on current filters")
+    print("  playlist - Load songs from M3U playlist file")
+    print("  show - Show current queue")
+    print("  play - Play current queue")
+    print("  shuffle - Toggle shuffle mode")
+    print("  repeat - Toggle repeat mode")
+    print("  clear - Clear current queue")
+    print("  quit - Exit interactive mode")
+    print()
+    
+    shuffle_mode = False
+    repeat_mode = False
+    
+    while True:
+        try:
+            command = input("queue> ").strip().lower()
+            
+            if command in ['quit', 'q', 'exit']:
+                break
+            elif command == 'list':
+                songs = get_songs_from_database(conn)
+                if songs:
+                    print(f"\nFound {len(songs)} songs in library:")
+                    for i, song in enumerate(songs[:20]):  # Show first 20
+                        print(f"  {i+1:3d}. {format_song_info(song)}")
+                    if len(songs) > 20:
+                        print(f"  ... and {len(songs) - 20} more")
+                else:
+                    print("No songs found in library.")
+            elif command == 'filter':
+                print("Set filters (press Enter to skip):")
+                artist = input("Artist: ").strip()
+                album = input("Album: ").strip()
+                genre = input("Genre: ").strip()
+                
+                filters = {}
+                if artist:
+                    filters['artist'] = artist
+                if album:
+                    filters['album'] = album
+                if genre:
+                    filters['genre'] = genre
+                
+                print(f"Filters set: {filters}")
+            elif command == 'load':
+                songs = get_songs_from_database(conn, filters)
+                if songs:
+                    queue = list(songs)
+                    print(f"Loaded {len(queue)} songs into queue.")
+                else:
+                    print("No songs found matching current filters.")
+            elif command == 'show':
+                display_queue(queue)
+            elif command == 'play':
+                if queue:
+                    play_queue(queue, shuffle_mode, repeat_mode, False, 0, conn)
+                else:
+                    print("Queue is empty. Use 'load' to add songs first.")
+            elif command == 'shuffle':
+                shuffle_mode = not shuffle_mode
+                print(f"Shuffle mode: {'ON' if shuffle_mode else 'OFF'}")
+            elif command == 'repeat':
+                repeat_mode = not repeat_mode
+                print(f"Repeat mode: {'ON' if repeat_mode else 'OFF'}")
+            elif command == 'playlist':
+                playlist_path = input("Enter playlist file path: ").strip()
+                if not os.path.exists(playlist_path):
+                    print(f"Error: Playlist file '{playlist_path}' not found.")
+                    continue
+                
+                songs = load_m3u_playlist(playlist_path)
+                if songs:
+                    queue = list(songs)
+                    print(f"Loaded {len(queue)} songs from playlist '{playlist_path}'.")
+                else:
+                    print("No songs found in playlist or failed to load.")
+            elif command == 'clear':
+                queue = []
+                print("Queue cleared.")
+            elif command == 'help':
+                print("Commands: list, filter, load, playlist, show, play, shuffle, repeat, clear, quit")
+            else:
+                print("Unknown command. Type 'help' for available commands.")
+                
+        except KeyboardInterrupt:
+            print("\nExiting interactive mode...")
+            break
+        except Exception as e:
+            print(f"Error: {e}")
 
 def main():
     """
@@ -384,6 +528,9 @@ def main():
     parser.add_argument('--repeat', action='store_true', help='Enable queue repeat')
     parser.add_argument('--repeat-track', action='store_true', help='Enable track repeat')
     parser.add_argument('--start', type=int, default=0, help='Start index (0-based)')
+    
+    # Display options
+    parser.add_argument('--list', action='store_true', help='List all songs in library and exit')
     
     # Interactive mode
     parser.add_argument('--interactive', action='store_true', help='Enter interactive mode')
@@ -423,6 +570,15 @@ def main():
             return 1
         
         print(f"Found {len(songs)} songs")
+        
+        # List mode - just show songs and exit
+        if args.list:
+            print(f"\nListing {len(songs)} songs:")
+            for i, song in enumerate(songs):
+                print(f"  {i+1:3d}. {format_song_info(song)}")
+            if conn:
+                conn.close()
+            return 0
     
     # Start playback
     if args.interactive:
