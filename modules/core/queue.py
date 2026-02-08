@@ -578,35 +578,6 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
 
     print("Playback finished.")
 
-def play_single_song_with_loop(song_path, repeat_mode="off"):
-    """
-    Play a single song with optional looping using the queue system.
-    This function is designed for GUI integration.
-    
-    Args:
-        song_path (str): Path to the audio file
-        repeat_mode (str): "off", "track", or "queue"
-        
-    Returns:
-        QueueManager: The queue manager instance for external control
-    """
-    # Create a minimal song dict for the queue
-    song = {
-        'url': song_path,
-        'title': Path(song_path).stem,
-        'artist': 'Unknown Artist',
-        'album': 'Unknown Album'
-    }
-    
-    # Create queue manager with single song
-    queue_manager = QueueManager([song])
-    queue_manager.set_repeat_mode(repeat_mode)
-    
-    print(f"Playing: {song['title']}")
-    print(f"Repeat mode: {repeat_mode}")
-    
-    return queue_manager
-
 def connect_to_database(db_path):
     """
     Connect to the SQLite database and return connection.

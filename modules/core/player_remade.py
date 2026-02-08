@@ -7,8 +7,6 @@ import json
 import argparse
 import threading
 import time
-import socket
-import tempfile
 from pathlib import Path
 
 import gi
