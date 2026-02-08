@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Playlist Cleaner Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to clean M3U playlists by removing duplicate entries and
-entries for files that don't exist on disk.
-"""
 
 import argparse
 import logging

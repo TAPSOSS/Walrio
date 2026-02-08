@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Metadata Editor Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to modify audio file metadata (tags, album art, etc.) using mutagen CLI tools.
-Supports all major audio formats including MP3, FLAC, OGG, MP4, OPUS, and more.
-"""
 
 import os
 import sys

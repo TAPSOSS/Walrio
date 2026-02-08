@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-Audio Player using GStreamer Python Bindings
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A simple audio player that uses GStreamer Python bindings for real-time control
-including volume, seeking, and playback management.
-"""
 
 import sys
 import os

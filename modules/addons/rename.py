@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-Audio File Renamer
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to rename audio files to a standardized format: "(track name) - (album)"
-while removing special characters that can cause issues with music players.
-
-For file names, includes: abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ[]()-_~@=+?!
-"""
 
 import os
 import sys

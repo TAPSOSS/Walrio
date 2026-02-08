@@ -1,14 +1,4 @@
 #!/usr/bin/env python3
-"""
-Playlist Repair Tool
-Copyright (c) 2025 TAPS OSS
-Project: https://github.com/TAPSOSS/Walrio
-Licensed under the BSD-3-Clause License (see LICENSE file for details)
-
-A tool to detect and repair case conflicts in playlist files.
-Checks for entries that point to the same file with different case variations,
-which can cause issues on case-insensitive filesystems.
-"""
 
 import os
 import sys
