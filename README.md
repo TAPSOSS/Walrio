@@ -2,7 +2,7 @@
 Walrio is a modular library/set of files that let you play, manage, and edit music and music-related files. Every file should be usable via the terminal except documentation.
 
 ## Contributing
-For those interested in contributing code/documentation, please check the [contribution guidelines](https://github.com/TAPSOSS/.github/blob/main/CONTRIBUTING.md).
+For those interested in contributing code/documentation, please check the [contribution guidelines](https://github.com/TAPSOSS/.github/blob/main/CONTRIBUTING.md). On top of these guidelines, this specific project requires a single comment at the top of each file explaining what it does so that help commands properlyload dynmically. TODO: add this to a CONTRIBUTING.md later.
 
 All current contributors are listed both in the sidebar and (optionally) in the [AUTHORS](AUTHORS) file.
 

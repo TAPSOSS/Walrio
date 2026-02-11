@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+play your audio files
+"""
 
 import sys
 import os
