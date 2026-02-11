@@ -4,6 +4,9 @@
 # ignore Python cache directories
 __pycache__/
 
+# ignore test files in test directory
+test/
+
 # ignore build files and distribution files (executables)
 build/
 dist/
