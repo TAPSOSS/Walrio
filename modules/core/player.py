@@ -28,9 +28,11 @@ class AudioPlayer:
         self.debug = debug
         self.pipeline = None
         self.bus = None
+        self.bus_watch_thread = None
         self.current_file = None
         self.is_playing = False
         self.is_paused = False
+        self.is_finished = False
         self.duration = 0
         self.volume_value = 1.0
         self.loop_mode = 'none'
@@ -44,8 +46,19 @@ class AudioPlayer:
         if self.debug:
             print(f"DEBUG: {message}")
     
-    def _on_bus_message(self, bus, message):
-        """Handle GStreamer bus messages."""
+    def _bus_watch_loop(self):
+        """Poll the bus for messages in a background thread."""
+        while not self.should_quit and self.pipeline:
+            if self.bus:
+                # Poll for messages with 100ms timeout
+                message = self.bus.timed_pop(100000000)  # 100ms in nanoseconds
+                if message:
+                    self._process_bus_message(message)
+            else:
+                time.sleep(0.1)
+    
+    def _process_bus_message(self, message):
+        """Process a GStreamer bus message."""
         msg_type = message.type
         
         if msg_type == Gst.MessageType.EOS:
@@ -59,8 +72,6 @@ class AudioPlayer:
             if message.src == self.pipeline:
                 old_state, new_state, pending_state = message.parse_state_changed()
                 self._log(f"State changed: {old_state.value_nick} -> {new_state.value_nick}")
-        
-        return True
     
     def _handle_eos(self):
         """Handle end of stream for looping."""
@@ -93,7 +104,10 @@ class AudioPlayer:
                 "file": self.current_file,
                 "total_repeats": self.repeat_count
             })
-            self.stop()
+            # Mark as finished but don't stop the pipeline yet (allows position queries)
+            self.is_playing = False
+            self.is_finished = True
+            print("Playback finished")
             if self.interactive_mode:
                 print("player> ", end="", flush=True)
     
@@ -117,10 +131,11 @@ class AudioPlayer:
         self.pipeline.set_property("uri", f"file://{absolute_path}")
         self.pipeline.set_property("volume", self.volume_value)
         
-        # Setup bus message handling
+        # Setup bus message handling with polling thread
         self.bus = self.pipeline.get_bus()
-        self.bus.add_signal_watch()
-        self.bus.connect("message", self._on_bus_message)
+        if not self.bus_watch_thread or not self.bus_watch_thread.is_alive():
+            self.bus_watch_thread = threading.Thread(target=self._bus_watch_loop, daemon=True)
+            self.bus_watch_thread.start()
         
         self.duration = self._get_file_duration(absolute_path)
         print(f"Loaded: {filepath}")
@@ -134,6 +149,16 @@ class AudioPlayer:
         if not self.current_file:
             print("Error: No file loaded")
             return False
+        
+        # If song finished, seek to start before playing again
+        if self.is_finished:
+            if not self.pipeline:
+                # Pipeline was destroyed, need to reload
+                if not self.load_file(self.current_file):
+                    return False
+            self.seek(0.0)
+            self.is_finished = False
+            self.repeat_count = 0
         
         if not self.pipeline and not self.load_file(self.current_file):
             return False
@@ -186,13 +211,12 @@ class AudioPlayer:
         """Stop playback."""
         if self.pipeline:
             self.pipeline.set_state(Gst.State.NULL)
-            if self.bus:
-                self.bus.remove_signal_watch()
             self.pipeline = None
             self.bus = None
         
         self.is_playing = False
         self.is_paused = False
+        self.is_finished = False
         print("Playback stopped")
         return True
     
@@ -292,6 +316,7 @@ class AudioPlayer:
         return {
             "is_playing": self.is_playing,
             "is_paused": self.is_paused,
+            "is_finished": self.is_finished,
             "current_file": self.current_file,
             "position": self.get_position(),
             "duration": self.get_duration(),
@@ -370,7 +395,14 @@ class AudioPlayer:
     def _print_status(self):
         """Print current player status."""
         state = self.get_state()
-        status_str = 'Playing' if state['is_playing'] else ('Paused' if state['is_paused'] else 'Stopped')
+        if state['is_finished']:
+            status_str = 'Finished'
+        elif state['is_playing']:
+            status_str = 'Playing'
+        elif state['is_paused']:
+            status_str = 'Paused'
+        else:
+            status_str = 'Stopped'
         
         print(f"File: {state['current_file'] or 'None'}")
         print(f"Status: {status_str}")
@@ -477,7 +509,14 @@ class AudioPlayer:
                 result = commands[cmd]()
                 return f"OK: {cmd.title()}" if result else f"ERROR: Failed to {cmd}"
             elif cmd == 'status':
-                status = 'Playing' if self.is_playing else ('Paused' if self.is_paused else 'Stopped')
+                if self.is_finished:
+                    status = 'Finished'
+                elif self.is_playing:
+                    status = 'Playing'
+                elif self.is_paused:
+                    status = 'Paused'
+                else:
+                    status = 'Stopped'
                 return f"OK: {status}"
             elif cmd == 'quit':
                 self.should_quit = True
