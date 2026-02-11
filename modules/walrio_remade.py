@@ -24,23 +24,19 @@ def discover_modules():
         'niche': {}
     }
     
-    # Core modules
-    for name in CORE_MODULES:
-        path = modules_dir / 'core' / f'{name}.py'
-        if path.exists():
-            modules['core'][name] = str(path)
-    
-    # Addon modules
-    for name in ADDON_MODULES:
-        path = modules_dir / 'addons' / f'{name}.py'
-        if path.exists():
-            modules['addons'][name] = str(path)
-    
-    # Niche modules
-    for name in NICHE_MODULES:
-        path = modules_dir / 'niche' / f'{name}.py'
-        if path.exists():
-            modules['niche'][name] = str(path)
+    # Scan each directory for Python files
+    for category in ['core', 'addons', 'niche']:
+        category_dir = modules_dir / category
+        if category_dir.exists():
+            for py_file in category_dir.glob('*.py'):
+                # Skip __init__.py and private files
+                if py_file.name.startswith('_'):
+                    continue
+                
+                # Use the full file name (without .py extension) as the module name
+                module_name = py_file.stem
+                
+                modules[category][module_name] = str(py_file)
     
     return modules
 
