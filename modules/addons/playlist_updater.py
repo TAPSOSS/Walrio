@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
+"""
+updates file paths in playlists when the new path is known (unlike fixer which tries to find the new files afterward)
+"""
 
-import os
-import sys
 import logging
+import os
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional, Set
+import difflib
 
-# Add parent directory to path for module imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from core import playlist as playlist_module
-
-# Configure logging
 logger = logging.getLogger('PlaylistUpdater')
+
+# Pre-compiled audio extensions for efficiency
+AUDIO_EXTENSIONS = frozenset({'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', 
+                               '.opus', '.wma', '.ape', '.wv'})
 
 
 class PlaylistUpdater:
@@ -25,8 +27,8 @@ class PlaylistUpdater:
         Initialize the PlaylistUpdater.
         
         Args:
-            playlist_paths (List[str]): List of playlist file/directory paths to update
-            dry_run (bool): If True, show what would be updated without saving
+            playlist_paths: List of playlist file/directory paths to update
+            dry_run: If True, show what would be updated without saving
         """
         self.dry_run = dry_run
         self.playlists_to_update = []
@@ -36,16 +38,16 @@ class PlaylistUpdater:
         self._load_playlists(playlist_paths)
     
     @staticmethod
-    def _load_m3u_paths_only(playlist_path: str) -> List[Dict[str, str]]:
+    def _load_m3u_paths_only(playlist_path: Path) -> List[Dict[str, str]]:
         """
         Load only the file paths from an M3U playlist without extracting metadata.
         Preserves EXTINF lines exactly as-is for later writing.
         
         Args:
-            playlist_path (str): Path to the M3U playlist file
+            playlist_path: Path to the M3U playlist file
             
         Returns:
-            List[Dict[str, str]]: List of dicts with 'url' and optional 'extinf'
+            List of dicts with 'url' and optional 'extinf'
         """
         tracks = []
         try:
@@ -74,19 +76,20 @@ class PlaylistUpdater:
             
             return tracks
         except Exception as e:
-            logger.error(f"Error loading playlist {playlist_path}: {str(e)}")
+            logger.error(f"Error loading playlist {playlist_path}: {e}")
             return []
     
     @staticmethod
-    def _save_m3u_playlist(playlist_path: str, tracks: List[Dict[str, str]], playlist_name: str = None):
+    def _save_m3u_playlist(playlist_path: Path, tracks: List[Dict[str, str]], 
+                          playlist_name: Optional[str] = None):
         """
         Save tracks to an M3U playlist file, preserving original format.
         Only writes EXTINF tags if they were present in the original playlist.
         
         Args:
-            playlist_path (str): Path to save the playlist
-            tracks (List[Dict[str, str]]): List of track dicts with 'url' and optional 'extinf'
-            playlist_name (str): Optional playlist name for header
+            playlist_path: Path to save the playlist
+            tracks: List of track dicts with 'url' and optional 'extinf'
+            playlist_name: Optional playlist name for header
         """
         try:
             with open(playlist_path, 'w', encoding='utf-8') as f:
@@ -104,7 +107,7 @@ class PlaylistUpdater:
                     
             logger.debug(f"Saved playlist: {playlist_path}")
         except Exception as e:
-            logger.error(f"Error saving playlist {playlist_path}: {str(e)}")
+            logger.error(f"Error saving playlist {playlist_path}: {e}")
     
     def _load_playlists(self, playlist_paths: List[str]):
         """
@@ -112,23 +115,23 @@ class PlaylistUpdater:
         Supports both individual files and directories.
         
         Args:
-            playlist_paths (List[str]): List of paths to load playlists from
+            playlist_paths: List of paths to load playlists from
         """
-        for path in playlist_paths:
-            if os.path.isfile(path):
+        for path_str in playlist_paths:
+            path = Path(path_str)
+            
+            if path.is_file():
                 # Individual playlist file
-                if path.lower().endswith('.m3u'):
+                if path.suffix.lower() == '.m3u':
                     self.playlists_to_update.append(path)
                     logger.debug(f"Added playlist to update: {path}")
                 else:
                     logger.warning(f"Skipping non-M3U file: {path}")
-            elif os.path.isdir(path):
-                # Directory of playlists
-                for file in os.listdir(path):
-                    if file.lower().endswith('.m3u'):
-                        full_path = os.path.join(path, file)
-                        self.playlists_to_update.append(full_path)
-                        logger.debug(f"Added playlist to update: {full_path}")
+            elif path.is_dir():
+                # Directory of playlists - use glob for efficiency
+                for file in path.glob('*.m3u'):
+                    self.playlists_to_update.append(file)
+                    logger.debug(f"Added playlist to update: {file}")
             else:
                 logger.warning(f"Playlist path does not exist: {path}")
         
@@ -141,10 +144,10 @@ class PlaylistUpdater:
         Provides detailed logging for each change made.
         
         Args:
-            path_mapping (Dict[str, str]): Dictionary mapping old paths to new paths
+            path_mapping: Dictionary mapping old paths to new paths
             
         Returns:
-            int: Number of playlists successfully updated
+            Number of playlists successfully updated
         """
         if not self.playlists_to_update:
             logger.debug("No playlists to update")
@@ -168,9 +171,12 @@ class PlaylistUpdater:
         
         self.updated_count = 0
         
+        # Convert path_mapping to use normalized paths for faster lookups
+        normalized_mapping = {os.path.normpath(k): v for k, v in path_mapping.items()}
+        
         for playlist_path in self.playlists_to_update:
             try:
-                playlist_name = os.path.basename(playlist_path)
+                playlist_name = playlist_path.name
                 logger.info(f"\nProcessing playlist: {playlist_name}")
                 logger.info("-" * 80)
                 
@@ -194,35 +200,34 @@ class PlaylistUpdater:
                     
                     # Convert relative paths to absolute based on playlist location
                     if not os.path.isabs(track_url):
-                        playlist_dir = os.path.dirname(playlist_path)
-                        old_url = os.path.abspath(os.path.join(playlist_dir, track_url))
+                        old_url = os.path.normpath((playlist_path.parent / track_url).resolve())
                     else:
-                        old_url = os.path.abspath(track_url)
-                    
-                    # Normalize the path for matching (resolve any symlinks, etc.)
-                    old_url = os.path.normpath(old_url)
+                        old_url = os.path.normpath(Path(track_url).resolve())
                     
                     # Debug: Show first few tracks being checked
                     if idx <= 3:
                         logger.info(f"  Track #{idx} original: {track_url}")
                         logger.info(f"  Track #{idx} absolute: {old_url}")
-                        logger.info(f"    File exists: {os.path.exists(old_url)}")
-                        logger.info(f"    In path_mapping: {old_url in path_mapping}")
-                        if old_url in path_mapping:
-                            logger.info(f"    Would map to: {path_mapping[old_url]}")
+                        logger.info(f"    File exists: {Path(old_url).exists()}")
+                        logger.info(f"    In path_mapping: {old_url in normalized_mapping}")
+                        if old_url in normalized_mapping:
+                            logger.info(f"    Would map to: {normalized_mapping[old_url]}")
                         else:
                             # Show close matches for debugging
                             logger.info(f"    Looking for close matches in path_mapping...")
-                            for key in list(path_mapping.keys())[:3]:
+                            for key in list(normalized_mapping.keys())[:3]:
                                 logger.info(f"      Available key: {key}")
                     
-                    if old_url in path_mapping:
-                        new_url_absolute = path_mapping[old_url]
+                    if old_url in normalized_mapping:
+                        new_url_absolute = normalized_mapping[old_url]
                         
                         # Convert back to relative path if original was relative
                         if not os.path.isabs(track_url):
-                            playlist_dir = os.path.dirname(playlist_path)
-                            new_url = os.path.relpath(new_url_absolute, playlist_dir)
+                            try:
+                                new_url = os.path.relpath(new_url_absolute, playlist_path.parent)
+                            except ValueError:
+                                # Can't make relative (different drives on Windows)
+                                new_url = new_url_absolute
                         else:
                             new_url = new_url_absolute
                         
@@ -244,7 +249,7 @@ class PlaylistUpdater:
                         self._save_m3u_playlist(
                             playlist_path,
                             playlist_data,
-                            playlist_name=os.path.splitext(playlist_name)[0]
+                            playlist_name=playlist_path.stem
                         )
                         logger.info(f"\n✓ Updated {changes_count} track(s) in playlist: {playlist_name}")
                     
@@ -253,7 +258,7 @@ class PlaylistUpdater:
                     logger.info(f"  No changes needed for this playlist")
                     
             except Exception as e:
-                logger.error(f"Error updating playlist {playlist_path}: {str(e)}")
+                logger.error(f"Error updating playlist {playlist_path}: {e}")
         
         logger.info("=" * 80)
         if self.dry_run:
@@ -264,64 +269,65 @@ class PlaylistUpdater:
         return self.updated_count
 
 
-def load_playlists_from_paths(playlist_paths: List[str]) -> List[str]:
+def load_playlists_from_paths(playlist_paths: List[str]) -> List[Path]:
     """
     Helper function to load playlist file paths from a list of file/directory paths.
     
     Args:
-        playlist_paths (List[str]): List of paths (files or directories)
+        playlist_paths: List of paths (files or directories)
         
     Returns:
-        List[str]: List of playlist file paths
+        List of playlist Path objects
     """
     playlists = []
     
-    for path in playlist_paths:
-        if os.path.isfile(path):
-            if path.lower().endswith('.m3u'):
+    for path_str in playlist_paths:
+        path = Path(path_str)
+        if path.is_file():
+            if path.suffix.lower() == '.m3u':
                 playlists.append(path)
-        elif os.path.isdir(path):
-            for file in os.listdir(path):
-                if file.lower().endswith('.m3u'):
-                    full_path = os.path.join(path, file)
-                    playlists.append(full_path)
+        elif path.is_dir():
+            # Use glob for efficiency
+            playlists.extend(path.glob('*.m3u'))
     
     return playlists
 
 
-def auto_detect_renamed_files(music_dir: str, playlist_paths: List[str], recursive: bool = False) -> Dict[str, str]:
+def auto_detect_renamed_files(music_dir: str, playlist_paths: List[str], 
+                              recursive: bool = False) -> Dict[str, str]:
     """
     Automatically detect renamed files by comparing playlist entries with actual files.
     Attempts to match playlist entries (with problematic characters) to existing files.
     
     Args:
-        music_dir (str): Directory containing music files to scan
-        playlist_paths (List[str]): List of playlist files or directories
-        recursive (bool): Whether to scan music directory recursively
+        music_dir: Directory containing music files to scan
+        playlist_paths: List of playlist files or directories
+        recursive: Whether to scan music directory recursively
         
     Returns:
-        Dict[str, str]: Dictionary mapping old paths (from playlists) to new paths (actual files)
+        Dictionary mapping old paths (from playlists) to new paths (actual files)
     """
-    import difflib
-    
     logger.info(f"Scanning music directory: {music_dir}")
     
-    # Get all audio files in the music directory
-    audio_extensions = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
+    music_path = Path(music_dir)
     actual_files = []
     
+    # Scan for audio files - use pathlib for efficiency
     if recursive:
-        for root, _, files in os.walk(music_dir):
-            for file in files:
-                if os.path.splitext(file)[1].lower() in audio_extensions:
-                    actual_files.append(os.path.abspath(os.path.join(root, file)))
+        for ext in AUDIO_EXTENSIONS:
+            actual_files.extend(music_path.rglob(f'*{ext}'))
     else:
-        for file in os.listdir(music_dir):
-            full_path = os.path.join(music_dir, file)
-            if os.path.isfile(full_path) and os.path.splitext(file)[1].lower() in audio_extensions:
-                actual_files.append(os.path.abspath(full_path))
+        for ext in AUDIO_EXTENSIONS:
+            actual_files.extend(music_path.glob(f'*{ext}'))
     
-    logger.info(f"Found {len(actual_files)} audio files in music directory")
+    # Convert to normalized absolute paths and build basename lookup dict
+    actual_files_normalized = [os.path.normpath(f.resolve()) for f in actual_files]
+    basename_to_paths = {}
+    for filepath in actual_files_normalized:
+        basename = os.path.basename(filepath).lower()
+        basename_to_paths.setdefault(basename, []).append(filepath)
+    
+    logger.info(f"Found {len(actual_files_normalized)} audio files in music directory")
     
     # Load all unique paths from playlists
     updater = PlaylistUpdater(playlist_paths, dry_run=True)
@@ -329,17 +335,16 @@ def auto_detect_renamed_files(music_dir: str, playlist_paths: List[str], recursi
     
     for playlist_path in updater.playlists_to_update:
         tracks = updater._load_m3u_paths_only(playlist_path)
-        playlist_dir = os.path.dirname(playlist_path)
         
         for track in tracks:
             track_url = track.get('url', '')
             if not os.path.isabs(track_url):
-                abs_path = os.path.normpath(os.path.abspath(os.path.join(playlist_dir, track_url)))
+                abs_path = os.path.normpath((playlist_path.parent / track_url).resolve())
             else:
-                abs_path = os.path.normpath(os.path.abspath(track_url))
+                abs_path = os.path.normpath(Path(track_url).resolve())
             
             # Only add entries that don't exist (likely renamed)
-            if not os.path.exists(abs_path):
+            if not Path(abs_path).exists():
                 playlist_entries.add(abs_path)
     
     logger.info(f"Found {len(playlist_entries)} missing entries in playlists (likely renamed)")
@@ -350,35 +355,59 @@ def auto_detect_renamed_files(music_dir: str, playlist_paths: List[str], recursi
     for missing_path in playlist_entries:
         # Strategy: Find best match by comparing filenames
         missing_filename = os.path.basename(missing_path)
+        missing_filename_lower = missing_filename.lower()
         missing_dir = os.path.dirname(missing_path)
+        missing_ext = os.path.splitext(missing_filename)[1].lower()
+        
+        # Quick check: if basename matches exactly (case-insensitive), use it
+        if missing_filename_lower in basename_to_paths:
+            candidates = basename_to_paths[missing_filename_lower]
+            # If only one match, use it
+            if len(candidates) == 1:
+                path_mapping[missing_path] = candidates[0]
+                logger.info(f"Exact match: {missing_filename} -> {os.path.basename(candidates[0])}")
+                continue
+            # Multiple matches - prefer same directory
+            same_dir = [c for c in candidates if os.path.dirname(c) == missing_dir]
+            if same_dir:
+                path_mapping[missing_path] = same_dir[0]
+                logger.info(f"Exact match (same dir): {missing_filename} -> {os.path.basename(same_dir[0])}")
+                continue
         
         best_match = None
         best_ratio = 0
         
         # First, try exact directory match with fuzzy filename match
-        for actual_file in actual_files:
-            actual_dir = os.path.dirname(actual_file)
-            actual_filename = os.path.basename(actual_file)
-            
-            # Check if in same directory
-            if actual_dir == missing_dir:
-                ratio = difflib.SequenceMatcher(None, missing_filename.lower(), actual_filename.lower()).ratio()
+        # Filter by same directory and extension first for efficiency
+        same_dir_candidates = [f for f in actual_files_normalized 
+                              if os.path.dirname(f) == missing_dir 
+                              and os.path.splitext(f)[1].lower() == missing_ext]
+        
+        if same_dir_candidates:
+            for actual_file in same_dir_candidates:
+                actual_filename = os.path.basename(actual_file)
+                ratio = difflib.SequenceMatcher(None, missing_filename_lower, 
+                                               actual_filename.lower()).ratio()
                 if ratio > best_ratio and ratio > 0.7:  # 70% similarity threshold
                     best_ratio = ratio
                     best_match = actual_file
         
-        # If no match in same directory, try any file with high similarity
+        # If no match in same directory, try any file with high similarity and same extension
         if not best_match:
-            for actual_file in actual_files:
+            same_ext_candidates = [f for f in actual_files_normalized 
+                                  if os.path.splitext(f)[1].lower() == missing_ext]
+            
+            for actual_file in same_ext_candidates:
                 actual_filename = os.path.basename(actual_file)
-                ratio = difflib.SequenceMatcher(None, missing_filename.lower(), actual_filename.lower()).ratio()
+                ratio = difflib.SequenceMatcher(None, missing_filename_lower, 
+                                               actual_filename.lower()).ratio()
                 if ratio > best_ratio and ratio > 0.8:  # Higher threshold for different directory
                     best_ratio = ratio
                     best_match = actual_file
         
         if best_match:
             path_mapping[missing_path] = best_match
-            logger.info(f"Matched: {os.path.basename(missing_path)} -> {os.path.basename(best_match)} ({best_ratio:.1%} similarity)")
+            logger.info(f"Matched: {missing_filename} -> {os.path.basename(best_match)} ({best_ratio:.1%} similarity)")
         else:
             logger.warning(f"Could not find match for: {missing_path}")
     
@@ -391,6 +420,7 @@ def main():
     """Main entry point for standalone playlist updater."""
     import argparse
     import json
+    import sys
     
     parser = argparse.ArgumentParser(
         description="Playlist Updater - Update M3U playlists with new file paths",
@@ -401,29 +431,29 @@ This tool updates M3U playlist files when audio file paths have changed.
 Usage Modes:
 
 1. Manual mapping from JSON file:
-   python playlist_updater.py playlists/ --mapping-file mappings.json
+   python playlist_updater_remade.py playlists/ --mapping-file mappings.json
    
    JSON format: {"old_path": "new_path", ...}
 
 2. Auto-detect renamed files:
-   python playlist_updater.py playlists/ --auto-detect /path/to/music --recursive
+   python playlist_updater_remade.py playlists/ --auto-detect /path/to/music --recursive
    
    Automatically finds renamed files by matching playlist entries to existing files.
 
 3. Interactive mode:
-   python playlist_updater.py playlists/
+   python playlist_updater_remade.py playlists/
    
    Prompts for each missing file to enter the new path.
 
 Examples:
   # Auto-detect and fix playlists after renaming
-  python playlist_updater.py /path/to/playlists --auto-detect /path/to/music --recursive
+  python playlist_updater_remade.py /path/to/playlists --auto-detect /path/to/music --recursive
   
   # Use a mapping file
-  python playlist_updater.py playlist.m3u --mapping-file path_mappings.json
+  python playlist_updater_remade.py playlist.m3u --mapping-file path_mappings.json
   
   # Dry run to preview changes
-  python playlist_updater.py playlists/ --auto-detect /music --dry-run
+  python playlist_updater_remade.py playlists/ --auto-detect /music --dry-run
         """
     )
     
@@ -473,7 +503,7 @@ Examples:
     
     # Validate playlist paths
     for path in args.playlists:
-        if not os.path.exists(path):
+        if not Path(path).exists():
             logger.error(f"Playlist path does not exist: {path}")
             sys.exit(1)
     
@@ -493,7 +523,7 @@ Examples:
     
     elif args.auto_detect:
         # Auto-detect renamed files
-        if not os.path.isdir(args.auto_detect):
+        if not Path(args.auto_detect).is_dir():
             logger.error(f"Music directory does not exist: {args.auto_detect}")
             sys.exit(1)
         
