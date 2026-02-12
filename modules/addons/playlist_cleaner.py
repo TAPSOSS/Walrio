@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+"""
+attempts to clean playlists by removing duplicates and files that dont exist
+"""
 
 import argparse
 import logging
+import shutil
 from pathlib import Path
-from typing import List, Tuple, Set
+from typing import List, Tuple
 import sys
 
 # Setup logging
@@ -33,7 +37,7 @@ class PlaylistCleaner:
         self.entries = []
         self.duplicates = []
         self.unavailable = []
-        
+    
     def read_playlist(self) -> List[str]:
         """
         Read the playlist file and return all lines
@@ -191,7 +195,8 @@ class PlaylistCleaner:
                 logger.info(f"  Entry #{idx + 1}: {file_path}")
                 logger.info(f"    Resolved to: {resolved}")
     
-    def clean(self, remove_duplicates: bool = True, remove_unavailable: bool = True, dry_run: bool = False, no_backup: bool = False):
+    def clean(self, remove_duplicates: bool = True, remove_unavailable: bool = True, 
+             dry_run: bool = False, no_backup: bool = False):
         """
         Clean the playlist by removing problematic entries
         
@@ -236,8 +241,6 @@ class PlaylistCleaner:
         if not no_backup:
             backup_path = self.playlist_path.with_suffix('.m3u.backup')
             logger.info(f"Creating backup: {backup_path.name}")
-            
-            import shutil
             shutil.copy2(self.playlist_path, backup_path)
         else:
             logger.info("Skipping backup creation (--no-backup specified)")
