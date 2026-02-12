@@ -173,14 +173,14 @@ class AudioRenamer:
         
         # Default replacements for filesystem-illegal characters
         filesystem_illegal_defaults = {
-            '/': '~',
-            '\\': '~',
+            '/': '-',
+            '\\': '-',
             ':': '-',
-            '*': '',
-            '?': '',
-            '"': "'",
-            '<': '',
-            '>': '',
+            '*': '-',
+            '?': '-',
+            '"': "-",
+            '<': '-,
+            '>': '-,
             '|': '-'
         }
         

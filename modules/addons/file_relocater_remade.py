@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger('FileRelocater')
 
 # Standard character set for folder names
-ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ')
+ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_~ ')
 
 # Audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
@@ -124,14 +124,14 @@ class FileRelocater:
         
         # Default replacements for filesystem-illegal characters
         filesystem_illegal_defaults = {
-            '/': '~',
-            '\\': '~',
+            '/': '-',
+            '\\': '-',
             ':': '-',
-            '*': '',
-            '?': '',
-            '"': "'",
-            '<': '',
-            '>': '',
+            '*': '-',
+            '?': '-',
+            '"': "-",
+            '<': '-',
+            '>': '-',
             '|': '-'
         }
         
