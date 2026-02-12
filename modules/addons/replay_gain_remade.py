@@ -39,6 +39,10 @@ class ReplayGainAnalyzer:
             target_lufs: Target LUFS value for analysis (default: -18)
             preserve_mtimes: Preserve file modification times
         """
+        # Validate LUFS range
+        if target_lufs > -5 or target_lufs < -30:
+            raise ValueError(f"Target LUFS must be between -30 and -5 (got {target_lufs})")
+        
         self.target_lufs = target_lufs
         self.preserve_mtimes = preserve_mtimes
         self.analyzed_count = 0
@@ -106,11 +110,19 @@ class ReplayGainAnalyzer:
         
         try:
             # Use rsgain custom command for analysis without writing tags
+            lufs_str = f"-{abs(self.target_lufs)}"
             cmd = [
                 "rsgain", "custom",
+                "-s", "s",  # Scan mode (no writing)
+                "-l", lufs_str,  # Target LUFS
                 "-O",  # Output format: tab-separated values
-                str(filepath)
             ]
+            
+            # Add preserve mtimes if requested
+            if self.preserve_mtimes:
+                cmd.insert(2, "-p")
+            
+            cmd.append(str(filepath))
             
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
@@ -220,7 +232,6 @@ class ReplayGainAnalyzer:
                 "-s", "i",  # Apply tags (single file mode, integrated mode)
                 "-l", lufs_str,  # Target LUFS
                 "-O",  # Output format: tab-separated values
-                str(filepath)
             ]
             
             # Add skip option if requested
@@ -230,6 +241,8 @@ class ReplayGainAnalyzer:
             # Add preserve mtimes if requested
             if self.preserve_mtimes:
                 cmd.insert(2, "-p")
+            
+            cmd.append(str(filepath))
             
             logger.debug(f"Running: {' '.join(cmd)}")
             
@@ -310,8 +323,60 @@ class ReplayGainAnalyzer:
             self.error_count += 1
             return None
     
+    def delete_tags_file(self, filepath: Path, current_file: int = None, 
+                        total_files: int = None) -> bool:
+        """
+        Delete ReplayGain tags from file
+        
+        Args:
+            filepath: Audio file path
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.is_supported_file(filepath):
+            logger.warning(f"Unsupported file type: {filepath.name}")
+            return False
+        
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Deleting ReplayGain tags from {filepath.name}")
+        else:
+            print(f"\nDeleting ReplayGain tags from {filepath.name}")
+        
+        try:
+            # Build rsgain command for deleting tags
+            cmd = [
+                "rsgain", "custom",
+                "-s", "d",  # Delete mode
+            ]
+            
+            # Add preserve mtimes if requested
+            if self.preserve_mtimes:
+                cmd.insert(2, "-p")
+            
+            cmd.append(str(filepath))
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to delete tags from {filepath.name}: {result.stderr or result.stdout}")
+                self.error_count += 1
+                return False
+            
+            print(f"  ✓ ReplayGain tags deleted")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting tags from {filepath.name}: {e}")
+            self.error_count += 1
+            return False
+    
     def analyze_directory(self, directory: Path, recursive: bool = True, 
-                         tag: bool = False, skip_tagged: bool = True) -> List[Dict[str, Any]]:
+                         tag: bool = False, skip_tagged: bool = True,
+                         delete_tags: bool = False) -> List[Dict[str, Any]]:
         """
         Analyze all supported audio files in directory
         
@@ -320,6 +385,7 @@ class ReplayGainAnalyzer:
             recursive: Process subdirectories
             tag: Write ReplayGain tags
             skip_tagged: Skip files that already have tags
+            delete_tags: Delete ReplayGain tags from files
             
         Returns:
             List of analysis results
@@ -339,72 +405,38 @@ class ReplayGainAnalyzer:
         
         # Print settings and file count
         if files:
-            self.print_analysis_settings(tag, skip_tagged)
-            print(f"Found {len(files)} audio file(s) to analyze\n")
+            if delete_tags:
+                print("\n" + "=" * 60)
+                print(f"ReplayGain Tag Deletion:")
+                print(f"  Preserve Modification Times: {'Yes' if self.preserve_mtimes else 'No'}")
+                print("=" * 60 + "\n")
+                print(f"Found {len(files)} audio file(s) to process\n")
+            else:
+                self.print_analysis_settings(tag, skip_tagged)
+                print(f"Found {len(files)} audio file(s) to analyze\n")
         
         results = []
+        deleted_count = 0
         for idx, file_path in enumerate(files, 1):
-            if tag:
+            if delete_tags:
+                if self.delete_tags_file(file_path, current_file=idx, total_files=len(files)):
+                    deleted_count += 1
+            elif tag:
                 result = self.analyze_and_tag_file(file_path, skip_tagged, 
                                                    current_file=idx, total_files=len(files))
+                if result:
+                    results.append(result)
             else:
                 result = self.analyze_file(file_path, 
                                           current_file=idx, total_files=len(files))
-            
-            if result:
-                results.append(result)
+                if result:
+                    results.append(result)
+        
+        if delete_tags:
+            # Return summary for delete mode
+            return {'deleted': deleted_count, 'errors': self.error_count}
         
         return results
-    
-    def apply_easy_mode(self, target: Path, album_mode: bool = False) -> Dict[str, int]:
-        """
-        Apply ReplayGain using rsgain easy mode
-        
-        Args:
-            target: File or directory
-            album_mode: Use album gain instead of track gain
-            
-        Returns:
-            Statistics dictionary
-        """
-        # Build command
-        cmd = ['rsgain', 'easy']
-        
-        if album_mode:
-            cmd.append('-a')  # Album mode
-        
-        if self.preserve_mtimes:
-            cmd.append('-p')  # Preserve mtimes
-        
-        # Add target
-        if target.is_dir():
-            # Find all audio files
-            files = []
-            for ext in SUPPORTED_EXTENSIONS:
-                files.extend(target.rglob(f'*{ext}'))
-            
-            if not files:
-                return {'processed': 0, 'errors': 0}
-            
-            cmd.extend([str(f) for f in files])
-        else:
-            cmd.append(str(target))
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            
-            # Count processed files
-            processed = len(cmd) - 2  # Subtract 'rsgain' and 'easy'
-            if album_mode:
-                processed -= 1  # Subtract '-a'
-            if self.preserve_mtimes:
-                processed -= 1  # Subtract '-p'
-            
-            return {'processed': processed, 'errors': 0}
-            
-        except subprocess.CalledProcessError as e:
-            logger.error(f"rsgain easy mode failed: {e.stderr or e.stdout}")
-            return {'processed': 0, 'errors': 1}
 
 
 def main():
@@ -418,14 +450,12 @@ def main():
                        help='Write ReplayGain tags (default: analyze only)')
     parser.add_argument('-s', '--skip-tagged', action='store_true',
                        help='Skip files that already have ReplayGain tags')
+    parser.add_argument('--delete-tags', action='store_true',
+                       help='Delete ReplayGain tags from files')
     parser.add_argument('-l', '--target-lufs', type=int, default=DEFAULT_TARGET_LUFS,
-                       help=f'Target LUFS value (default: {DEFAULT_TARGET_LUFS})')
+                       help=f'Target LUFS value from -30 to -5 (default: {DEFAULT_TARGET_LUFS})')
     parser.add_argument('--no-preserve-mtimes', action='store_true',
                        help='Do not preserve file modification times')
-    parser.add_argument('-a', '--album-mode', action='store_true',
-                       help='Use album gain (analyze together)')
-    parser.add_argument('-e', '--easy', action='store_true',
-                       help='Use rsgain easy mode (recommended for batch processing)')
     
     args = parser.parse_args()
     
@@ -435,13 +465,22 @@ def main():
             preserve_mtimes=not args.no_preserve_mtimes
         )
         
-        if args.easy:
-            # Use easy mode
-            stats = analyzer.apply_easy_mode(args.input, args.album_mode)
-            print(f"\nProcessed {stats['processed']} files")
-            if stats['errors']:
-                print(f"Errors: {stats['errors']}")
-                return 1
+        if args.delete_tags:
+            # Delete mode
+            if args.input.is_dir():
+                result = analyzer.analyze_directory(
+                    args.input, args.recursive, delete_tags=True
+                )
+                print(f"\nTag deletion complete:")
+                print(f"  Deleted: {result['deleted']}")
+                if result['errors']:
+                    print(f"  Errors: {result['errors']}")
+                    return 1
+            else:
+                # Single file
+                success = analyzer.delete_tags_file(args.input)
+                if not success:
+                    return 1
         
         elif args.input.is_dir():
             # Directory analysis
