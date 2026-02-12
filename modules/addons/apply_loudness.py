@@ -69,7 +69,7 @@ class LoudnessApplicator:
         """
         try:
             analyzer = ReplayGainAnalyzer(target_lufs=target_lufs)
-            result = analyzer.analyze_file(filepath)
+            result = analyzer.analyze_file(Path(filepath))
             
             if result is None:
                 return None

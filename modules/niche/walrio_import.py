@@ -12,10 +12,10 @@ from pathlib import Path
 def get_walrio_path():
     """Get path to walrio_remade.py unified interface"""
     current_dir = Path(__file__).parent
-    walrio_path = current_dir.parent / "walrio_remade.py"
+    walrio_path = current_dir.parent / "walrio.py"
     
     if not walrio_path.exists():
-        raise FileNotFoundError(f"Could not find walrio_remade.py at {walrio_path}")
+        raise FileNotFoundError(f"Could not find walrio.py at {walrio_path}")
     
     return str(walrio_path)
 
@@ -89,13 +89,12 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y']
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite']
         },
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
-                '--auto-sanitize',
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
                 '--rc', '?', '~',
                 '--rc', '/', '~',
