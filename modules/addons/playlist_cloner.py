@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+clone a playlist somewhere else with options for conversion
+"""
 
 import os
 import sys
@@ -496,12 +499,6 @@ Common bitrate presets:
         help='Use batch mode: update all playlists first, then convert unique files once (recommended for multiple playlists)'
     )
     
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
-    )
-    
     return parser.parse_args()
 
 
@@ -571,7 +568,7 @@ def clone_playlists_batch(playlist_files: List[str],
     logger.info(f"Found {total_files} unique files across {len(playlist_files)} playlists")
     
     # Step 2: Update all playlist files to reference new format
-    logger.info("\\nStep 2: Updating playlist files to reference new format...")
+    logger.info("\nStep 2: Updating playlist files to reference new format...")
     output_ext = SUPPORTED_OUTPUT_FORMATS[output_format]['ext']
     
     for playlist_path in playlist_files:
@@ -620,7 +617,7 @@ def clone_playlists_batch(playlist_files: List[str],
             logger.info(f"  Would update: {playlist_name}")
     
     # Step 3: Convert all unique files once
-    logger.info("\\nStep 3: Converting unique audio files...")
+    logger.info("\nStep 3: Converting unique audio files...")
     logger.info("=" * 80)
     
     converter_options = {
@@ -740,11 +737,6 @@ def main():
     Main entry point for the playlist cloner.
     """
     args = parse_arguments()
-    
-    # Set logging level
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        logging.getLogger('AudioConverter').setLevel(logging.DEBUG)
     
     # Handle overwrite flag
     skip_existing = not args.overwrite if args.overwrite else args.skip_existing
