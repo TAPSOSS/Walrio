@@ -67,6 +67,7 @@ class AudioRenamer:
                  skip_no_metadata: bool = False,
                  full_date: bool = False,
                  update_playlists: Optional[List[Path]] = None,
+                 custom_allowed_chars: Optional[str] = None,
                  dry_run: bool = False):
         """
         Args:
@@ -78,6 +79,7 @@ class AudioRenamer:
             skip_no_metadata: Skip files with missing critical metadata
             full_date: Keep full date instead of just year
             update_playlists: List of playlist files to update with new paths
+            custom_allowed_chars: Custom set of allowed characters for sanitization
             dry_run: Preview changes without applying
         """
         self.format_string = format_string
@@ -88,6 +90,9 @@ class AudioRenamer:
         self.skip_no_metadata = skip_no_metadata
         self.full_date = full_date
         self.dry_run = dry_run
+        
+        # Set allowed characters (custom or default)
+        self.allowed_chars = set(custom_allowed_chars) if custom_allowed_chars else ALLOWED_FILE_CHARS
         
         # Stats
         self.renamed_count = 0
@@ -207,7 +212,7 @@ class AudioRenamer:
         if not self.dont_sanitize:
             final_sanitized = ""
             for char in sanitized:
-                if char in ALLOWED_FILE_CHARS:
+                if char in self.allowed_chars:
                     final_sanitized += char
                 elif char in "!.,&%;'":
                     # Remove additional problematic characters
@@ -557,6 +562,8 @@ def main():
                        help='Preview without renaming')
     parser.add_argument('--rc', action='append', nargs=2, metavar=('OLD', 'NEW'),
                        help='Replace character OLD with NEW (e.g., --rc : -)')
+    parser.add_argument('--sanitize', type=str, metavar='CHARS',
+                       help='Custom allowed characters for sanitization (e.g., --sanitize "abcABC123-_")')
     parser.add_argument('--dont-sanitize', action='store_true',
                        help='Skip character filtering')
     parser.add_argument('--auto-sanitize', action='store_true',
@@ -588,6 +595,7 @@ def main():
             skip_no_metadata=args.skip_no_metadata,
             full_date=args.full_date,
             update_playlists=args.update_playlists,
+            custom_allowed_chars=args.sanitize,
             dry_run=args.dry_run
         )
         
