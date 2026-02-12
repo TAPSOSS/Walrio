@@ -78,7 +78,7 @@ def _extract_module_description(file_path: str) -> str:
 _discovered_modules = _discover_modules()
 
 # Generate dynamic docstring with current module info
-_doc_parts = [__doc__, "\nDiscovered Modules:\n"]
+_doc_parts = [__doc__ or "Walrio Modules", "\nDiscovered Modules:\n"]
 
 for category, modules in _discovered_modules.items():
     if modules:  # Only include categories that have modules
