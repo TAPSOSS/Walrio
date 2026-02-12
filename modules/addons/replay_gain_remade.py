@@ -70,12 +70,15 @@ class ReplayGainAnalyzer:
         """
         return filepath.is_file() and filepath.suffix.lower() in SUPPORTED_EXTENSIONS
     
-    def analyze_file(self, filepath: Path) -> Optional[Dict[str, Any]]:
+    def analyze_file(self, filepath: Path, current_file: int = None, 
+                     total_files: int = None) -> Optional[Dict[str, Any]]:
         """
         Analyze single audio file for ReplayGain values (no tagging)
         
         Args:
             filepath: Audio file path
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
             
         Returns:
             Analysis results with loudness, gain, clipping info, or None on failure
@@ -83,6 +86,12 @@ class ReplayGainAnalyzer:
         if not self.is_supported_file(filepath):
             logger.warning(f"Unsupported file type: {filepath.name}")
             return None
+        
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Analyzing {filepath.name}")
+        else:
+            print(f"\nAnalyzing {filepath.name}")
         
         try:
             # Use rsgain custom command for analysis without writing tags
@@ -158,6 +167,9 @@ class ReplayGainAnalyzer:
             self.analyzed_count += 1
             logger.debug(f"Analyzed {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
             
+            # Display results
+            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            
             return analysis_result
             
         except Exception as e:
@@ -165,13 +177,16 @@ class ReplayGainAnalyzer:
             self.error_count += 1
             return None
     
-    def analyze_and_tag_file(self, filepath: Path, skip_tagged: bool = True) -> Optional[Dict[str, Any]]:
+    def analyze_and_tag_file(self, filepath: Path, skip_tagged: bool = True,
+                            current_file: int = None, total_files: int = None) -> Optional[Dict[str, Any]]:
         """
         Analyze file and write ReplayGain tags
         
         Args:
             filepath: Audio file path
             skip_tagged: Skip files that already have ReplayGain tags
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
             
         Returns:
             Analysis results, or None on failure
@@ -179,6 +194,12 @@ class ReplayGainAnalyzer:
         if not self.is_supported_file(filepath):
             logger.warning(f"Unsupported file type: {filepath.name}")
             return None
+        
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Analyzing {filepath.name}")
+        else:
+            print(f"\nAnalyzing {filepath.name}")
         
         try:
             # Build rsgain command for analysis and tagging
@@ -267,6 +288,10 @@ class ReplayGainAnalyzer:
             self.tagged_count += 1
             logger.info(f"Tagged {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
             
+            # Display results
+            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            print(f"  ✓ ReplayGain tags written")
+            
             return analysis_result
             
         except Exception as e:
@@ -301,12 +326,18 @@ class ReplayGainAnalyzer:
             for ext in SUPPORTED_EXTENSIONS:
                 files.extend(directory.glob(f'*{ext}'))
         
+        # Print initial count
+        if files:
+            print(f"\nFound {len(files)} audio file(s) to analyze\n")
+        
         results = []
-        for file_path in files:
+        for idx, file_path in enumerate(files, 1):
             if tag:
-                result = self.analyze_and_tag_file(file_path, skip_tagged)
+                result = self.analyze_and_tag_file(file_path, skip_tagged, 
+                                                   current_file=idx, total_files=len(files))
             else:
-                result = self.analyze_file(file_path)
+                result = self.analyze_file(file_path, 
+                                          current_file=idx, total_files=len(files))
             
             if result:
                 results.append(result)
