@@ -28,7 +28,7 @@ class AudioConverter:
     
     def __init__(self, output_format: str, preserve_metadata: bool = True,
                  bitrate: str = None, bit_depth: str = None, sample_rate: str = None,
-                 delete_original: bool = False):
+                 delete_original: bool = False, encoding_mode: str = None):
         """
         Args:
             output_format: Target format (mp3, flac, etc.)
@@ -37,6 +37,7 @@ class AudioConverter:
             bit_depth: Bit depth for lossless formats ('16', '24', '32')
             sample_rate: Sample rate ('44100', '48000', '96000', '192000')
             delete_original: Delete original file after conversion
+            encoding_mode: Encoding mode for lossy formats ('vbr', 'cbr', 'abr')
         """
         if output_format not in self.FORMATS:
             raise ValueError(f"Unsupported format: {output_format}")
@@ -47,6 +48,7 @@ class AudioConverter:
         self.bit_depth = bit_depth
         self.sample_rate = sample_rate
         self.delete_original = delete_original
+        self.encoding_mode = encoding_mode
         self.overwrite_all = False
         self.skip_all = False
         self._check_ffmpeg()
@@ -57,33 +59,38 @@ class AudioConverter:
         print(f"Conversion Settings:")
         print(f"  Target Format: {self.output_format.upper()}")
         
+        # Show encoding mode for lossy formats
+        if self.output_format in ('mp3', 'aac', 'm4a', 'opus', 'ogg'):
+            mode = self.encoding_mode or 'vbr'
+            print(f"  Encoding Mode: {mode.upper()}")
+        
         # Show bitrate (either specified or default)
         if self.bitrate:
             print(f"  Bitrate: {self.bitrate}")
         elif self.output_format in ('mp3', 'aac', 'opus', 'ogg'):
             # Show defaults for lossy formats
             if self.output_format == 'mp3':
-                print(f"  Bitrate: VBR ~192kbps (default)")
+                print(f"  Bitrate: 256kbps")
             elif self.output_format == 'aac' or self.output_format == 'm4a':
-                print(f"  Bitrate: 192k (default)")
+                print(f"  Bitrate: 256k")
             elif self.output_format == 'opus':
-                print(f"  Bitrate: 128k (default)")
+                print(f"  Bitrate: 192k")
             elif self.output_format == 'ogg':
-                print(f"  Quality: 6/10 ~192kbps (default)")
+                print(f"  Quality: 8/10 ~256kbps")
         elif self.output_format == 'flac':
-            print(f"  Compression: Level 8 (default)")
+            print(f"  Compression: Level 8")
         
         # Show bit depth for lossless formats
         if self.bit_depth:
             print(f"  Bit Depth: {self.bit_depth}-bit")
         elif self.output_format in ('flac', 'wav'):
-            print(f"  Bit Depth: Source (unchanged)")
+            print(f"  Bit Depth: Source")
         
         # Show sample rate
         if self.sample_rate:
             print(f"  Sample Rate: {self.sample_rate} Hz")
         else:
-            print(f"  Sample Rate: Source (unchanged)")
+            print(f"  Sample Rate: Source")
         
         print(f"  Preserve Metadata: {'Yes' if self.preserve_metadata else 'No'}")
         print(f"  Delete Original: {'Yes' if self.delete_original else 'No'}")
@@ -185,21 +192,44 @@ class AudioConverter:
             elif self.bit_depth == '32':
                 cmd.extend(['-sample_fmt', 's32'])
         
-        # Bitrate for lossy formats
-        if self.bitrate and self.output_format in ('mp3', 'aac', 'opus', 'ogg'):
-            cmd.extend(['-b:a', self.bitrate])
-        else:
-            # Default quality settings
-            if self.output_format == 'mp3':
-                cmd.extend(['-q:a', '2'])  # VBR ~192kbps
-            elif self.output_format in ('aac', 'm4a'):
-                cmd.extend(['-b:a', '192k'])  # 192kbps
-            elif self.output_format == 'opus':
-                cmd.extend(['-b:a', '128k'])
-            elif self.output_format == 'ogg':
-                cmd.extend(['-q:a', '6'])
-            elif self.output_format == 'flac':
-                cmd.extend(['-compression_level', '8'])
+        # Encoding mode and bitrate for lossy formats
+        encoding_mode = self.encoding_mode or 'vbr'
+        
+        if self.output_format in ('mp3', 'aac', 'm4a', 'opus', 'ogg'):
+            if encoding_mode == 'cbr':
+                # Constant Bitrate
+                bitrate = self.bitrate or ('256k' if self.output_format in ('mp3', 'aac', 'm4a', 'ogg') else '192k')
+                cmd.extend(['-b:a', bitrate])
+                if self.output_format == 'opus':
+                    cmd.extend(['-vbr', 'off'])  # Force CBR for Opus
+            
+            elif encoding_mode == 'abr':
+                # Average Bitrate
+                bitrate = self.bitrate or ('256k' if self.output_format in ('mp3', 'aac', 'm4a', 'ogg') else '192k')
+                if self.output_format == 'mp3':
+                    cmd.extend(['-abr', '1', '-b:a', bitrate])
+                else:
+                    # ABR not widely supported, fall back to VBR with target bitrate
+                    cmd.extend(['-b:a', bitrate])
+            
+            else:  # vbr (default)
+                # Variable Bitrate
+                if self.bitrate:
+                    # VBR with target bitrate
+                    cmd.extend(['-b:a', self.bitrate])
+                else:
+                    # Quality-based VBR (default)
+                    if self.output_format == 'mp3':
+                        cmd.extend(['-q:a', '0'])  # ~256kbps
+                    elif self.output_format in ('aac', 'm4a'):
+                        cmd.extend(['-b:a', '256k'])
+                    elif self.output_format == 'opus':
+                        cmd.extend(['-b:a', '192k'])
+                    elif self.output_format == 'ogg':
+                        cmd.extend(['-q:a', '8'])
+        
+        elif self.output_format == 'flac':
+            cmd.extend(['-compression_level', '8'])
         
         # Metadata
         if self.preserve_metadata:
@@ -313,7 +343,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
                  skip_existing: bool = False, quality: Optional[Union[int, str]] = None,
                  preserve_metadata: bool = True, bitrate: Optional[str] = None,
                  bit_depth: Optional[int] = None, sample_rate: Optional[int] = None,
-                 delete_original: bool = False) -> dict:
+                 delete_original: bool = False, encoding_mode: Optional[str] = None) -> dict:
     """
     Convert audio file(s)
     
@@ -330,6 +360,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
         bit_depth: Target bit depth (16/24/32 for FLAC/WAV)
         sample_rate: Target sample rate (e.g., 44100)
         delete_original: Delete original after conversion
+        encoding_mode: Encoding mode ('vbr', 'cbr', 'abr')
         
     Returns:
         Conversion statistics
@@ -337,7 +368,8 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
     converter = AudioConverter(
         output_format, preserve_metadata,
         bitrate=bitrate, bit_depth=bit_depth, 
-        sample_rate=sample_rate, delete_original=delete_original
+        sample_rate=sample_rate, delete_original=delete_original,
+        encoding_mode=encoding_mode
     )
     
     if input_path.is_dir():
@@ -373,6 +405,8 @@ def main():
                        help='Target sample rate (e.g., 44100, 48000)')
     parser.add_argument('-d', '--delete-original', action='store_true',
                        help='Delete original file after successful conversion')
+    parser.add_argument('-em', '--encoding-mode', choices=['vbr', 'cbr', 'abr'],
+                       help='Encoding mode for lossy formats (default: vbr)')
     
     args = parser.parse_args()
     
@@ -389,7 +423,8 @@ def main():
             args.bitrate,
             args.bit_depth,
             args.sample_rate,
-            args.delete_original
+            args.delete_original,
+            args.encoding_mode
         )
         
         print(f"\nConversion complete:")
