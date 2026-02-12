@@ -176,14 +176,27 @@ class AudioRenamer:
         for old_char, new_char in self.char_replacements.items():
             sanitized = sanitized.replace(old_char, new_char)
         
+        # Always remove filesystem-illegal characters (these can NEVER be in filenames)
+        filesystem_illegal = "/\\:*?\"<>|"
+        removed_chars = []
+        for illegal_char in filesystem_illegal:
+            if illegal_char in sanitized:
+                removed_chars.append(illegal_char)
+                sanitized = sanitized.replace(illegal_char, "")
+        
+        # Log removed filesystem-illegal characters
+        if removed_chars:
+            chars_list = "', '".join(removed_chars)
+            print(f"DEBUG: Filesystem-illegal character(s) '{chars_list}' automatically removed")
+        
         # Apply character filtering if enabled
         if not self.dont_sanitize:
             final_sanitized = ""
             for char in sanitized:
                 if char in ALLOWED_FILE_CHARS:
                     final_sanitized += char
-                elif char in "?!/\\|.,&%*\":;'><":
-                    # Remove problematic characters
+                elif char in "!.,&%;'":
+                    # Remove additional problematic characters
                     pass
                 else:
                     # Replace with space
@@ -194,18 +207,25 @@ class AudioRenamer:
         # Clean up multiple spaces
         final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
         
-        # Check for meaningful differences and prompt if needed
-        if (final_sanitized != original_text and 
-            not self.dont_sanitize and 
-            not self.auto_sanitize):
+        # Check if there are differences BEYOND just filesystem-illegal character removal
+        # Only prompt if special characters (other than filesystem-illegal) would be removed
+        if not self.dont_sanitize and not self.auto_sanitize:
+            # Create a version with just filesystem-illegal chars removed for comparison
+            temp_text = original_text
+            for illegal_char in filesystem_illegal:
+                temp_text = temp_text.replace(illegal_char, "")
+            temp_text = re.sub(r'\s+', ' ', temp_text).strip()
             
-            original_cleaned = re.sub(r'\s+', ' ', original_text).strip()
-            if final_sanitized != original_cleaned:
+            # Only prompt if sanitization removes MORE than just filesystem-illegal characters
+            if final_sanitized != temp_text:
                 if self.prompt_allow_special_chars(original_text, final_sanitized):
-                    # Keep special chars with replacements
+                    # Keep special chars with replacements (but still remove filesystem-illegal chars)
                     result = original_text
                     for old_char, new_char in self.char_replacements.items():
                         result = result.replace(old_char, new_char)
+                    # Always strip filesystem-illegal characters
+                    for illegal_char in filesystem_illegal:
+                        result = result.replace(illegal_char, "")
                     final_sanitized = re.sub(r'\s+', ' ', result).strip()
         
         return final_sanitized or "Unknown"
