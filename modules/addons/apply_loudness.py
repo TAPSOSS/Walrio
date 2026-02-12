@@ -10,6 +10,7 @@ import subprocess
 import shutil
 import tempfile
 import logging
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, Tuple, List
 
@@ -75,29 +76,23 @@ class LoudnessApplicator:
             Gain in dB or None if not found
         """
         try:
-            # Get all tags from the file
-            handler = metadata.MetadataHandler()
-            all_tags = handler.get_all_tags(filepath)
+            # Get the specific ReplayGain tag
+            handler = metadata.MetadataEditor()
+            gain_tag = handler.get_tag(filepath, 'REPLAYGAIN_TRACK_GAIN')
             
-            if not all_tags:
+            if not gain_tag:
+                logger.debug(f"No ReplayGain tag found in {os.path.basename(filepath)}")
                 return None
             
-            # Look for ReplayGain tags (case-insensitive search)
-            # Common ReplayGain tag names: REPLAYGAIN_TRACK_GAIN, replaygain_track_gain, etc.
-            gain_value = None
+            logger.debug(f"Found ReplayGain tag in {os.path.basename(filepath)}: {gain_tag}")
             
-            for key, value in all_tags.items():
-                key_lower = key.lower()
-                if 'replaygain' in key_lower and 'track' in key_lower and 'gain' in key_lower:
-                    # Extract numeric value (format: "+X.XX dB" or "X.XX dB")
-                    if isinstance(value, str):
-                        match = re.search(r'([+-]?\d+\.?\d*)', value)
-                        if match:
-                            gain_value = float(match.group(1))
-                            break
-            
-            if gain_value is None:
+            # Extract numeric value (format: "+X.XX dB" or "X.XX dB")
+            match = re.search(r'([+-]?\d+\.?\d*)', gain_tag)
+            if not match:
+                logger.debug(f"Could not parse ReplayGain value: {gain_tag}")
                 return None
+            
+            gain_value = float(match.group(1))
             
             # The stored gain is relative to the reference level it was calculated with
             # We need to adjust for our target LUFS
@@ -106,7 +101,10 @@ class LoudnessApplicator:
             reference_lufs = -18  # Standard ReplayGain reference
             adjustment = target_lufs - reference_lufs
             
-            return gain_value + adjustment
+            adjusted_gain = gain_value + adjustment
+            logger.debug(f"ReplayGain: {gain_value:+.2f} dB, adjusted for {target_lufs} LUFS: {adjusted_gain:+.2f} dB")
+            
+            return adjusted_gain
             
         except Exception as e:
             logger.debug(f"Could not read ReplayGain from tags for {os.path.basename(filepath)}: {e}")

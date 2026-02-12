@@ -195,6 +195,48 @@ class MetadataEditor:
         except (ValueError, AttributeError, IndexError):
             return 0
     
+    def get_tag(self, filepath: str, tag_name: str) -> Optional[str]:
+        """
+        Get a specific tag from an audio file.
+        More efficient than get_all_tags when you only need one tag.
+        
+        Args:
+            filepath: Path to the audio file
+            tag_name: Name of the tag to retrieve (case-insensitive)
+            
+        Returns:
+            Tag value as string, or None if not found
+        """
+        if not MUTAGEN_AVAILABLE:
+            logger.error("mutagen library not available")
+            return None
+        
+        if not Path(filepath).exists():
+            logger.error(f"File not found: {filepath}")
+            return None
+        
+        try:
+            audio = MutagenFile(filepath)
+            if audio is None or not hasattr(audio, 'tags') or audio.tags is None:
+                return None
+            
+            # Search for tag (case-insensitive)
+            tag_name_lower = tag_name.lower()
+            
+            for key in audio.tags.keys():
+                if key.lower() == tag_name_lower:
+                    value = audio.tags[key]
+                    # Handle different value types
+                    if isinstance(value, (list, tuple)) and value:
+                        return str(value[0])
+                    else:
+                        return str(value)
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Error reading tag '{tag_name}' from {filepath}: {e}")
+            return None
+    
     def get_all_tags(self, filepath: str) -> Dict[str, Any]:
         """
         Get ALL raw tags from an audio file including non-standard tags.
