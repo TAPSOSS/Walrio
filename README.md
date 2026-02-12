@@ -41,10 +41,10 @@ Walrio uses/requires/bundles the following projects (and [python](https://www.py
 
 ### Non-Python
 
-- **GStreamer** : https://github.com/GStreamer/gstreamer
-- **FFmpeg** : https://github.com/FFmpeg/FFmpeg
-- **rsgain** : https://github.com/complexlogic/rsgain
-- **ImageMagick**: https://github.com/ImageMagick/ImageMagick
+- **GStreamer** : <https://github.com/GStreamer/gstreamer>
+- **FFmpeg** : <https://github.com/FFmpeg/FFmpeg>
+- **rsgain** : <https://github.com/complexlogic/rsgain>
+- **ImageMagick**: <https://github.com/ImageMagick/ImageMagick>
 
 ### Python/Pip-Installable
 
