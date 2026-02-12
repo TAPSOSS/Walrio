@@ -51,6 +51,44 @@ class AudioConverter:
         self.skip_all = False
         self._check_ffmpeg()
     
+    def print_conversion_settings(self):
+        """Print conversion parameters being used"""
+        print("\n" + "=" * 60)
+        print(f"Conversion Settings:")
+        print(f"  Target Format: {self.output_format.upper()}")
+        
+        # Show bitrate (either specified or default)
+        if self.bitrate:
+            print(f"  Bitrate: {self.bitrate}")
+        elif self.output_format in ('mp3', 'aac', 'opus', 'ogg'):
+            # Show defaults for lossy formats
+            if self.output_format == 'mp3':
+                print(f"  Bitrate: VBR ~192kbps (default)")
+            elif self.output_format == 'aac' or self.output_format == 'm4a':
+                print(f"  Bitrate: 192k (default)")
+            elif self.output_format == 'opus':
+                print(f"  Bitrate: 128k (default)")
+            elif self.output_format == 'ogg':
+                print(f"  Quality: 6/10 ~192kbps (default)")
+        elif self.output_format == 'flac':
+            print(f"  Compression: Level 8 (default)")
+        
+        # Show bit depth for lossless formats
+        if self.bit_depth:
+            print(f"  Bit Depth: {self.bit_depth}-bit")
+        elif self.output_format in ('flac', 'wav'):
+            print(f"  Bit Depth: Source (unchanged)")
+        
+        # Show sample rate
+        if self.sample_rate:
+            print(f"  Sample Rate: {self.sample_rate} Hz")
+        else:
+            print(f"  Sample Rate: Source (unchanged)")
+        
+        print(f"  Preserve Metadata: {'Yes' if self.preserve_metadata else 'No'}")
+        print(f"  Delete Original: {'Yes' if self.delete_original else 'No'}")
+        print("=" * 60 + "\n")
+    
     def _check_ffmpeg(self) -> None:
         """Check if FFmpeg is available"""
         try:
@@ -82,7 +120,8 @@ class AudioConverter:
                 print("Please enter 'y', 'n', 'ya', or 'na'")
     
     def convert_file(self, input_path: Path, output_path: Path = None,
-                    force_overwrite: bool = False) -> Path:
+                    force_overwrite: bool = False, current_file: int = None, 
+                    total_files: int = None) -> Path:
         """
         Convert audio file
         
@@ -90,6 +129,8 @@ class AudioConverter:
             input_path: Input audio file
             output_path: Output path (auto-generated if None)
             force_overwrite: Force overwrite without prompting
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
             
         Returns:
             Path to output file
@@ -118,6 +159,12 @@ class AudioConverter:
         format_config = self.FORMATS[self.output_format]
         cmd = ['ffmpeg', '-i', str(input_path)]
         
+        # Display progress before conversion
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Converting {input_path.name} -> {output_path.name}")
+        else:
+            print(f"\nConverting: {input_path.name} -> {output_path.name}")
+        
         # Overwrite flag
         if force_overwrite or self.overwrite_all:
             cmd.append('-y')
@@ -145,6 +192,8 @@ class AudioConverter:
             # Default quality settings
             if self.output_format == 'mp3':
                 cmd.extend(['-q:a', '2'])  # VBR ~192kbps
+            elif self.output_format in ('aac', 'm4a'):
+                cmd.extend(['-b:a', '192k'])  # 192kbps
             elif self.output_format == 'opus':
                 cmd.extend(['-b:a', '128k'])
             elif self.output_format == 'ogg':
@@ -168,7 +217,7 @@ class AudioConverter:
                 check=True
             )
             
-            print(f"Converted: {input_path.name} -> {output_path.name}")
+            print(f"  ✓ Success: {output_path.name}")
             
             # Delete original if requested
             if self.delete_original and output_path.exists() and input_path != output_path:
@@ -216,10 +265,15 @@ class AudioConverter:
         for ext in audio_exts:
             files.extend(input_dir.glob(f'{pattern}{ext}'))
         
+        # Print conversion settings
+        if files:
+            self.print_conversion_settings()
+            print(f"Found {len(files)} audio file(s) to convert\n")
+        
         # Convert each file
         stats = {'converted': 0, 'skipped': 0, 'errors': 0}
         
-        for file_path in files:
+        for idx, file_path in enumerate(files, 1):
             try:
                 # Preserve directory structure
                 rel_path = file_path.relative_to(input_dir)
@@ -240,7 +294,8 @@ class AudioConverter:
                     stats['skipped'] += 1
                     continue
                 
-                result = self.convert_file(file_path, output_path, force_overwrite)
+                result = self.convert_file(file_path, output_path, force_overwrite, 
+                                          current_file=idx, total_files=len(files))
                 if result:
                     stats['converted'] += 1
                 else:
@@ -280,7 +335,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
         Conversion statistics
     """
     converter = AudioConverter(
-        output_format, quality, preserve_metadata,
+        output_format, preserve_metadata,
         bitrate=bitrate, bit_depth=bit_depth, 
         sample_rate=sample_rate, delete_original=delete_original
     )
@@ -298,12 +353,13 @@ def main():
         description='Convert audio files between formats using FFmpeg'
     )
     parser.add_argument('input', type=Path, help='Input file or directory')
-    parser.add_argument('format', choices=['mp3', 'flac', 'ogg', 'opus', 'm4a', 'wav', 'aac', 'alac', 'wv'],
-                       help='Target format')
+    parser.add_argument('-f', '--format', required=True, 
+                       choices=['mp3', 'flac', 'ogg', 'opus', 'm4a', 'wav', 'aac', 'alac', 'wv'],
+                       help='Target format (required)')
     parser.add_argument('-o', '--output', type=Path, help='Output file or directory')
     parser.add_argument('-r', '--recursive', action='store_true', 
                        help='Process subdirectories')
-    parser.add_argument('-f', '--force-overwrite', action='store_true',
+    parser.add_argument('-fo', '--force-overwrite', action='store_true',
                        help='Force overwrite without prompting')
     parser.add_argument('-s', '--skip-existing', action='store_true',
                        help='Skip files that already exist')
