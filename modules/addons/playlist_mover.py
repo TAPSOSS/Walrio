@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+move playlist file while updating filepaths so they still work correctly when loaded
+"""
 
 import os
 import sys
