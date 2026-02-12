@@ -487,8 +487,9 @@ class AudioRenamer:
         logger.info(f"Found {len(files)} audio files to process")
         
         # Rename each file
-        for file_path in files:
-            print(f"DEBUG: Processing {file_path}")
+        total_files = len(files)
+        for idx, file_path in enumerate(files, 1):
+            print(f"\nFile {idx}/{total_files}: {file_path.name}")
             self.rename_file(file_path)
         
         # Update playlists
