@@ -64,6 +64,7 @@ class FileRelocater:
                  dont_sanitize: bool = False,
                  skip_no_metadata: bool = False,
                  update_playlists: Optional[List[Path]] = None,
+                 delete_originals: bool = False,
                  dry_run: bool = False):
         """
         Args:
@@ -73,6 +74,7 @@ class FileRelocater:
             dont_sanitize: Skip character filtering
             skip_no_metadata: Skip files with missing critical metadata
             update_playlists: List of playlist files to update
+            delete_originals: Delete source files after moving
             dry_run: Preview without moving
         """
         self.target_dir = target_dir
@@ -80,6 +82,7 @@ class FileRelocater:
         self.char_replacements = char_replacements or {}
         self.dont_sanitize = dont_sanitize
         self.skip_no_metadata = skip_no_metadata
+        self.delete_originals = delete_originals
         self.dry_run = dry_run
         
         # Stats
@@ -90,6 +93,9 @@ class FileRelocater:
         self.conflict_count = 0
         self.skipped_files = []
         self.error_messages = []
+        
+        # Track source files that were successfully moved
+        self.moved_source_files = []
         
         # Path mapping for playlist updates
         self.path_mapping = {}
@@ -329,6 +335,9 @@ class FileRelocater:
                 shutil.move(str(filepath), str(target_path))
                 logger.info(f"Moved: {filepath.name} -> {folder_path.name}")
                 
+                # Track source file for potential deletion
+                self.moved_source_files.append(filepath)
+                
                 # Track for playlist updates
                 self.path_mapping[str(filepath.resolve())] = str(target_path.resolve())
             
@@ -375,6 +384,24 @@ class FileRelocater:
             logger.info("Updating playlists...")
             self.playlist_updater.update_all(self.path_mapping)
         
+        # Delete original source files if requested
+        if self.delete_originals and self.moved_source_files and not self.dry_run:
+            logger.info(f"Deleting {len(self.moved_source_files)} original source files...")
+            deleted_count = 0
+            for source_file in self.moved_source_files:
+                try:
+                    # Check if file still exists (shutil.move already moved it)
+                    # This is a safeguard in case the file path still exists somehow
+                    if source_file.exists():
+                        source_file.unlink()
+                        deleted_count += 1
+                        logger.debug(f"Deleted: {source_file}")
+                except Exception as e:
+                    logger.warning(f"Could not delete {source_file}: {e}")
+            
+            if deleted_count > 0:
+                logger.info(f"Deleted {deleted_count} original files")
+        
         # Display errors if any
         if self.error_messages:
             logger.info("\nErrors encountered:")
@@ -410,6 +437,8 @@ def main():
                        help='Skip files missing critical metadata')
     parser.add_argument('-p', '--update-playlists', action='append', type=Path,
                        help='Update specified playlists with new paths')
+    parser.add_argument('--delete-originals', action='store_true',
+                       help='Delete source files after moving (happens after playlist updates)')
     
     args = parser.parse_args()
     
@@ -427,6 +456,7 @@ def main():
             dont_sanitize=args.dont_sanitize,
             skip_no_metadata=args.skip_no_metadata,
             update_playlists=args.update_playlists,
+            delete_originals=args.delete_originals,
             dry_run=args.dry_run
         )
         
