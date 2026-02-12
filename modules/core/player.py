@@ -599,7 +599,7 @@ class AudioPlayer:
         """Get the duration of an audio file using metadata module."""
         try:
             # Try importing from parent package
-            from . import metadata_remade as metadata
+            from . import metadata
             metadata_info = metadata.extract_metadata(filepath)
             if metadata_info and metadata_info.get('length', 0) > 0:
                 return float(metadata_info['length'])
