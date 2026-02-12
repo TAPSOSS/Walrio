@@ -28,7 +28,8 @@ class PlaylistDeleter:
                  playlist_path: str,
                  delete_empty_dirs: bool = False,
                  dry_run: bool = False,
-                 force: bool = False):
+                 force: bool = False,
+                 delete_playlist: bool = False):
         """
         Initialize the PlaylistDeleter.
         
@@ -37,11 +38,13 @@ class PlaylistDeleter:
             delete_empty_dirs (bool): If True, delete empty directories after deleting files
             dry_run (bool): If True, show what would be deleted without actually deleting
             force (bool): If True, skip confirmation prompt
+            delete_playlist (bool): If True, delete the playlist file itself after deleting files
         """
         self.playlist_path = playlist_path
         self.delete_empty_dirs = delete_empty_dirs
         self.dry_run = dry_run
         self.force = force
+        self.delete_playlist = delete_playlist
         
         # Statistics
         self.total_files = 0
@@ -230,6 +233,18 @@ class PlaylistDeleter:
         if self.delete_empty_dirs and self.deleted_dirs > 0:
             logger.info(f"Empty directories removed: {self.deleted_dirs}")
         
+        # Delete the playlist file itself if requested
+        if self.delete_playlist:
+            if self.dry_run:
+                logger.info(f"Would delete playlist file: {self.playlist_path}")
+            else:
+                try:
+                    os.remove(self.playlist_path)
+                    logger.info(f"✓ Deleted playlist file: {self.playlist_path}")
+                except Exception as e:
+                    logger.error(f"✗ Failed to delete playlist file: {str(e)}")
+                    self.error_files += 1
+        
         logger.info("=" * 80)
         
         return self.total_files, self.deleted_files, self.missing_files, self.error_files
@@ -260,6 +275,9 @@ def parse_arguments():
   
   # Delete files and all empty parent directories without confirmation (VERY DANGEROUS!)
   python playlist_deleter.py my_playlist.m3u --delete-empty-dirs --force
+  
+  # Delete files and also delete the playlist file itself
+  python playlist_deleter.py my_playlist.m3u --delete-playlist
 
 WARNING: This tool permanently deletes files! There is no undo!
 ALWAYS run with --dry-run first to verify what will be deleted!
@@ -275,6 +293,12 @@ ALWAYS run with --dry-run first to verify what will be deleted!
         '--delete-empty-dirs', '--ded',
         action='store_true',
         help='Delete empty directories after deleting files'
+    )
+    
+    parser.add_argument(
+        '--delete-playlist', '--dp',
+        action='store_true',
+        help='Delete the playlist file itself after deleting all referenced files'
     )
     
     parser.add_argument(
@@ -321,7 +345,8 @@ def main():
             playlist_path=args.playlist,
             delete_empty_dirs=args.delete_empty_dirs,
             dry_run=args.dry_run,
-            force=args.force
+            force=args.force,
+            delete_playlist=args.delete_playlist
         )
         
         # Delete files
