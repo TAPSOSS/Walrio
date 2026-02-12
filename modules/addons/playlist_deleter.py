@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+delete all files found in a given playlist, useful for mass deletion
+"""
 
 import os
 import sys
