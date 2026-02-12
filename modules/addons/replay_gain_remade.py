@@ -58,6 +58,17 @@ class ReplayGainAnalyzer:
                 "rsgain not found. Install from https://github.com/complexlogic/rsgain"
             )
     
+    def print_analysis_settings(self, tag: bool = False, skip_tagged: bool = False):
+        """Print analysis parameters being used"""
+        print("\n" + "=" * 60)
+        print(f"ReplayGain Analysis Settings:")
+        print(f"  Target LUFS: {self.target_lufs}")
+        print(f"  Mode: {'Tag files' if tag else 'Analysis only'}")
+        if tag and skip_tagged:
+            print(f"  Skip Tagged: Yes")
+        print(f"  Preserve Modification Times: {'Yes' if self.preserve_mtimes else 'No'}")
+        print("=" * 60 + "\n")
+    
     def is_supported_file(self, filepath: Path) -> bool:
         """
         Check if file is supported
@@ -326,9 +337,10 @@ class ReplayGainAnalyzer:
             for ext in SUPPORTED_EXTENSIONS:
                 files.extend(directory.glob(f'*{ext}'))
         
-        # Print initial count
+        # Print settings and file count
         if files:
-            print(f"\nFound {len(files)} audio file(s) to analyze\n")
+            self.print_analysis_settings(tag, skip_tagged)
+            print(f"Found {len(files)} audio file(s) to analyze\n")
         
         results = []
         for idx, file_path in enumerate(files, 1):
