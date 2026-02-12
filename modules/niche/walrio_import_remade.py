@@ -89,13 +89,14 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite']
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y']
         },
         {
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
                 '--auto-sanitize',
+                '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
                 '--rc', '?', '~',
                 '--rc', '/', '~',
                 '--rc', '\\', '~',
@@ -111,13 +112,22 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                 '--rc', "'", '',
                 '--rc', '>', '',
                 '--rc', '<', '',
-                # Accented characters
-                '--rc', 'á', 'a', '--rc', 'à', 'a', '--rc', 'ä', 'a',
-                '--rc', 'é', 'e', '--rc', 'è', 'e', '--rc', 'ë', 'e',
-                '--rc', 'í', 'i', '--rc', 'ì', 'i', '--rc', 'ï', 'i',
-                '--rc', 'ó', 'o', '--rc', 'ò', 'o', '--rc', 'ö', 'o',
-                '--rc', 'ú', 'u', '--rc', 'ù', 'u', '--rc', 'ü', 'u',
+                '--rc', '{', '(',
+                '--rc', '}', ')',
+                # Lowercase accented characters
+                '--rc', 'á', 'a', '--rc', 'à', 'a', '--rc', 'ä', 'a', '--rc', 'â', 'a', '--rc', 'ã', 'a',
+                '--rc', 'é', 'e', '--rc', 'è', 'e', '--rc', 'ë', 'e', '--rc', 'ê', 'e',
+                '--rc', 'í', 'i', '--rc', 'ì', 'i', '--rc', 'ï', 'i', '--rc', 'î', 'i',
+                '--rc', 'ó', 'o', '--rc', 'ò', 'o', '--rc', 'ö', 'o', '--rc', 'ô', 'o', '--rc', 'õ', 'o',
+                '--rc', 'ú', 'u', '--rc', 'ù', 'u', '--rc', 'ü', 'u', '--rc', 'û', 'u',
                 '--rc', 'ñ', 'n', '--rc', 'ç', 'c',
+                # Uppercase accented characters
+                '--rc', 'Á', 'A', '--rc', 'À', 'A', '--rc', 'Ä', 'A', '--rc', 'Â', 'A', '--rc', 'Ã', 'A',
+                '--rc', 'É', 'E', '--rc', 'È', 'E', '--rc', 'Ë', 'E', '--rc', 'Ê', 'E',
+                '--rc', 'Í', 'I', '--rc', 'Ì', 'I', '--rc', 'Ï', 'I', '--rc', 'Î', 'I',
+                '--rc', 'Ó', 'O', '--rc', 'Ò', 'O', '--rc', 'Ö', 'O', '--rc', 'Ô', 'O', '--rc', 'Õ', 'O',
+                '--rc', 'Ú', 'U', '--rc', 'Ù', 'U', '--rc', 'Ü', 'U', '--rc', 'Û', 'U',
+                '--rc', 'Ñ', 'N', '--rc', 'Ç', 'C',
             ]
         },
         {
@@ -128,7 +138,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'apply_loudness',
             'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--backup', 'false']
+            'args': ['--replaygain', '--backup', 'false', '--force']
         },
         {
             'name': 'resize_album_art',
@@ -175,7 +185,31 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Run Walrio import pipeline on audio files'
+        description='Walrio Import Pipeline - Complete audio library import processing',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\nPipeline Stages (executed in order):
+  1. Convert to FLAC format (48kHz, 16-bit)
+  2. Rename files with character filtering
+  3. Apply ReplayGain analysis (-16 LUFS target)
+  4. Apply loudness normalization using ReplayGain tags
+  5. Resize album artwork to 1000x1000 PNG
+
+Examples:
+  # Process a single directory
+  python walrio_import_remade.py /path/to/music
+
+  # Process recursively through subdirectories
+  python walrio_import_remade.py /path/to/music --recursive
+
+  # Process and update playlists after renaming
+  python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists
+
+  # Process and delete original files after conversion (use with caution!)
+  python walrio_import_remade.py /path/to/music --recursive --delete-originals
+
+  # Show what would be executed without running
+  python walrio_import_remade.py /path/to/music --dry-run
+"""
     )
     parser.add_argument('input', type=Path, help='Input file or directory')
     parser.add_argument('-r', '--recursive', action='store_true',
@@ -184,10 +218,25 @@ def main():
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
                        help='Directory containing playlists to update after rename')
-    parser.add_argument('--delete-originals', action='store_true',
-                       help='Delete original files after conversion')
+    parser.add_argument('--delete-originals', '--do', action='store_true',
+                       dest='delete_originals',
+                       help='Delete original files after conversion (use with caution!)')
     
     args = parser.parse_args()
+    
+    # Validate input path
+    if not args.input.exists():
+        print(f"Error: Input path does not exist: {args.input}", file=sys.stderr)
+        return 1
+    
+    # Validate playlist directory if provided
+    if args.playlist_dir:
+        if not args.playlist_dir.exists():
+            print(f"Error: Playlist directory does not exist: {args.playlist_dir}", file=sys.stderr)
+            return 1
+        if not args.playlist_dir.is_dir():
+            print(f"Error: Playlist path is not a directory: {args.playlist_dir}", file=sys.stderr)
+            return 1
     
     try:
         success = run_import_pipeline(
@@ -198,7 +247,10 @@ def main():
             args.delete_originals
         )
         return 0 if success else 1
-        
+    
+    except KeyboardInterrupt:
+        print("\n\nImport pipeline interrupted by user", file=sys.stderr)
+        return 1
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
