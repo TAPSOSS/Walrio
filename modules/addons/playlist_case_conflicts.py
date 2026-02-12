@@ -1,41 +1,39 @@
 #!/usr/bin/env python3
+"""
+detect and fix playlist case conflict (uppercase/lowercase filename variations)
+"""
 
 import os
 import sys
 import argparse
 import logging
+import shutil
 from pathlib import Path
-from typing import List, Dict, Set, Tuple, Optional
+from typing import List, Dict, Optional
 from collections import defaultdict
 
-# Add parent directory to path for module imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from modules.core import playlist
-
-# Configure logging format
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
-logger = logging.getLogger('PlaylistRepair')
+logger = logging.getLogger('PlaylistCaseConflicts')
 
 # Supported playlist formats
 SUPPORTED_FORMATS = {'.m3u', '.m3u8', '.pls'}
 
 
-class PlaylistRepair:
-    """
-    Playlist repair tool for detecting and fixing case conflicts
-    """
+class PlaylistCaseConflicts:
+    """Detect and repair case-sensitive filename conflicts in playlists."""
     
     def __init__(self, fix_conflicts: bool = False, create_backup: bool = True):
         """
         Initialize the playlist repair tool.
         
         Args:
-            fix_conflicts (bool): Whether to automatically fix detected conflicts
-            create_backup (bool): Whether to create backup before modifying playlists
+            fix_conflicts: Whether to automatically fix detected conflicts
+            create_backup: Whether to create backup before modifying playlists
         """
         self.fix_conflicts = fix_conflicts
         self.create_backup = create_backup
@@ -43,16 +41,16 @@ class PlaylistRepair:
         self.conflicts_found = 0
         self.conflicts_fixed = 0
         self.error_count = 0
-        
+    
     def is_supported_playlist(self, filepath: str) -> bool:
         """
         Check if file is a supported playlist format.
         
         Args:
-            filepath (str): Path to file to check
+            filepath: Path to file to check
             
         Returns:
-            bool: True if supported playlist format
+            True if supported playlist format
         """
         return Path(filepath).suffix.lower() in SUPPORTED_FORMATS
     
@@ -61,25 +59,25 @@ class PlaylistRepair:
         Detect case conflicts in a playlist file.
         
         Args:
-            playlist_path (str): Path to playlist file
+            playlist_path: Path to playlist file
             
         Returns:
-            Dict[str, List[str]]: Dictionary mapping normalized paths to list of actual path variations
+            Dictionary mapping normalized paths to list of actual path variations
         """
         conflicts = defaultdict(list)
         
         try:
-            # Read playlist entries
-            pl = playlist.Playlist(playlist_path)
-            
-            # Group entries by normalized (lowercase) path
-            for entry in pl.entries:
-                if entry.startswith('#'):
-                    continue  # Skip metadata lines
+            with open(playlist_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
                     
-                # Normalize path for comparison
-                normalized = entry.lower()
-                conflicts[normalized].append(entry)
+                    # Skip empty lines and metadata
+                    if not line or line.startswith('#'):
+                        continue
+                    
+                    # Normalize path for comparison (lowercase)
+                    normalized = line.lower()
+                    conflicts[normalized].append(line)
             
             # Filter out entries with no conflicts (only one variation)
             conflicts = {k: v for k, v in conflicts.items() if len(v) > 1}
@@ -91,17 +89,17 @@ class PlaylistRepair:
             self.error_count += 1
             return {}
     
-    def get_canonical_path(self, variations: List[str], playlist_dir: str) -> Optional[str]:
+    def find_real_path(self, variations: List[str], playlist_dir: str) -> Optional[str]:
         """
-        Determine the canonical (correct) path from variations.
+        Determine the real (correct) path from variations.
         Prefers the path that actually exists on the filesystem.
         
         Args:
-            variations (List[str]): List of path variations
-            playlist_dir (str): Directory containing the playlist
+            variations: List of path variations
+            playlist_dir: Directory containing the playlist
             
         Returns:
-            Optional[str]: Canonical path, or None if can't determine
+            Real path, or None if can't determine
         """
         # Check which variations actually exist on filesystem
         existing = []
@@ -125,14 +123,14 @@ class PlaylistRepair:
     
     def fix_playlist_conflicts(self, playlist_path: str, conflicts: Dict[str, List[str]]) -> bool:
         """
-        Fix case conflicts in a playlist by replacing variations with canonical paths.
+        Fix case conflicts in a playlist by replacing variations with real paths.
         
         Args:
-            playlist_path (str): Path to playlist file
-            conflicts (Dict[str, List[str]]): Dictionary of detected conflicts
+            playlist_path: Path to playlist file
+            conflicts: Dictionary of detected conflicts
             
         Returns:
-            bool: True if fixes were applied successfully
+            True if fixes were applied successfully
         """
         try:
             playlist_dir = os.path.dirname(playlist_path)
@@ -140,7 +138,6 @@ class PlaylistRepair:
             # Create backup if requested
             if self.create_backup:
                 backup_path = f"{playlist_path}.backup"
-                import shutil
                 shutil.copy2(playlist_path, backup_path)
                 logger.info(f"Created backup: {backup_path}")
             
@@ -151,11 +148,11 @@ class PlaylistRepair:
             # Build replacement mapping
             replacements = {}
             for normalized, variations in conflicts.items():
-                canonical = self.get_canonical_path(variations, playlist_dir)
-                if canonical:
+                real_path = self.find_real_path(variations, playlist_dir)
+                if real_path:
                     for var in variations:
-                        if var != canonical:
-                            replacements[var] = canonical
+                        if var != real_path:
+                            replacements[var] = real_path
             
             # Apply replacements
             modified = False
@@ -184,7 +181,7 @@ class PlaylistRepair:
         Check a single playlist for case conflicts.
         
         Args:
-            playlist_path (str): Path to playlist file
+            playlist_path: Path to playlist file
         """
         logger.info(f"Checking: {playlist_path}")
         
@@ -218,8 +215,8 @@ class PlaylistRepair:
         Process all playlists in a directory.
         
         Args:
-            directory (str): Directory to process
-            recursive (bool): Whether to process subdirectories recursively
+            directory: Directory to process
+            recursive: Whether to process subdirectories recursively
         """
         directory_path = Path(directory)
         
@@ -251,28 +248,24 @@ class PlaylistRepair:
             self.check_playlist(str(playlist_path))
     
     def print_summary(self) -> None:
-        """
-        Print summary of repair operations.
-        """
-        logger.info("="*60)
-        logger.info("PLAYLIST REPAIR SUMMARY")
-        logger.info("="*60)
-        logger.info(f"Playlists checked: {self.playlists_checked}")
-        logger.info(f"Case conflicts found: {self.conflicts_found}")
+        """Print summary of repair operations."""
+        print("\n" + "=" * 60)
+        print("PLAYLIST CASE CONFLICTS SUMMARY")
+        print("=" * 60)
+        print(f"Playlists checked: {self.playlists_checked}")
+        print(f"Case conflicts found: {self.conflicts_found}")
         
         if self.fix_conflicts:
-            logger.info(f"Conflicts fixed: {self.conflicts_fixed}")
+            print(f"Conflicts fixed: {self.conflicts_fixed}")
         
         if self.error_count > 0:
-            logger.warning(f"Errors encountered: {self.error_count}")
+            print(f"Errors encountered: {self.error_count}")
         
-        logger.info("="*60)
+        print("=" * 60 + "\n")
 
 
 def main():
-    """
-    Main entry point for playlist repair tool.
-    """
+    """Main entry point for playlist case conflict tool."""
     parser = argparse.ArgumentParser(
         description='Check and repair case conflicts in playlist files',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -289,46 +282,20 @@ Examples:
   
   Fix without creating backups:
     %(prog)s /path/to/playlist.m3u --fix --no-backup
+
+Supported formats: .m3u, .m3u8, .pls
         """
     )
     
-    parser.add_argument(
-        'input',
-        help='Playlist file or directory containing playlists'
-    )
-    
-    parser.add_argument(
-        '--fix',
-        action='store_true',
-        help='Automatically fix detected conflicts'
-    )
-    
-    parser.add_argument(
-        '--no-backup',
-        action='store_true',
-        help='Do not create backup files before fixing (use with caution)'
-    )
-    
-    parser.add_argument(
-        '--recursive',
-        action='store_true',
-        help='Process directories recursively'
-    )
-    
-    parser.add_argument(
-        '--verbose',
-        action='store_true',
-        help='Enable verbose debug output'
-    )
+    parser.add_argument('input', help='Playlist file or directory containing playlists')
+    parser.add_argument('--fix', action='store_true', help='Automatically fix detected conflicts')
+    parser.add_argument('--no-backup', action='store_true', help='Do not create backup files before fixing')
+    parser.add_argument('--recursive', action='store_true', help='Process directories recursively')
     
     args = parser.parse_args()
     
-    # Configure logging level
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-    
-    # Create repair instance
-    repair = PlaylistRepair(
+    # Create checker instance
+    checker = PlaylistCaseConflicts(
         fix_conflicts=args.fix,
         create_backup=not args.no_backup
     )
@@ -342,24 +309,24 @@ Examples:
     
     if input_path.is_file():
         # Single playlist file
-        if not repair.is_supported_playlist(str(input_path)):
+        if not checker.is_supported_playlist(str(input_path)):
             logger.error(f"Unsupported file format: {input_path.suffix}")
             logger.info(f"Supported formats: {', '.join(SUPPORTED_FORMATS)}")
             return 1
         
-        repair.check_playlist(str(input_path))
+        checker.check_playlist(str(input_path))
     elif input_path.is_dir():
         # Directory of playlists
-        repair.process_directory(str(input_path), recursive=args.recursive)
+        checker.process_directory(str(input_path), recursive=args.recursive)
     else:
         logger.error(f"Invalid input: {args.input}")
         return 1
     
     # Print summary
-    repair.print_summary()
+    checker.print_summary()
     
     # Return non-zero exit code if errors occurred
-    return 1 if repair.error_count > 0 else 0
+    return 1 if checker.error_count > 0 else 0
 
 
 if __name__ == '__main__':
