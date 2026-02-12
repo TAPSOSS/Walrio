@@ -468,18 +468,27 @@ class AudioRenamer:
         if not directory.is_dir():
             raise NotADirectoryError(f"Not a directory: {directory}")
         
-        # Find audio files
+        # Find audio files (case-insensitive extension matching)
+        files = []
         if recursive:
-            files = []
-            for ext in AUDIO_EXTENSIONS:
-                files.extend(directory.rglob(f'*{ext}'))
+            # Get all files recursively and filter by extension
+            for file_path in directory.rglob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
+                    files.append(file_path)
         else:
-            files = []
-            for ext in AUDIO_EXTENSIONS:
-                files.extend(directory.glob(f'*{ext}'))
+            # Get files in directory only and filter by extension
+            for file_path in directory.glob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
+                    files.append(file_path)
+        
+        print(f"DEBUG: Scanning directory: {directory}")
+        print(f"DEBUG: Recursive: {recursive}")
+        print(f"DEBUG: Found {len(files)} audio files to process")
+        logger.info(f"Found {len(files)} audio files to process")
         
         # Rename each file
         for file_path in files:
+            print(f"DEBUG: Processing {file_path}")
             self.rename_file(file_path)
         
         # Update playlists
