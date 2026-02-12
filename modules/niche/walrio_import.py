@@ -1,93 +1,95 @@
-
+#!/usr/bin/env python3
+"""
+'import' script which converts to standard filetype, normalizes file loudness, normalizes album art, and renames files. combination of multiple other scripts runnign one after another to normalize a music library.
+"""
 
 import sys
 import argparse
 import subprocess
 from pathlib import Path
 
-def get_walrio_path():
-    """
-    Get the path to the walrio.py unified interface.
 
-    Returns:
-        str: Absolute path to walrio.py
-    """
-    # Get the parent directory (modules) from current file location
+def get_walrio_path():
+    """Get path to walrio_remade.py unified interface"""
     current_dir = Path(__file__).parent
-    walrio_path = current_dir.parent / "walrio.py"
+    walrio_path = current_dir.parent / "walrio_remade.py"
     
     if not walrio_path.exists():
-        raise FileNotFoundError(f"Could not find walrio.py at {walrio_path}")
+        raise FileNotFoundError(f"Could not find walrio_remade.py at {walrio_path}")
     
     return str(walrio_path)
 
-def run_walrio_command(module_name, input_path, extra_args=None, recursive=False):
+
+def run_module(module_name, input_path, args=None, recursive=False):
     """
-    Run a walrio module command with the given arguments.
+    Run a Walrio module with given arguments
     
     Args:
-        module_name (str): Name of the module to run
-        input_path (str): Input file or directory path
-        extra_args (list): Additional arguments for the module
-        recursive (bool): Whether to add recursive flag
-    
+        module_name: Module to run
+        input_path: Input file/directory
+        args: Additional arguments
+        recursive: Add recursive flag
+        
     Returns:
-        bool: True if command succeeded, False otherwise
+        True if successful
     """
     walrio_path = get_walrio_path()
-    cmd = ["python", walrio_path, module_name]
+    cmd = [sys.executable, walrio_path, module_name]
     
-    # Add recursive flag if needed and supported
-    if recursive and module_name in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
-        cmd.append("--recursive")
+    if recursive:
+        cmd.append('--recursive')
     
-    # Add input path
-    cmd.append(input_path)
+    cmd.append(str(input_path))
     
-    # Add extra arguments
-    if extra_args:
-        cmd.extend(extra_args)
+    if args:
+        cmd.extend(args)
     
     print(f"Running: {' '.join(cmd)}")
     print("-" * 50)
     
     try:
-        # Run with live output and user interaction enabled
-        result = subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True)
         print("-" * 50)
-        print(f"SUCCESS: {module_name} completed successfully")
+        print(f"SUCCESS: {module_name} completed")
         return True
     except subprocess.CalledProcessError as e:
         print("-" * 50)
         print(f"ERROR: {module_name} failed with exit code {e.returncode}")
         return False
 
-def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
+
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
     """
-    Run the complete import pipeline on the input path.
+    Run complete import pipeline
+    
+    Pipeline stages:
+    1. Convert to FLAC 48kHz/16-bit
+    2. Rename with comprehensive character sanitization
+    3. Apply ReplayGain analysis (-16 LUFS)
+    4. Apply loudness normalization using ReplayGain tags
+    5. Resize album art to 1000x1000 PNG
     
     Args:
-        input_path (str): Path to input file or directory
-        recursive (bool): Whether to process recursively
-        dry_run (bool): Whether to show commands without executing
-        playlist_dir (str): Directory containing playlists to update after rename
-        delete_originals (bool): Delete original files after conversion
-    
+        input_path: Input file/directory
+        recursive: Process recursively
+        dry_run: Show commands without executing
+        playlist_dir: Directory containing playlists to update after rename
+        delete_originals: Delete original files after conversion
+        
     Returns:
-        bool: True if all steps succeeded, False otherwise
+        True if all stages succeeded
     """
-    print(f"Starting Walrio Import Pipeline for: {input_path}")
-    print(f"Recursive mode: {'enabled' if recursive else 'disabled'}")
-    print(f"Dry run mode: {'enabled' if dry_run else 'disabled'}")
+    print(f"Starting Walrio Import Pipeline: {input_path}")
+    print(f"Recursive: {recursive}")
+    print(f"Dry run: {dry_run}")
     print("=" * 60)
     
-    # Define the pipeline stages with their arguments
-    pipeline_stages = [
+    # Define pipeline stages with comprehensive configuration
+    stages = [
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y'],
-            'delete_original_support': True  # This stage supports delete-original flag
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', 'y']
         },
         {
             'name': 'rename',
@@ -95,39 +97,38 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
             'args': [
                 '--auto-sanitize',
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
-                '--rc', '?', '~',           # Replace question marks
-                '--rc', '/', '~',           # Forward slash to tilde
-                '--rc', '\\', '~',          # Backslash to tilde  
-                '--rc', '&', '+',           # Ampersand to plus
-                '--rc', '|', '~',           # Pipe to tilde
-                '--rc', '.', '',            # Remove periods
-                '--rc', ',', '~',           # Comma to tilde
-                '--rc', '%', '',            # Remove percent signs
-                '--rc', '*', '',            # Remove asterisks
-                '--rc', '"', '',            # Remove double quotes
-                '--rc', ':', '~',           # Colon to tilde
-                '--rc', ';', '~',           # Semicolon to tilde
-                '--rc', "'", '',            # Remove single quotes
-                '--rc', '>', '',            # Remove greater than
-                '--rc', '<', '',            # Remove less than
-                '--rc', '{', '(',           # Left curly brace to left parenthesis
-                '--rc', '}', ')',           # Right curly brace to right parenthesis
-                # Common accented characters to base forms
+                '--rc', '?', '~',
+                '--rc', '/', '~',
+                '--rc', '\\', '~',
+                '--rc', '&', '+',
+                '--rc', '|', '~',
+                '--rc', '.', '',
+                '--rc', ',', '~',
+                '--rc', '%', '',
+                '--rc', '*', '',
+                '--rc', '"', '',
+                '--rc', ':', '~',
+                '--rc', ';', '~',
+                '--rc', "'", '',
+                '--rc', '>', '',
+                '--rc', '<', '',
+                '--rc', '{', '(',
+                '--rc', '}', ')',
+                # Lowercase accented characters
                 '--rc', 'á', 'a', '--rc', 'à', 'a', '--rc', 'ä', 'a', '--rc', 'â', 'a', '--rc', 'ã', 'a',
                 '--rc', 'é', 'e', '--rc', 'è', 'e', '--rc', 'ë', 'e', '--rc', 'ê', 'e',
                 '--rc', 'í', 'i', '--rc', 'ì', 'i', '--rc', 'ï', 'i', '--rc', 'î', 'i',
                 '--rc', 'ó', 'o', '--rc', 'ò', 'o', '--rc', 'ö', 'o', '--rc', 'ô', 'o', '--rc', 'õ', 'o',
                 '--rc', 'ú', 'u', '--rc', 'ù', 'u', '--rc', 'ü', 'u', '--rc', 'û', 'u',
                 '--rc', 'ñ', 'n', '--rc', 'ç', 'c',
-                # Uppercase versions
+                # Uppercase accented characters
                 '--rc', 'Á', 'A', '--rc', 'À', 'A', '--rc', 'Ä', 'A', '--rc', 'Â', 'A', '--rc', 'Ã', 'A',
                 '--rc', 'É', 'E', '--rc', 'È', 'E', '--rc', 'Ë', 'E', '--rc', 'Ê', 'E',
                 '--rc', 'Í', 'I', '--rc', 'Ì', 'I', '--rc', 'Ï', 'I', '--rc', 'Î', 'I',
                 '--rc', 'Ó', 'O', '--rc', 'Ò', 'O', '--rc', 'Ö', 'O', '--rc', 'Ô', 'O', '--rc', 'Õ', 'O',
                 '--rc', 'Ú', 'U', '--rc', 'Ù', 'U', '--rc', 'Ü', 'U', '--rc', 'Û', 'U',
                 '--rc', 'Ñ', 'N', '--rc', 'Ç', 'C',
-            ],
-            'playlist_update': True  # This stage supports playlist updating
+            ]
         },
         {
             'name': 'replay_gain',
@@ -146,75 +147,47 @@ def process_import_pipeline(input_path, recursive=False, dry_run=False, playlist
         }
     ]
     
+    # Add delete-originals to convert if requested
+    if delete_originals:
+        stages[0]['args'].append('--delete-original')
+    
+    # Add playlist updating to rename if specified
+    if playlist_dir:
+        stages[1]['args'].extend(['--update-playlists', str(playlist_dir)])
+    
     if dry_run:
-        print("DRY RUN - Commands that would be executed:")
-        print("-" * 40)
-        walrio_path = get_walrio_path()
-        for stage in pipeline_stages:
-            cmd_parts = ["python", walrio_path, stage['name']]
-            if recursive and stage['name'] in ['convert', 'rename', 'replay_gain', 'apply_loudness', 'resize_album_art']:
-                cmd_parts.append("--recursive")
-            cmd_parts.append(input_path)
-            cmd_parts.extend(stage['args'])
-            
-            # Add delete-original flag if applicable
-            if delete_originals and stage.get('delete_original_support', False):
-                cmd_parts.append('--delete-original')
-            
-            # Add playlist update arguments if applicable
-            if playlist_dir and stage.get('playlist_update', False):
-                cmd_parts.extend(['--update-playlists', playlist_dir])
-            
-            print(f"{stage['description']}:")
-            print(f"  {' '.join(cmd_parts)}")
-            print()
+        print("\nDRY RUN - Commands that would be executed:\n")
+        for stage in stages:
+            walrio_path = get_walrio_path()
+            cmd = [sys.executable, walrio_path, stage['name']]
+            if recursive:
+                cmd.append('--recursive')
+            cmd.append(str(input_path))
+            if stage['args']:
+                cmd.extend(stage['args'])
+            print(f"  {' '.join(cmd)}")
+        print()
         return True
     
-    # Execute each stage
-    success_count = 0
-    total_stages = len(pipeline_stages)
-    
-    for i, stage in enumerate(pipeline_stages, 1):
-        print(f"\nStage {i}/{total_stages}: {stage['description']}")
-        print("-" * 40)
+    # Execute pipeline
+    for i, stage in enumerate(stages, 1):
+        print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
+        print("=" * 60)
         
-        # Prepare stage arguments
-        stage_args = stage['args'].copy()
-        
-        # Add delete-original flag if applicable
-        if delete_originals and stage.get('delete_original_support', False):
-            stage_args.append('--delete-original')
-        
-        # Add playlist update arguments if applicable
-        if playlist_dir and stage.get('playlist_update', False):
-            stage_args.extend(['--update-playlists', playlist_dir])
-        
-        success = run_walrio_command(
-            stage['name'],
-            input_path,
-            stage_args,
-            recursive
-        )
-        
-        if success:
-            success_count += 1
-        else:
-            print(f"ERROR: Pipeline failed at stage {i}: {stage['name']}")
-            print(f"Completed {success_count}/{total_stages} stages successfully")
+        if not run_module(stage['name'], input_path, stage['args'], recursive):
+            print(f"\nPipeline FAILED at stage {i}: {stage['name']}")
             return False
     
     print("\n" + "=" * 60)
-    print(f"SUCCESS: Import pipeline completed successfully!")
-    print(f"All {total_stages} stages completed for: {input_path}")
+    print("Pipeline completed successfully!")
     return True
 
+
 def main():
-    """Main entry point for the walrio import pipeline."""
     parser = argparse.ArgumentParser(
-        description="Walrio Import Pipeline - Complete audio library import processing",
+        description='Walrio Import Pipeline - Complete audio library import processing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Pipeline Stages (executed in order):
+        epilog="""\nPipeline Stages (executed in order):
   1. Convert to FLAC format (48kHz, 16-bit)
   2. Rename files with character filtering
   3. Apply ReplayGain analysis (-16 LUFS target)
@@ -223,89 +196,65 @@ Pipeline Stages (executed in order):
 
 Examples:
   # Process a single directory
-  python walrio_import.py /path/to/music
+  python walrio_import_remade.py /path/to/music
 
   # Process recursively through subdirectories
-  python walrio_import.py /path/to/music --recursive
+  python walrio_import_remade.py /path/to/music --recursive
 
   # Process and update playlists after renaming
-  python walrio_import.py /path/to/music --update-playlists /path/to/playlists
+  python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists
 
   # Process and delete original files after conversion (use with caution!)
-  python walrio_import.py /path/to/music --recursive --delete-originals
+  python walrio_import_remade.py /path/to/music --recursive --delete-originals
 
   # Show what would be executed without running
-  python walrio_import.py /path/to/music --dry-run
-        """
+  python walrio_import_remade.py /path/to/music --dry-run
+"""
     )
-    
-    parser.add_argument(
-        'input',
-        help='Input directory or file to process through the import pipeline'
-    )
-    
-    parser.add_argument(
-        '--recursive', '-r',
-        action='store_true',
-        help='Process directories recursively (passed to all applicable modules)'
-    )
-    
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show commands that would be executed without actually running them'
-    )
-    
-    parser.add_argument(
-        '--update-playlists',
-        metavar='PLAYLIST_DIR',
-        help='Directory containing playlists to update after renaming files'
-    )
-    
-    parser.add_argument(
-        '--delete-originals', '--do',
-        action='store_true',
-        dest='delete_originals',
-        help='Delete original files after successful conversion (use with caution!)'
-    )
-
+    parser.add_argument('input', type=Path, help='Input file or directory')
+    parser.add_argument('-r', '--recursive', action='store_true',
+                       help='Process directories recursively')
+    parser.add_argument('-n', '--dry-run', action='store_true',
+                       help='Show commands without executing')
+    parser.add_argument('-p', '--playlist-dir', type=Path,
+                       help='Directory containing playlists to update after rename')
+    parser.add_argument('--delete-originals', '--do', action='store_true',
+                       dest='delete_originals',
+                       help='Delete original files after conversion (use with caution!)')
     
     args = parser.parse_args()
     
     # Validate input path
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"Error: Input path does not exist: {args.input}")
-        sys.exit(1)
+    if not args.input.exists():
+        print(f"Error: Input path does not exist: {args.input}", file=sys.stderr)
+        return 1
     
     # Validate playlist directory if provided
-    if args.update_playlists:
-        playlist_dir = Path(args.update_playlists)
-        if not playlist_dir.exists():
-            print(f"Error: Playlist directory does not exist: {args.update_playlists}")
-            sys.exit(1)
-        if not playlist_dir.is_dir():
-            print(f"Error: Playlist path is not a directory: {args.update_playlists}")
-            sys.exit(1)
+    if args.playlist_dir:
+        if not args.playlist_dir.exists():
+            print(f"Error: Playlist directory does not exist: {args.playlist_dir}", file=sys.stderr)
+            return 1
+        if not args.playlist_dir.is_dir():
+            print(f"Error: Playlist path is not a directory: {args.playlist_dir}", file=sys.stderr)
+            return 1
     
     try:
-        success = process_import_pipeline(
-            str(input_path),
-            recursive=args.recursive,
-            dry_run=args.dry_run,
-            playlist_dir=args.update_playlists,
-            delete_originals=args.delete_originals
+        success = run_import_pipeline(
+            args.input, 
+            args.recursive, 
+            args.dry_run,
+            args.playlist_dir,
+            args.delete_originals
         )
-        
-        if not success:
-            sys.exit(1)
-            
+        return 0 if success else 1
+    
     except KeyboardInterrupt:
-        print("\n\nImport pipeline interrupted by user")
-        sys.exit(1)
+        print("\n\nImport pipeline interrupted by user", file=sys.stderr)
+        return 1
     except Exception as e:
-        print(f"\nError during import pipeline: {e}")
-        sys.exit(1)
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
 
-if __name__ == "__main__":
-    main()
+
+if __name__ == '__main__':
+    sys.exit(main())
