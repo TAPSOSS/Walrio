@@ -1,70 +1,74 @@
 #!/usr/bin/env python3
+"""
+extract, resize, and embed album art into audio files
+"""
 
-import os
-import sys
 import argparse
 import logging
-import tempfile
+import os
+import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
-from typing import List
+from typing import List, Optional, Tuple
 
-# Add parent directory to path for module imports
+# Add parent directory for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from modules.addons.image_converter import convert_image
-from modules.core.metadata import MetadataEditor
+
+try:
+    from modules.addons.image_converter import convert_image
+    from modules.core.metadata import MetadataEditor
+except ImportError:
+    # Try alternative import paths
+    try:
+        from addons.image_converter_remade import convert_image
+    except ImportError:
+        convert_image = None
+    
+    MetadataEditor = None
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
+
+# Supported audio formats
+AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.mp4', '.aac', '.wav'}
 
 
-def setup_logging(level: str = "INFO") -> logging.Logger:
+def extract_album_art(audio_file: Path, output_image: Path) -> bool:
     """
-    Set up logging configuration.
+    Extract album art from audio file using FFmpeg
     
     Args:
-        level (str): Logging level ('DEBUG', 'INFO', 'WARNING', 'ERROR')
+        audio_file: Path to audio file
+        output_image: Path to save extracted album art
         
     Returns:
-        logging.Logger: Configured logger instance
+        True if extraction successful
     """
-    log_level = getattr(logging, level.upper(), logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    return logging.getLogger(__name__)
-
-
-def extract_album_art(audio_file: str, output_image: str) -> bool:
-    """
-    Extract album art from an audio file using FFmpeg.
-    
-    Args:
-        audio_file (str): Path to the audio file
-        output_image (str): Path where to save the extracted album art
-        
-    Returns:
-        bool: True if extraction successful, False otherwise
-    """
-    logger = logging.getLogger(__name__)
-    
     try:
         # Use FFmpeg to extract album art
         cmd = [
             'ffmpeg',
-            '-i', audio_file,
+            '-i', str(audio_file),
             '-an',  # No audio
             '-vcodec', 'copy',  # Copy video stream (album art)
             '-y',  # Overwrite output file
-            output_image
+            str(output_image)
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
-        if result.returncode == 0 and os.path.exists(output_image):
-            logger.info(f"Successfully extracted album art from {os.path.basename(audio_file)}")
+        if result.returncode == 0 and output_image.exists():
+            logger.info(f"Extracted album art from {audio_file.name}")
             return True
         else:
-            logger.warning(f"No album art found in {os.path.basename(audio_file)}")
+            logger.warning(f"No album art found in {audio_file.name}")
             return False
             
     except subprocess.TimeoutExpired:
@@ -75,122 +79,207 @@ def extract_album_art(audio_file: str, output_image: str) -> bool:
         return False
 
 
-def get_supported_audio_formats() -> List[str]:
+def embed_album_art(audio_file: Path, image_file: Path) -> bool:
     """
-    Get list of supported audio file extensions.
+    Embed album art into audio file
     
-    Returns:
-        list: List of supported audio file extensions
-    """
-    return ['.mp3', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.mp4', '.aac', '.wav']
-
-
-def is_audio_file(filepath: str) -> bool:
-    """
-    Check if a file is a supported audio file.
+    Uses MetadataEditor if available, otherwise falls back to format-specific methods
     
     Args:
-        filepath (str): Path to the file to check
+        audio_file: Path to audio file
+        image_file: Path to image file to embed
         
     Returns:
-        bool: True if file is a supported audio format
+        True if embedding successful
     """
-    return Path(filepath).suffix.lower() in get_supported_audio_formats()
+    if MetadataEditor:
+        try:
+            editor = MetadataEditor()
+            # Remove old album art first
+            editor.remove_album_art(str(audio_file))
+            # Set new album art
+            success = editor.set_album_art(str(audio_file), str(image_file))
+            if success:
+                logger.info(f"Embedded album art into {audio_file.name}")
+            return success
+        except Exception as e:
+            logger.error(f"Error embedding album art: {e}")
+            return False
+    else:
+        # Fallback: use FFmpeg for embedding
+        logger.warning("MetadataEditor not available, using FFmpeg fallback")
+        return embed_album_art_ffmpeg(audio_file, image_file)
 
 
-def resize_album_art(audio_file: str, 
+def embed_album_art_ffmpeg(audio_file: Path, image_file: Path) -> bool:
+    """
+    Embed album art using FFmpeg (fallback method)
+    
+    Args:
+        audio_file: Path to audio file
+        image_file: Path to image file
+        
+    Returns:
+        True if successful
+    """
+    try:
+        temp_output = audio_file.with_suffix('.tmp' + audio_file.suffix)
+        
+        cmd = [
+            'ffmpeg', '-i', str(audio_file),
+            '-i', str(image_file),
+            '-map', '0:a',  # Map audio from first input
+            '-map', '1:v',  # Map video (image) from second input
+            '-c', 'copy',   # Copy streams
+            '-disposition:v:0', 'attached_pic',  # Mark as album art
+            '-y',
+            str(temp_output)
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode == 0 and temp_output.exists():
+            # Replace original with temp
+            shutil.move(str(temp_output), str(audio_file))
+            logger.info(f"Embedded album art into {audio_file.name}")
+            return True
+        else:
+            if temp_output.exists():
+                temp_output.unlink()
+            logger.error(f"Failed to embed album art: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error embedding album art: {e}")
+        return False
+
+
+def print_settings(size: str, quality: int, format: str, maintain_aspect: bool, backup: bool):
+    """Print resize settings"""
+    print("\n" + "=" * 60)
+    print(f"Album Art Resize Settings:")
+    print(f"  Target Size: {size}")
+    print(f"  Quality: {quality}")
+    print(f"  Format: {format.upper()}")
+    print(f"  Maintain Aspect Ratio: {'Yes' if maintain_aspect else 'No'}")
+    print(f"  Create Backups: {'Yes' if backup else 'No'}")
+    print("=" * 60 + "\n")
+
+
+def resize_album_art(audio_file: Path,
                     size: str = "1000x1000",
                     quality: int = 100,
                     format: str = "png",
                     maintain_aspect: bool = False,
-                    backup: bool | str = False) -> bool:
+                    backup: bool = False,
+                    backup_dir: Optional[Path] = None,
+                    current_file: int = None,
+                    total_files: int = None) -> bool:
     """
-    Resize album art in an audio file.
+    Resize album art in audio file
+    
+    Process:
+    1. Extract album art using FFmpeg
+    2. Resize using image_converter
+    3. Re-embed using MetadataEditor/FFmpeg
     
     Args:
-        audio_file (str): Path to the audio file
-        size (str): Target size (e.g., "1000x1000")
-        quality (int): Quality setting (1-100). For JXL: 100=lossless, <100=lossy
-        format (str): Output format for the resized image
-        maintain_aspect (bool): Whether to maintain aspect ratio
-        backup (bool): Whether to create a backup of the original file
-        backup_dir (str): Directory to store backup files (default: same as original)
+        audio_file: Path to audio file
+        size: Target size (e.g., "1000x1000", "800x800!")
+        quality: Quality setting (1-100)
+        format: Output format for resized image (png, jpeg, webp)
+        maintain_aspect: Whether to maintain aspect ratio
+        backup: Whether to create backup
+        backup_dir: Directory for backups (default: same as original)
+        current_file: Current file number (for progress display)
+        total_files: Total number of files (for progress display)
         
     Returns:
-        bool: True if resize operation successful, False otherwise
+        True if successful
     """
-    logger = logging.getLogger(__name__)
-    
-    if not os.path.exists(audio_file):
+    if not audio_file.exists():
         logger.error(f"Audio file not found: {audio_file}")
         return False
     
-    if not is_audio_file(audio_file):
+    if audio_file.suffix.lower() not in AUDIO_EXTENSIONS:
         logger.error(f"Unsupported audio format: {audio_file}")
         return False
     
+    # Display progress
+    if current_file and total_files:
+        print(f"\nFile {current_file}/{total_files}: Processing {audio_file.name}")
+    else:
+        print(f"\nProcessing {audio_file.name}")
+    
     # Create backup if requested
     if backup:
-        if isinstance(backup, str):
-            # Create backup directory if it doesn't exist
-            os.makedirs(backup, exist_ok=True)
-            backup_filename = os.path.basename(audio_file) + ".backup"
-            backup_path = os.path.join(backup, backup_filename)
+        if backup_dir:
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_path = backup_dir / (audio_file.name + ".backup")
         else:
-            # Default: store backup next to original file
-            backup_path = f"{audio_file}.backup"
-            
+            backup_path = Path(str(audio_file) + ".backup")
+        
         try:
-            import shutil
             shutil.copy2(audio_file, backup_path)
             logger.info(f"Created backup: {backup_path}")
         except Exception as e:
             logger.warning(f"Could not create backup: {e}")
     
-    # Create temporary files
+    # Process with temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
-        temp_extracted = os.path.join(temp_dir, f"extracted.{format}")
-        temp_resized = os.path.join(temp_dir, f"resized.{format}")
+        temp_dir_path = Path(temp_dir)
+        temp_extracted = temp_dir_path / f"extracted.{format}"
+        temp_resized = temp_dir_path / f"resized.{format}"
         
         try:
             # Step 1: Extract album art
-            logger.info(f"Extracting album art from {os.path.basename(audio_file)}")
+            print(f"  → Extracting album art...")
             if not extract_album_art(audio_file, temp_extracted):
-                logger.error(f"Failed to extract album art from {audio_file}")
                 return False
+            print(f"  ✓ Extraction complete")
             
             # Step 2: Resize the extracted image
-            logger.info(f"Resizing album art to {size}")
-            success = convert_image(
-                input_path=temp_extracted,
-                output_path=temp_resized,
-                output_format=format,
-                geometry=f"{size}!" if not maintain_aspect else size,
-                quality=quality,
-                auto_orient=True,
-                strip_metadata=True,
-                background_color="white"
-            )
+            print(f"  → Resizing to {size}...")
+            
+            # Build geometry string
+            if maintain_aspect:
+                geometry = size
+            else:
+                # Force exact size
+                if 'x' in size and not size.endswith('!'):
+                    geometry = f"{size}!"
+                else:
+                    geometry = size
+            
+            if convert_image:
+                success = convert_image(
+                    input_path=temp_extracted,
+                    output_path=temp_resized,
+                    output_format=format,
+                    geometry=geometry,
+                    quality=quality,
+                    auto_orient=True,
+                    strip_metadata=True,
+                    background_color="white"
+                )
+            else:
+                logger.error("image_converter not available")
+                return False
             
             if not success:
                 logger.error("Failed to resize album art")
                 return False
+            print(f"  ✓ Resize complete")
             
-            # Step 3: Embed the resized image back into the audio file
-            logger.info(f"Embedding resized album art back into {os.path.basename(audio_file)}")
-            metadata_editor = MetadataEditor()
-            
-            # Remove old album art first
-            metadata_editor.remove_album_art(audio_file)
-            
-            # Set new album art
-            success = metadata_editor.set_album_art(audio_file, temp_resized)
+            # Step 3: Embed the resized image
+            print(f"  → Embedding resized album art...")
+            success = embed_album_art(audio_file, temp_resized)
             
             if success:
-                logger.info(f"Successfully resized album art in {os.path.basename(audio_file)}")
+                print(f"  ✓ Successfully resized album art in {audio_file.name}\n")
                 return True
             else:
-                logger.error(f"Failed to embed resized album art into {audio_file}")
+                logger.error(f"Failed to embed resized album art")
                 return False
                 
         except Exception as e:
@@ -198,49 +287,50 @@ def resize_album_art(audio_file: str,
             return False
 
 
-def process_directory(directory: str,
+def process_directory(directory: Path,
                      size: str = "1000x1000",
                      quality: int = 100,
-                     format: str = "png", 
+                     format: str = "png",
                      maintain_aspect: bool = False,
-                     backup: bool | str = False,
-                     recursive: bool = False) -> tuple[int, int]:
+                     backup: bool = False,
+                     backup_dir: Optional[Path] = None,
+                     recursive: bool = False) -> Tuple[int, int]:
     """
-    Process all audio files in a directory.
+    Process all audio files in directory
     
     Args:
-        directory (str): Directory path to process
-        size (str): Target size for album art
-        quality (int): Quality setting (1-100). For JXL: 100=lossless, <100=lossy
-        format (str): Output format for resized images
-        maintain_aspect (bool): Whether to maintain aspect ratio
-        backup (bool | str): Whether to create backups, or directory path for backups
-        recursive (bool): Whether to process subdirectories
+        directory: Directory path
+        size: Target size for album art
+        quality: Quality setting (1-100)
+        format: Output format for resized images
+        maintain_aspect: Maintain aspect ratio
+        backup: Create backups
+        backup_dir: Backup directory
+        recursive: Process subdirectories
         
     Returns:
-        tuple: (successful_count, total_count)
+        Tuple of (successful_count, total_count)
     """
-    logger = logging.getLogger(__name__)
-    
     audio_files = []
     
     try:
         if recursive:
-            for root, _, files in os.walk(directory):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    if is_audio_file(file_path):
-                        audio_files.append(file_path)
+            for ext in AUDIO_EXTENSIONS:
+                audio_files.extend(directory.rglob(f'*{ext}'))
         else:
-            for file in os.listdir(directory):
-                file_path = os.path.join(directory, file)
-                if os.path.isfile(file_path) and is_audio_file(file_path):
-                    audio_files.append(file_path)
+            for ext in AUDIO_EXTENSIONS:
+                audio_files.extend(directory.glob(f'*{ext}'))
         
-        logger.info(f"Found {len(audio_files)} audio files to process")
+        if not audio_files:
+            logger.warning(f"No audio files found in {directory}")
+            return 0, 0
+        
+        # Print settings and file count
+        print_settings(size, quality, format, maintain_aspect, backup)
+        print(f"Found {len(audio_files)} audio file(s) to process\n")
         
         successful = 0
-        for audio_file in audio_files:
+        for idx, audio_file in enumerate(audio_files, 1):
             try:
                 if resize_album_art(
                     audio_file=audio_file,
@@ -248,13 +338,21 @@ def process_directory(directory: str,
                     quality=quality,
                     format=format,
                     maintain_aspect=maintain_aspect,
-                    backup=backup
+                    backup=backup,
+                    backup_dir=backup_dir,
+                    current_file=idx,
+                    total_files=len(audio_files)
                 ):
                     successful += 1
             except Exception as e:
                 logger.error(f"Error processing {audio_file}: {e}")
         
-        logger.info(f"Successfully processed {successful}/{len(audio_files)} files")
+        print(f"\nProcessing complete:")
+        print(f"  Successful: {successful}")
+        print(f"  Total: {len(audio_files)}")
+        if successful < len(audio_files):
+            print(f"  Failed: {len(audio_files) - successful}")
+        
         return successful, len(audio_files)
         
     except Exception as e:
@@ -262,186 +360,145 @@ def process_directory(directory: str,
         return 0, 0
 
 
-def parse_arguments():
-    """
-    Parse command line arguments.
-    
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
+def main():
     parser = argparse.ArgumentParser(
-        description="Resize Album Art - Extract, resize, and re-embed album art in audio files",
+        description='Resize album art in audio files',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Resize album art to default 1000x1000 PNG lossless in a single file
-  python resizealbumart.py song.mp3
+  # Resize album art to default 1000x1000 PNG
+  resize_album_art song.mp3
 
-  # Resize to custom dimensions with lossy compression
-  python resizealbumart.py song.mp3 --size 800x800 --quality 90
+  # Process multiple files
+  resize_album_art song1.mp3 song2.mp3 song3.flac
 
-  # Maintain aspect ratio instead of stretching
-  python resizealbumart.py song.mp3 --maintain-aspect
+  # Resize to custom dimensions with quality setting
+  resize_album_art song.mp3 --size 800x800 --quality 90
 
-  # Process an entire directory recursively
-  python resizealbumart.py /path/to/music/directory --recursive
+  # Force exact dimensions (ignore aspect ratio)
+  resize_album_art song.mp3 --size 800x800 --no-maintain-aspect
 
-  # Process with creating backups  
-  python resizealbumart.py song.mp3 --backup
+  # Process entire directory recursively
+  resize_album_art /path/to/music --recursive
 
-  # Store backups in a specific directory
-  python resizealbumart.py song.mp3 --backup /path/to/backups
+  # Create backups
+  resize_album_art song.mp3 --backup
 
-  # Use PNG format instead of JXL
-  python resizealbumart.py song.mp3 --format png
+  # Store backups in specific directory
+  resize_album_art song.mp3 --backup --backup-dir /path/to/backups
 
-Supported audio formats: {}
-        """.format(', '.join(get_supported_audio_formats()))
-    )
-    
-    parser.add_argument(
-        'input',
-        nargs='+',
-        help='Input audio file(s) or directory'
-    )
-    
-    parser.add_argument(
-        '-s', '--size',
-        default='1000x1000',
-        help='Target size for album art (default: 1000x1000)'
-    )
-    
-    parser.add_argument(
-        '-q', '--quality',
-        type=int,
-        default=100,
-        help='Quality setting for resized images (1-100, default: 100). For JXL: 100=lossless, <100=lossy'
-    )
-    
-    parser.add_argument(
-        '-f', '--format',
-        default='png',
-        choices=['png', 'jpeg', 'jpg', 'webp', 'jxl'],
-        help='Output format for resized album art (default: png)'
-    )
-    
-    parser.add_argument(
-        '--maintain-aspect',
-        action='store_true',
-        help='Maintain aspect ratio instead of stretching to exact dimensions'
-    )
-    
-    parser.add_argument(
-        '--backup',
-        nargs='?',
-        const=True,
-        help='Create backup files before processing. Optionally specify a directory path to store backups (default: same location as original files)'
-    )
-    
-    parser.add_argument(
-        '-r', '--recursive',
-        action='store_true',
-        help='Process directories recursively'
-    )
-    
-    parser.add_argument(
-        '--logging',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        default='INFO',
-        help='Logging level (default: INFO)'
-    )
-    
-    return parser.parse_args()
+  # Use JPEG format instead of PNG
+  resize_album_art song.mp3 --format jpeg --quality 95
 
-
-def main():
-    """
-    Main function for the resize album art tool.
-    """
-    args = parse_arguments()
+Supported audio formats: mp3, flac, ogg, opus, m4a, aac, wav
+        """
+    )
+    parser.add_argument('input', type=Path, nargs='+',
+                       help='Audio file(s) or directory/directories')
+    parser.add_argument('-s', '--size', default='1000x1000',
+                       help='Target size (default: 1000x1000)')
+    parser.add_argument('-q', '--quality', type=int, default=100,
+                       help='Quality (1-100, default: 100)')
+    parser.add_argument('-f', '--format', default='png', choices=['png', 'jpeg', 'jpg', 'webp'],
+                       help='Output format (default: png)')
+    parser.add_argument('--no-maintain-aspect', action='store_true',
+                       help='Force exact dimensions (ignore aspect ratio)')
+    parser.add_argument('-b', '--backup', action='store_true',
+                       help='Create backup of original files')
+    parser.add_argument('--backup-dir', type=Path,
+                       help='Directory for backups (default: same as original)')
+    parser.add_argument('-r', '--recursive', action='store_true',
+                       help='Process subdirectories')
+    parser.add_argument('--log-level', default='INFO',
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+                       help='Logging level (default: INFO)')
     
-    # Set up logging
-    logger = setup_logging(args.logging)
+    args = parser.parse_args()
     
-    # Check dependencies
-    try:
-        # Check if FFmpeg is available
-        subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        logger.error("FFmpeg is not installed or not in PATH")
-        logger.error("Please install FFmpeg to extract album art")
-        sys.exit(1)
+    # Set log level
+    logging.getLogger().setLevel(getattr(logging, args.log_level))
     
     # Validate quality
     if not 1 <= args.quality <= 100:
         logger.error("Quality must be between 1 and 100")
-        sys.exit(1)
+        return 1
     
     # Validate size format
-    if not ('x' in args.size or args.size.endswith('%')):
+    if not ('x' in args.size.lower() or args.size.endswith('%')):
         logger.error("Size must be in format 'WIDTHxHEIGHT' or percentage (e.g., '50%')")
-        sys.exit(1)
+        return 1
     
-    # Validate backup directory if specified as a string
-    if isinstance(args.backup, str):
-        try:
-            os.makedirs(args.backup, exist_ok=True)
-        except Exception as e:
-            logger.error(f"Cannot create backup directory '{args.backup}': {e}")
-            sys.exit(1)
+    # Check dependencies
+    if convert_image is None:
+        logger.error("image_converter module not available")
+        return 1
     
-    # Collect input files
-    input_files = []
-    for input_path in args.input:
-        if os.path.isfile(input_path):
-            if is_audio_file(input_path):
-                input_files.append(input_path)
+    try:
+        # Separate files and directories
+        input_files = []
+        input_dirs = []
+        
+        for input_path in args.input:
+            if input_path.is_dir():
+                input_dirs.append(input_path)
+            elif input_path.is_file():
+                if input_path.suffix.lower() in AUDIO_EXTENSIONS:
+                    input_files.append(input_path)
+                else:
+                    logger.warning(f"Skipping unsupported file: {input_path}")
             else:
-                logger.warning(f"Skipping unsupported file: {input_path}")
-        elif os.path.isdir(input_path):
+                logger.warning(f"Path does not exist: {input_path}")
+        
+        total_successful = 0
+        total_files = 0
+        
+        # Process directories
+        for directory in input_dirs:
             successful, total = process_directory(
-                directory=input_path,
+                directory=directory,
                 size=args.size,
                 quality=args.quality,
                 format=args.format,
-                maintain_aspect=args.maintain_aspect,
+                maintain_aspect=not args.no_maintain_aspect,
                 backup=args.backup,
+                backup_dir=args.backup_dir,
                 recursive=args.recursive
             )
-            logger.info(f"Directory processing complete: {successful}/{total} successful")
-        else:
-            logger.warning(f"Input path does not exist: {input_path}")
-    
-    if not input_files and not any(os.path.isdir(path) for path in args.input):
-        logger.error("No valid audio files found")
-        sys.exit(1)
-    
-    # Process individual files
-    successful = 0
-    for audio_file in input_files:
-        try:
-            if resize_album_art(
-                audio_file=audio_file,
-                size=args.size,
-                quality=args.quality,
-                format=args.format,
-                maintain_aspect=args.maintain_aspect,
-                backup=args.backup
-            ):
-                successful += 1
-        except Exception as e:
-            logger.error(f"Error processing {audio_file}: {e}")
-    
-    if input_files:
-        logger.info(f"Individual file processing complete: {successful}/{len(input_files)} successful")
-    
-    # Exit with appropriate code
-    total_files = len(input_files)
-    if total_files > 0:
-        sys.exit(0 if successful == total_files else 1)
-    else:
-        sys.exit(0)
+            total_successful += successful
+            total_files += total
+        
+        # Process individual files
+        if input_files:
+            print_settings(args.size, args.quality, args.format, 
+                          not args.no_maintain_aspect, args.backup)
+            print(f"Found {len(input_files)} audio file(s) to process\n")
+            
+            for idx, audio_file in enumerate(input_files, 1):
+                if resize_album_art(
+                    audio_file=audio_file,
+                    size=args.size,
+                    quality=args.quality,
+                    format=args.format,
+                    maintain_aspect=not args.no_maintain_aspect,
+                    backup=args.backup,
+                    backup_dir=args.backup_dir,
+                    current_file=idx,
+                    total_files=len(input_files)
+                ):
+                    total_successful += 1
+            total_files += len(input_files)
+            
+            if len(input_files) > 0:
+                print(f"\nProcessing complete:")
+                print(f"  Successful: {total_successful - (total_files - len(input_files))}")
+                print(f"  Total: {len(input_files)}")
+        
+        return 0 if total_successful == total_files else 1
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return 1
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())
