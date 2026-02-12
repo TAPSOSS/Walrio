@@ -20,20 +20,20 @@ Check out the [LICENSE file](LICENSE) to see what LICENSE this project uses and 
 
 1. Install [Python](https://python.org).
 2. Install non-python libraries (listed in third-party credits below).
-On fedora this can be done with the following command:
+   On fedora this can be done with the following command:
 
-```bash
-sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
-```
+   ```bash
+   sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
+   ```
 
 3. Install Python dependencies
 
-```bash
-pip install -r requirements.txt
-```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 4. Use any command through walrio.py by running it as a python script/file.
-Try either `python walrio.py --help` or `python3 walrio.py --help` depending on your operating system to see what modules you can use and then further flag and whatnot from there to see what each individual module can do (`python walrio.py player --help` for example).
+   Try either `python walrio.py --help` or `python3 walrio.py --help` depending on your operating system to see what modules you can use and then further flag and whatnot from there to see what each individual module can do (`python walrio.py player --help` for example).
 
 ## Third-Party Credits
 
