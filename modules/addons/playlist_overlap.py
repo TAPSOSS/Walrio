@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+find files that are in 2 or more playlists or are unique to a specific playlist
+"""
 
 import os
 import sys
