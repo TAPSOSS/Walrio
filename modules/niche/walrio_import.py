@@ -65,9 +65,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     Pipeline stages:
     1. Convert to FLAC 48kHz/16-bit
     2. Rename with comprehensive character sanitization
-    3. Apply ReplayGain analysis (-16 LUFS)
-    4. Apply loudness normalization using ReplayGain tags
-    5. Resize album art to 1000x1000 PNG
+    3. Analyze and apply loudness normalization (-16 LUFS)
+    4. Resize album art to 1000x1000 PNG
     
     Args:
         input_path: Input file/directory
@@ -130,14 +129,9 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             ]
         },
         {
-            'name': 'replay_gain',
-            'description': 'Apply ReplayGain analysis (-16 LUFS)',
-            'args': ['--tag', '--target-lufs', '-16']
-        },
-        {
             'name': 'apply_loudness',
-            'description': 'Apply loudness using ReplayGain tags',
-            'args': ['--replaygain', '--backup', 'false', '--force']
+            'description': 'Analyze and apply loudness normalization (-16 LUFS)',
+            'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force']
         },
         {
             'name': 'resize_album_art',
@@ -189,9 +183,8 @@ def main():
         epilog="""\nPipeline Stages (executed in order):
   1. Convert to FLAC format (48kHz, 16-bit)
   2. Rename files with character filtering
-  3. Apply ReplayGain analysis (-16 LUFS target)
-  4. Apply loudness normalization using ReplayGain tags
-  5. Resize album artwork to 1000x1000 PNG
+  3. Analyze and apply loudness normalization (-16 LUFS)
+  4. Resize album artwork to 1000x1000 PNG
 
 Examples:
   # Process a single directory
