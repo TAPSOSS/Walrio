@@ -32,15 +32,22 @@ SUPPORTED_EXTENSIONS = {'.flac', '.mp3', '.m4a', '.wav', '.ogg', '.opus'}
 class LoudnessApplicator:
     """Applies loudness adjustments using FFmpeg volume filter"""
     
-    def __init__(self, create_backup: bool = True):
+    def __init__(self, create_backup: bool = True, rescan_gain: bool = False):
         """
         Args:
             create_backup: Create backup files before modification
+            rescan_gain: Force re-scanning ReplayGain instead of reading from tags
         """
         self.create_backup = create_backup
+        self.rescan_gain = rescan_gain
         self.processed_count = 0
         self.error_count = 0
         self.backup_count = 0
+        
+        # Interactive prompt state for missing ReplayGain
+        self.analyze_all = False
+        self.skip_all = False
+        
         self._check_ffmpeg()
     
     def _check_ffmpeg(self):
@@ -56,17 +63,138 @@ class LoudnessApplicator:
         """Check if file is supported"""
         return Path(filepath).suffix.lower() in SUPPORTED_EXTENSIONS
     
-    def get_replaygain_value(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
+    def read_replaygain_from_tags(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
         """
-        Get ReplayGain value using analyzer
+        Read ReplayGain value from existing metadata tags
         
         Args:
             filepath: Audio file path
-            target_lufs: Target LUFS for calculation
+            target_lufs: Target LUFS for adjustment calculation
             
         Returns:
-            Gain in dB or None if failed
+            Gain in dB or None if not found
         """
+        try:
+            # Get all tags from the file
+            handler = metadata.MetadataHandler()
+            all_tags = handler.get_all_tags(filepath)
+            
+            if not all_tags:
+                return None
+            
+            # Look for ReplayGain tags (case-insensitive search)
+            # Common ReplayGain tag names: REPLAYGAIN_TRACK_GAIN, replaygain_track_gain, etc.
+            gain_value = None
+            
+            for key, value in all_tags.items():
+                key_lower = key.lower()
+                if 'replaygain' in key_lower and 'track' in key_lower and 'gain' in key_lower:
+                    # Extract numeric value (format: "+X.XX dB" or "X.XX dB")
+                    if isinstance(value, str):
+                        match = re.search(r'([+-]?\d+\.?\d*)', value)
+                        if match:
+                            gain_value = float(match.group(1))
+                            break
+            
+            if gain_value is None:
+                return None
+            
+            # The stored gain is relative to the reference level it was calculated with
+            # We need to adjust for our target LUFS
+            # Standard ReplayGain uses -18 LUFS as reference
+            # If our target is different, we adjust accordingly
+            reference_lufs = -18  # Standard ReplayGain reference
+            adjustment = target_lufs - reference_lufs
+            
+            return gain_value + adjustment
+            
+        except Exception as e:
+            logger.debug(f"Could not read ReplayGain from tags for {os.path.basename(filepath)}: {e}")
+            return None
+    
+    def prompt_analyze_missing_gain(self, filename: str) -> bool:
+        """
+        Prompt whether to analyze file with missing ReplayGain
+        
+        Args:
+            filename: Name of the file
+            
+        Returns:
+            True to analyze, False to skip
+        """
+        if self.analyze_all:
+            return True
+        if self.skip_all:
+            return False
+        
+        print(f"\nReplayGain tags not found in: {filename}")
+        
+        while True:
+            response = input("Analyze loudness for this file? (y/n/ya/na): ").lower().strip()
+            
+            if response in ['y', 'yes']:
+                return True
+            elif response in ['n', 'no']:
+                return False
+            elif response in ['ya', 'yesall', 'yes to all']:
+                self.analyze_all = True
+                return True
+            elif response in ['na', 'noall', 'no to all']:
+                self.skip_all = True
+                return False
+            else:
+                print("Enter y, n, ya, or na")
+    
+    def get_replaygain_value(self, filepath: str, target_lufs: int = -18, rescan_lufs: Optional[int] = None) -> Optional[float]:
+        """
+        Get ReplayGain value - from tags by default, or by analyzing if forced/missing
+        
+        Args:
+            filepath: Audio file path
+            target_lufs: Target LUFS for application
+            rescan_lufs: If set, forces re-scanning with this LUFS target
+            
+        Returns:
+            Gain in dB or None if failed/skipped
+        """
+        filename = os.path.basename(filepath)
+        
+        # If rescan is forced, skip reading tags and analyze directly
+        if self.rescan_gain or rescan_lufs is not None:
+            try:
+                scan_target = rescan_lufs if rescan_lufs is not None else target_lufs
+                analyzer = ReplayGainAnalyzer(target_lufs=scan_target)
+                result = analyzer.analyze_file(Path(filepath))
+                
+                if result is None:
+                    return None
+                
+                gain_db = result.get('gain_db')
+                if gain_db is None:
+                    return None
+                
+                if isinstance(gain_db, str):
+                    gain_db = float(gain_db)
+                
+                return gain_db
+                
+            except Exception as e:
+                logger.error(f"Error analyzing {filename}: {e}")
+                return None
+        
+        # Try reading from existing tags first
+        gain_from_tags = self.read_replaygain_from_tags(filepath, target_lufs)
+        
+        if gain_from_tags is not None:
+            logger.debug(f"Read ReplayGain from tags: {gain_from_tags:+.2f} dB")
+            return gain_from_tags
+        
+        # No tags found - prompt user
+        if not self.prompt_analyze_missing_gain(filename):
+            logger.info(f"Skipping {filename} - no ReplayGain tags")
+            return None
+        
+        # User chose to analyze - run analysis
         try:
             analyzer = ReplayGainAnalyzer(target_lufs=target_lufs)
             result = analyzer.analyze_file(Path(filepath))
@@ -84,7 +212,7 @@ class LoudnessApplicator:
             return gain_db
             
         except Exception as e:
-            logger.error(f"Error getting ReplayGain for {os.path.basename(filepath)}: {e}")
+            logger.error(f"Error analyzing {filename}: {e}")
             return None
     
     def get_audio_properties(self, filepath: str) -> Dict[str, Any]:
@@ -121,13 +249,15 @@ class LoudnessApplicator:
             return {}
     
     def print_settings(self, gain_db: Optional[float], use_replaygain: bool, target_lufs: int, 
-                      output_dir: Optional[str], create_backup: bool):
+                      output_dir: Optional[str], create_backup: bool, rescan_lufs: Optional[int] = None):
         """Print loudness application settings"""
         print("\n" + "=" * 60)
         print(f"Loudness Application Settings:")
         if use_replaygain:
-            print(f"  Mode: ReplayGain")
+            print(f"  Mode: ReplayGain{'(from tags)' if not self.rescan_gain and rescan_lufs is None else ' (re-scan)'}")
             print(f"  Target LUFS: {target_lufs}")
+            if rescan_lufs is not None:
+                print(f"  Rescan LUFS: {rescan_lufs}")
         else:
             print(f"  Mode: Fixed Gain")
             print(f"  Gain: {gain_db:+.2f} dB")
@@ -346,7 +476,8 @@ class LoudnessApplicator:
     
     def process_files(self, file_paths: List[str], gain_db: Optional[float] = None,
                      use_replaygain: bool = False, target_lufs: int = -18,
-                     output_dir: Optional[str] = None, show_settings: bool = True) -> Tuple[int, int]:
+                     output_dir: Optional[str] = None, show_settings: bool = True,
+                     rescan_lufs: Optional[int] = None) -> Tuple[int, int]:
         """
         Process multiple files
         
@@ -373,7 +504,7 @@ class LoudnessApplicator:
         
         # Print settings
         if show_settings:
-            self.print_settings(gain_db, use_replaygain, target_lufs, output_dir, self.create_backup)
+            self.print_settings(gain_db, use_replaygain, target_lufs, output_dir, self.create_backup, rescan_lufs)
             print(f"Found {len(supported_files)} audio file(s) to process\n")
         
         successful_count = 0
@@ -383,9 +514,9 @@ class LoudnessApplicator:
             
             # Determine gain
             if use_replaygain:
-                file_gain = self.get_replaygain_value(filepath, target_lufs)
+                file_gain = self.get_replaygain_value(filepath, target_lufs, rescan_lufs)
                 if file_gain is None:
-                    logger.error(f"Could not get ReplayGain value, skipping")
+                    # Already logged in get_replaygain_value
                     continue
             else:
                 file_gain = gain_db
@@ -398,7 +529,8 @@ class LoudnessApplicator:
     
     def process_directory(self, directory: str, recursive: bool = True,
                          gain_db: Optional[float] = None, use_replaygain: bool = False,
-                         target_lufs: int = -18, output_dir: Optional[str] = None) -> Tuple[int, int]:
+                         target_lufs: int = -18, output_dir: Optional[str] = None,
+                         rescan_lufs: Optional[int] = None) -> Tuple[int, int]:
         """Process all files in directory"""
         if not os.path.isdir(directory):
             logger.error(f"Directory does not exist: {directory}")
@@ -418,7 +550,7 @@ class LoudnessApplicator:
                 if self.is_supported_file(filepath):
                     file_paths.append(filepath)
         
-        return self.process_files(file_paths, gain_db, use_replaygain, target_lufs, output_dir, show_settings=True)
+        return self.process_files(file_paths, gain_db, use_replaygain, target_lufs, output_dir, show_settings=True, rescan_lufs=rescan_lufs)
 
 
 def main():
@@ -477,7 +609,11 @@ Requirements:
     
     # ReplayGain options
     parser.add_argument("--target-lufs", "--lufs", type=int, default=-18,
-                       help="Target LUFS value for ReplayGain calculation (default: -18)")
+                       help="Target LUFS value for ReplayGain application (default: -18)")
+    parser.add_argument("--rescan-gain", action="store_true",
+                       help="Force re-scanning ReplayGain instead of reading from tags")
+    parser.add_argument("--rescan-lufs", type=int, metavar="LUFS",
+                       help="Re-scan with specific LUFS target (implies --rescan-gain)")
     
     # Processing options
     parser.add_argument("--output", "-o", metavar="DIR",
@@ -503,8 +639,11 @@ Requirements:
     # Determine if creating backups
     create_backup = args.backup == 'true' and not args.output
     
+    # Determine if rescanning
+    rescan_gain = args.rescan_gain or args.rescan_lufs is not None
+    
     try:
-        applicator = LoudnessApplicator(create_backup=create_backup)
+        applicator = LoudnessApplicator(create_backup=create_backup, rescan_gain=rescan_gain)
         
         # Dry run check
         if args.dry_run:
@@ -559,7 +698,7 @@ Requirements:
                 
                 if args.dry_run:
                     if args.replaygain:
-                        gain_value = applicator.get_replaygain_value(input_path, args.target_lufs)
+                        gain_value = applicator.get_replaygain_value(input_path, args.target_lufs, args.rescan_lufs)
                         if gain_value is not None:
                             logger.info(f"Would apply {gain_value:+.2f} dB gain (ReplayGain) to {os.path.basename(input_path)}")
                         else:
@@ -570,13 +709,13 @@ Requirements:
                     total_files += 1
                 else:
                     # Show settings for single file
-                    applicator.print_settings(args.gain, args.replaygain, args.target_lufs, args.output, create_backup)
+                    applicator.print_settings(args.gain, args.replaygain, args.target_lufs, args.output, create_backup, args.rescan_lufs)
                     print(f"Found 1 audio file to process\n")
                     
                     if args.replaygain:
-                        gain = applicator.get_replaygain_value(input_path, args.target_lufs)
+                        gain = applicator.get_replaygain_value(input_path, args.target_lufs, args.rescan_lufs)
                         if gain is None:
-                            logger.error(f"Could not get ReplayGain for {input_path}")
+                            # Already logged
                             continue
                     else:
                         gain = args.gain
@@ -617,7 +756,8 @@ Requirements:
                         args.gain,
                         args.replaygain,
                         args.target_lufs,
-                        args.output
+                        args.output,
+                        args.rescan_lufs
                     )
                     total_successful += success
                     total_files += total
