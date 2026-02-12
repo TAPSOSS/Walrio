@@ -122,10 +122,35 @@ class FileRelocater:
         if not text:
             return "Unknown"
         
-        # Apply character replacements
+        # Default replacements for filesystem-illegal characters
+        filesystem_illegal_defaults = {
+            '/': '~',
+            '\\': '~',
+            ':': '-',
+            '*': '',
+            '?': '',
+            '"': "'",
+            '<': '',
+            '>': '',
+            '|': '-'
+        }
+        
+        # Apply character replacements (user --rc flags take precedence)
         sanitized = text
+        
+        # First, handle filesystem-illegal characters with defaults or user overrides
+        for illegal_char, default_replacement in filesystem_illegal_defaults.items():
+            if illegal_char in sanitized:
+                # Use user's replacement if specified, otherwise use default
+                replacement = self.char_replacements.get(illegal_char, default_replacement)
+                sanitized = sanitized.replace(illegal_char, replacement)
+                if illegal_char not in self.char_replacements and default_replacement:
+                    print(f"DEBUG: '{illegal_char}' automatically replaced with '{replacement}'")
+        
+        # Then apply other character replacements
         for old_char, new_char in self.char_replacements.items():
-            sanitized = sanitized.replace(old_char, new_char)
+            if old_char not in filesystem_illegal_defaults:
+                sanitized = sanitized.replace(old_char, new_char)
         
         # Apply character filtering if enabled
         if not self.dont_sanitize:
@@ -133,8 +158,8 @@ class FileRelocater:
             for char in sanitized:
                 if char in ALLOWED_FOLDER_CHARS:
                     final_sanitized += char
-                elif char in "?!/\\|.,&%*\":;'><":
-                    # Remove problematic characters
+                elif char in ".,&%;'":
+                    # Remove additional problematic characters
                     pass
                 else:
                     # Replace with space
