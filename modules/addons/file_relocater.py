@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
+"""
+relocate audio files into organized folders based on their metadata
+"""
 
-import os
-import sys
 import argparse
-import subprocess
-import logging
 import json
+import logging
+import os
 import re
 import shutil
+import subprocess
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import Dict, List, Optional, Any
 
-# Add parent directory to path for module imports
+# Add parent directory for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from core import metadata
-from addons.playlist_updater import PlaylistUpdater
 
-# Configure logging format
+try:
+    from addons.playlist_updater import PlaylistUpdater
+except ImportError:
+    PlaylistUpdater = None
+    logging.warning("PlaylistUpdater not available - playlist updating disabled")
+
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -24,35 +31,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger('FileRelocater')
 
-# Standard character set for folder names as defined by tapscodes (conservative for music player compatibility)
-ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ ')
+# Standard character set for folder names
+ALLOWED_FOLDER_CHARS = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_~ ')
 
-# Audio file extensions to process
+# Audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.wma', '.ape', '.wv'}
 
-# Default folder structure format
+# Default folder structure
 DEFAULT_FOLDER_FORMAT = "{album}_{albumartist}_{year}"
 
-# Standard character replacements (applied before other sanitization when --standard is used)
-STANDARD_CHAR_REPLACEMENTS = {
-    '/': '-', '\\': '-', ':': '-', '|': '-',
-    # Common accented characters to base forms
-    'á': 'a', 'à': 'a', 'ä': 'a', 'â': 'a', 'ã': 'a',
-    'é': 'e', 'è': 'e', 'ë': 'e', 'ê': 'e',
-    'í': 'i', 'ì': 'i', 'ï': 'i', 'î': 'i',
-    'ó': 'o', 'ò': 'o', 'ö': 'o', 'ô': 'o', 'õ': 'o',
-    'ú': 'u', 'ù': 'u', 'ü': 'u', 'û': 'u',
-    'ñ': 'n', 'ç': 'c',
-    # Uppercase versions
-    'Á': 'A', 'À': 'A', 'Ä': 'A', 'Â': 'A', 'Ã': 'A',
-    'É': 'E', 'È': 'E', 'Ë': 'E', 'Ê': 'E',
-    'Í': 'I', 'Ì': 'I', 'Ï': 'I', 'Î': 'I',
-    'Ó': 'O', 'Ò': 'O', 'Ö': 'O', 'Ô': 'O', 'Õ': 'O',
-    'Ú': 'U', 'Ù': 'U', 'Ü': 'U', 'Û': 'U',
-    'Ñ': 'N', 'Ç': 'C'
-}
-
-# Pre-defined metadata tag mappings for common fields
+# Metadata tag mappings
 METADATA_TAG_MAPPINGS = {
     'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
     'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
@@ -63,230 +51,195 @@ METADATA_TAG_MAPPINGS = {
     'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
     'disc': ['disc', 'Disc', 'DISC', 'discnumber', 'DiscNumber', 'disc_number', 'TPOS'],
     'composer': ['composer', 'Composer', 'COMPOSER', 'TCOM'],
-    'comment': ['comment', 'Comment', 'COMMENT', 'COMM'],
 }
+
 
 class FileRelocater:
     """
-    Audio library organizer that moves files into folder structures based on metadata
+    Audio library organizer with character sanitization and playlist updating
     """
     
-    def __init__(self, options: Dict[str, Any]):
+    def __init__(self, target_dir: Path, folder_format: str = DEFAULT_FOLDER_FORMAT,
+                 char_replacements: Optional[Dict[str, str]] = None,
+                 dont_sanitize: bool = False,
+                 skip_no_metadata: bool = False,
+                 update_playlists: Optional[List[Path]] = None,
+                 dry_run: bool = False):
         """
-        Initialize the FileRelocater with the specified options.
-        
         Args:
-            options (dict): Dictionary of organization options
+            target_dir: Target directory for organized files
+            folder_format: Pattern like "{album}_{albumartist}_{year}"
+            char_replacements: Dict of characters to replace
+            dont_sanitize: Skip character filtering
+            skip_no_metadata: Skip files with missing critical metadata
+            update_playlists: List of playlist files to update
+            dry_run: Preview without moving
         """
-        self.options = options
+        self.target_dir = target_dir
+        self.folder_format = folder_format
+        self.char_replacements = char_replacements or {}
+        self.dont_sanitize = dont_sanitize
+        self.skip_no_metadata = skip_no_metadata
+        self.dry_run = dry_run
+        
+        # Stats
         self.moved_count = 0
         self.error_count = 0
         self.skipped_count = 0
-        self.skipped_files = []  # Track files skipped due to no metadata
         self.metadata_error_count = 0
         self.conflict_count = 0
-        self.error_messages = []  # Track all error messages for display at end
-        self.path_mapping = {}  # Track old path -> new path mappings for playlist updates
-        self.playlist_updater = None  # Will be initialized if playlists are specified
+        self.skipped_files = []
+        self.error_messages = []
         
-        # Load playlists if specified
-        if self.options.get('update_playlists'):
-            playlist_paths = self.options.get('update_playlists', [])
-            dry_run = self.options.get('dry_run', False)
-            self.playlist_updater = PlaylistUpdater(playlist_paths, dry_run)
+        # Path mapping for playlist updates
+        self.path_mapping = {}
         
-        # Validate FFprobe availability
+        # Playlist updater
+        self.playlist_updater = None
+        if update_playlists and PlaylistUpdater:
+            self.playlist_updater = PlaylistUpdater(update_playlists, dry_run)
+        
         self._check_ffprobe()
     
     def _check_ffprobe(self):
-        """
-        Check if FFprobe is available for metadata extraction.
-        
-        Raises:
-            RuntimeError: If FFprobe is not found.
-        """
+        """Check FFprobe availability"""
         try:
-            result = subprocess.run(
-                ['ffprobe', '-version'],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            logger.debug("FFprobe is available for metadata extraction")
+            subprocess.run(['ffprobe', '-version'], 
+                          capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError(
-                "FFprobe not found. Please install FFmpeg and make sure it's in your PATH."
-            )
+            raise RuntimeError("FFprobe not found. Install FFmpeg.")
     
     def sanitize_folder_name(self, text: str) -> str:
         """
-        Clean a string to be safe for use as a folder name.
+        Sanitize text for folder name
         
         Args:
-            text (str): Text to sanitize
+            text: Text to sanitize
             
         Returns:
-            str: Sanitized text
+            Sanitized text
         """
         if not text:
             return "Unknown"
         
-        # Get character replacements from options (default to no replacements)
-        char_replacements = self.options.get('char_replacements', {})
+        # Default replacements for filesystem-illegal characters
+        filesystem_illegal_defaults = {
+            '/': '-',
+            '\\': '-',
+            ':': '-',
+            '*': '-',
+            '?': '-',
+            '"': "-",
+            '<': '-',
+            '>': '-',
+            '|': '-'
+        }
         
-        # Apply custom character replacements first
+        # Apply character replacements (user --rc flags take precedence)
         sanitized = text
-        for old_char, new_char in char_replacements.items():
-            sanitized = sanitized.replace(old_char, new_char)
         
-        # Check if sanitization is disabled
-        if self.options.get('dont_sanitize', True):  # Default to disabled sanitization
-            # Only apply character replacements, skip character filtering
-            final_sanitized = sanitized
-        else:
-            # Get the allowed character set (custom or default)
-            allowed_chars = self.options.get('custom_sanitize_chars', ALLOWED_FOLDER_CHARS)
-            
-            # Apply character filtering
+        # First, handle filesystem-illegal characters with defaults or user overrides
+        for illegal_char, default_replacement in filesystem_illegal_defaults.items():
+            if illegal_char in sanitized:
+                # Use user's replacement if specified, otherwise use default
+                replacement = self.char_replacements.get(illegal_char, default_replacement)
+                sanitized = sanitized.replace(illegal_char, replacement)
+                if illegal_char not in self.char_replacements and default_replacement:
+                    print(f"DEBUG: '{illegal_char}' automatically replaced with '{replacement}'")
+        
+        # Then apply other character replacements
+        for old_char, new_char in self.char_replacements.items():
+            if old_char not in filesystem_illegal_defaults:
+                sanitized = sanitized.replace(old_char, new_char)
+        
+        # Apply character filtering if enabled
+        if not self.dont_sanitize:
             final_sanitized = ""
             for char in sanitized:
-                if char in allowed_chars:
+                if char in ALLOWED_FOLDER_CHARS:
                     final_sanitized += char
-                elif char in "?!/\\|.,&%*\":;'><":
-                    # Remove these completely as they can cause issues
-                    # (unless they were already replaced above)
+                elif char in ".,&%;'":
+                    # Remove additional problematic characters
                     pass
                 else:
-                    # Replace other characters with space
+                    # Replace with space
                     final_sanitized += " "
+        else:
+            final_sanitized = sanitized
         
-        # Clean up multiple spaces and strip whitespace (always do this)
+        # Clean up multiple spaces
         final_sanitized = re.sub(r'\s+', ' ', final_sanitized).strip()
         
-        # Ensure we don't end up with an empty string
-        if not final_sanitized:
-            final_sanitized = "Unknown"
-        
-        return final_sanitized
+        return final_sanitized or "Unknown"
     
-    def get_file_metadata(self, filepath: str) -> Dict[str, str]:
+    def get_file_metadata(self, filepath: Path) -> Dict[str, str]:
         """
-        Extract metadata from an audio file using the metadata module's specific functions.
+        Extract metadata using FFprobe
         
         Args:
-            filepath (str): Path to the audio file
+            filepath: Audio file path
             
         Returns:
-            dict: Dictionary containing all available metadata with "Unknown" for missing values
+            Metadata dictionary
         """
         try:
-            # Use specific metadata functions for more efficient extraction
-            standardized_metadata = {}
+            cmd = [
+                'ffprobe', '-v', 'quiet', 
+                '-print_format', 'json', 
+                '-show_format', str(filepath)
+            ]
             
-            # Extract each metadata field individually
-            standardized_metadata['title'] = metadata.get_title(filepath) or "Unknown"
-            standardized_metadata['artist'] = metadata.get_artist(filepath) or "Unknown"
-            standardized_metadata['album'] = metadata.get_album(filepath) or "Unknown"
-            standardized_metadata['albumartist'] = metadata.get_albumartist(filepath) or "Unknown"
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            file_info = json.loads(result.stdout)
             
-            # Handle date/year extraction with full_date option
-            date_value = metadata.get_year(filepath) or "Unknown"
-            standardized_metadata['date'] = date_value
-            
-            # For year field, extract just the year unless full_date is enabled
-            if date_value != "Unknown" and not self.options.get('full_date', False):
-                # Extract just the year using regex
-                import re
-                year_match = re.search(r'(19|20)\d{2}', str(date_value))
-                if year_match:
-                    standardized_metadata['year'] = year_match.group()
-                else:
-                    standardized_metadata['year'] = date_value
-            else:
-                standardized_metadata['year'] = date_value
+            metadata = {}
+            if 'format' in file_info and 'tags' in file_info['format']:
+                tags = file_info['format']['tags']
                 
-            standardized_metadata['genre'] = metadata.get_genre(filepath) or "Unknown"
-            standardized_metadata['track'] = metadata.get_track(filepath) or "Unknown"
-            standardized_metadata['disc'] = metadata.get_disc(filepath) or "Unknown"
-            standardized_metadata['comment'] = metadata.get_comment(filepath) or "Unknown"
-            standardized_metadata['composer'] = metadata.get_composer(filepath) or "Unknown"
-            standardized_metadata['performer'] = metadata.get_performer(filepath) or "Unknown"
-            standardized_metadata['grouping'] = metadata.get_grouping(filepath) or "Unknown"
-            
-            # Special handling for albumartist - use artist as backup if albumartist is missing
-            if (standardized_metadata.get('albumartist') == "Unknown" and 
-                standardized_metadata.get('artist') != "Unknown"):
+                # Map pre-defined fields
+                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
+                    for tag_key in tag_variants:
+                        if tag_key in tags:
+                            metadata[field_name] = tags[tag_key]
+                            break
                 
-                # Check if we haven't asked about this artist before
-                artist_name = standardized_metadata['artist']
-                if not hasattr(self, '_artist_confirmations'):
-                    self._artist_confirmations = {}
+                # Extract year from date
+                if 'year' in metadata:
+                    date_value = metadata['year']
+                    year_match = re.search(r'\b(19|20)\d{2}\b', str(date_value))
+                    if year_match:
+                        metadata['year'] = year_match.group(0)
                 
-                if artist_name not in self._artist_confirmations:
-                    # Ask user for confirmation
-                    response = input(f"\nAlbumArtist missing for '{os.path.basename(filepath)}'. "
-                                   f"Use Artist '{artist_name}' as AlbumArtist? (y/n/a=all): ").lower().strip()
-                    
-                    if response in ['y', 'yes']:
-                        self._artist_confirmations[artist_name] = True
-                    elif response in ['a', 'all']:
-                        self._artist_confirmations[artist_name] = True
-                        # Also set a flag to auto-approve all future missing albumartists
-                        self._auto_approve_all_artists = True
-                    else:
-                        self._artist_confirmations[artist_name] = False
-                
-                # Apply the decision
-                if (self._artist_confirmations.get(artist_name, False) or 
-                    getattr(self, '_auto_approve_all_artists', False)):
-                    standardized_metadata['albumartist'] = artist_name
-                    logger.info(f"Using Artist '{artist_name}' as AlbumArtist for {os.path.basename(filepath)}")
+                # Store all raw tags
+                for key, value in tags.items():
+                    metadata[key] = value
             
-            return standardized_metadata
+            return metadata
             
-        except Exception as e:
-            error_msg = f"METADATA ERROR: Could not read metadata from {os.path.basename(filepath)}: {str(e)}"
-            logger.error(error_msg)
-            self.error_messages.append(error_msg)
+        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            logger.warning(f"Could not read metadata from {filepath.name}: {e}")
             self.metadata_error_count += 1
-            # Return a dictionary with "Unknown" values for all standard fields
-            return {
-                'title': 'Unknown',
-                'artist': 'Unknown', 
-                'album': 'Unknown',
-                'albumartist': 'Unknown',
-                'date': 'Unknown',
-                'year': 'Unknown',
-                'genre': 'Unknown',
-                'track': 'Unknown',
-                'disc': 'Unknown',
-                'comment': 'Unknown',
-                'composer': 'Unknown',
-                'performer': 'Unknown',
-                'grouping': 'Unknown'
-            }
+            return {}
     
-    def generate_folder_path(self, filepath: str) -> Optional[str]:
+    def generate_folder_path(self, filepath: Path) -> Optional[Path]:
         """
-        Generate a folder path based on metadata using the specified format.
+        Generate folder path from metadata
         
         Args:
-            filepath (str): Path to the audio file
+            filepath: Audio file
             
         Returns:
-            str or None: Relative folder path, or None if format cannot be resolved
+            Folder path or None if cannot generate
         """
         metadata = self.get_file_metadata(filepath)
         
-        # Get the folder format from options
-        format_string = self.options.get('folder_format', DEFAULT_FOLDER_FORMAT)
-        
-        # Parse the format string to find all required fields
+        # Parse format fields
         import string
         formatter = string.Formatter()
-        format_fields = [field_name for _, field_name, _, _ in formatter.parse(format_string) if field_name]
+        format_fields = [field_name for _, field_name, _, _ 
+                        in formatter.parse(self.folder_format) if field_name]
         
-        # Check if we have all required metadata
+        # Build format values
         missing_fields = []
         format_values = {}
         
@@ -294,685 +247,216 @@ class FileRelocater:
             if field in metadata and metadata[field].strip():
                 format_values[field] = self.sanitize_folder_name(metadata[field].strip())
             else:
-                # Check if this is a pre-defined field that we should try harder to find
                 if field in METADATA_TAG_MAPPINGS:
                     missing_fields.append(field)
                     format_values[field] = ""
                 else:
-                    # For custom fields, log warning and use empty string
-                    logger.warning(f"Custom metadata field '{field}' not found in {os.path.basename(filepath)} - using empty value")
                     format_values[field] = ""
         
-        # Log missing pre-defined fields
         if missing_fields:
-            logger.warning(f"Missing metadata fields {missing_fields} in {os.path.basename(filepath)} - using empty values")
+            logger.warning(f"Missing fields {missing_fields} in {filepath.name}")
         
-        # If skip_no_metadata is enabled and we're missing critical fields, skip the file
-        if self.options.get('skip_no_metadata', False):
-            # Check if any of the critical fields (album, albumartist) are missing
+        # Skip if missing critical metadata
+        if self.skip_no_metadata:
             critical_fields = {'album', 'albumartist'} & set(format_fields)
             if critical_fields and any(not format_values.get(field, '') for field in critical_fields):
                 return None
         
-        # Handle special case where we have no metadata at all for any field
+        # Handle no metadata case
         if all(not value for value in format_values.values()):
-            if self.options.get('skip_no_metadata', True):
-                return None
-            elif self.options.get('process_no_metadata', False):
-                # Use filename (without extension) as the folder name
-                filename = os.path.splitext(os.path.basename(filepath))[0]
-                sanitized_filename = self.sanitize_folder_name(filename)
-                return sanitized_filename
-            else:
-                # Use "Unknown" values (legacy behavior)
+            if not self.skip_no_metadata:
                 for field in format_values:
-                    if not format_values[field]:
-                        format_values[field] = f"Unknown {field.title()}"
+                    format_values[field] = "Unknown"
+            else:
+                return None
         
         try:
-            # Apply the format string
-            folder_path = format_string.format(**format_values)
+            # Apply format
+            folder_name = self.folder_format.format(**format_values)
+            folder_name = re.sub(r'\s+', ' ', folder_name).strip()
+            folder_name = folder_name.strip(' -_')
             
-            # Clean up any double spaces or other formatting issues
-            folder_path = re.sub(r'\s+', ' ', folder_path).strip()
+            if not folder_name:
+                folder_name = "Unknown"
             
-            # Remove any leading/trailing separators
-            folder_path = folder_path.strip(' /-_')
+            return self.target_dir / folder_name
             
-            # Ensure we don't end up with an empty path
-            if not folder_path:
-                folder_path = "Unknown"
-            
-            return folder_path
-            
-        except KeyError as e:
-            logger.error(f"Invalid format string - unknown field {e} in format: {format_string}")
-            return None
-        except Exception as e:
-            logger.error(f"Error formatting folder path for {os.path.basename(filepath)}: {str(e)}")
+        except (KeyError, Exception) as e:
+            logger.error(f"Error formatting folder path for {filepath.name}: {e}")
             return None
     
-    def move_file(self, source_filepath: str, destination_root: str) -> bool:
+    def move_file(self, filepath: Path) -> bool:
         """
-        Move a single audio file to the organized folder structure.
+        Move audio file to organized structure
         
         Args:
-            source_filepath (str): Path to the source audio file
-            destination_root (str): Root directory for organized files
+            filepath: File to move
             
         Returns:
-            bool: True if move was successful, False otherwise
+            True if moved successfully
         """
-        if not os.path.isfile(source_filepath):
-            logger.error(f"File does not exist: {source_filepath}")
+        if filepath.suffix.lower() not in AUDIO_EXTENSIONS:
             return False
         
-        # Check if it's an audio file
-        file_ext = os.path.splitext(source_filepath)[1].lower()
-        if file_ext not in AUDIO_EXTENSIONS:
-            logger.debug(f"Skipping non-audio file: {os.path.basename(source_filepath)}")
-            return True
-        
-        # Generate folder path
-        folder_path = self.generate_folder_path(source_filepath)
+        folder_path = self.generate_folder_path(filepath)
         if not folder_path:
-            logger.debug(f"SKIPPED (no metadata): {os.path.basename(source_filepath)}")
+            logger.info(f"Skipped {filepath.name} (no metadata)")
             self.skipped_count += 1
-            self.skipped_files.append(source_filepath)  # Track the full path
-            return True
-        
-        # Construct destination path
-        destination_folder = os.path.join(destination_root, folder_path)
-        filename = os.path.basename(source_filepath)
-        destination_filepath = os.path.join(destination_folder, filename)
-        
-        # Check if source and destination are the same
-        if os.path.abspath(source_filepath) == os.path.abspath(destination_filepath):
-            logger.debug(f"File already in correct location: {filename}")
-            return True
-        
-        # Create destination folder if it doesn't exist
-        try:
-            os.makedirs(destination_folder, exist_ok=True)
-        except OSError as e:
-            error_msg = f"Failed to create destination folder {destination_folder}: {str(e)}"
-            logger.error(error_msg)
-            self.error_messages.append(error_msg)
-            self.error_count += 1
+            self.skipped_files.append(str(filepath))
             return False
         
-        # Check if target file already exists
-        if os.path.exists(destination_filepath):
-            if self.options.get('force_overwrite', False):
-                logger.warning(f"Overwriting existing file: {destination_filepath}")
-            elif self.options.get('skip_existing', True):
-                error_msg = f"FILE CONFLICT: Target file already exists, skipping: {destination_filepath}"
-                logger.error(error_msg)
-                self.error_messages.append(error_msg)
-                self.conflict_count += 1
-                return True
-            else:
-                # Add a number suffix to make it unique
-                base_name, ext = os.path.splitext(filename)
-                counter = 1
-                while os.path.exists(destination_filepath):
-                    new_filename = f"{base_name} ({counter}){ext}"
-                    destination_filepath = os.path.join(destination_folder, new_filename)
-                    counter += 1
-                logger.warning(f"File conflict resolved by adding suffix: {new_filename}")
+        # Check if already in target location
+        if filepath.parent == folder_path:
+            logger.debug(f"Skipped {filepath.name} (already in target)")
+            self.skipped_count += 1
+            return False
         
-        # Perform the move
+        # Handle filename conflicts
+        target_path = folder_path / filepath.name
+        if target_path.exists() and target_path != filepath:
+            counter = 2
+            while target_path.exists():
+                target_path = folder_path / f"{filepath.stem} ({counter}){filepath.suffix}"
+                counter += 1
+            self.conflict_count += 1
+        
+        # Move file
         try:
-            if self.options.get('dry_run', False):
-                logger.info(f"[DRY RUN] Would move: {source_filepath} -> {destination_filepath}")
+            if self.dry_run:
+                logger.info(f"[DRY RUN] {filepath.name} -> {folder_path.name}")
             else:
-                if self.options.get('copy_mode', False):
-                    shutil.copy2(source_filepath, destination_filepath)
-                    logger.info(f"Copied: {source_filepath} -> {destination_filepath}")
-                else:
-                    shutil.move(source_filepath, destination_filepath)
-                    logger.info(f"Moved: {source_filepath} -> {destination_filepath}")
+                folder_path.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(filepath), str(target_path))
+                logger.info(f"Moved: {filepath.name} -> {folder_path.name}")
                 
-                # Track path mapping for playlist updates
-                if self.playlist_updater:
-                    old_path = os.path.abspath(source_filepath)
-                    new_path = os.path.abspath(destination_filepath)
-                    self.path_mapping[old_path] = new_path
+                # Track for playlist updates
+                self.path_mapping[str(filepath.resolve())] = str(target_path.resolve())
             
             self.moved_count += 1
             return True
             
-        except OSError as e:
-            error_msg = f"Failed to move {source_filepath}: {str(e)}"
+        except Exception as e:
+            error_msg = f"Error moving {filepath.name}: {e}"
             logger.error(error_msg)
             self.error_messages.append(error_msg)
             self.error_count += 1
             return False
     
-    def organize_directory(self, source_dir: str, destination_root: str) -> tuple[int, int]:
+    def organize_directory(self, source_dir: Path, recursive: bool = True) -> Dict[str, int]:
         """
-        Organize all audio files in a directory.
+        Organize all audio files in directory
         
         Args:
-            source_dir (str): Source directory containing audio files
-            destination_root (str): Root directory for organized files
+            source_dir: Source directory
+            recursive: Process subdirectories
             
         Returns:
-            tuple[int, int]: (number of files moved, total files processed)
+            Statistics dictionary
         """
-        total_files = 0
+        if not source_dir.is_dir():
+            raise NotADirectoryError(f"Not a directory: {source_dir}")
         
-        # Collect all audio files
-        audio_files = []
-        
-        if self.options.get('recursive', False):
-            # Recursively scan subdirectories
-            for root, _, files in os.walk(source_dir):
-                for file in files:
-                    filepath = os.path.join(root, file)
-                    file_ext = os.path.splitext(filepath)[1].lower()
-                    if file_ext in AUDIO_EXTENSIONS:
-                        audio_files.append(filepath)
+        # Find audio files
+        if recursive:
+            files = []
+            for ext in AUDIO_EXTENSIONS:
+                files.extend(source_dir.rglob(f'*{ext}'))
         else:
-            # Only scan the top-level directory
-            for file in os.listdir(source_dir):
-                filepath = os.path.join(source_dir, file)
-                if os.path.isfile(filepath):
-                    file_ext = os.path.splitext(filepath)[1].lower()
-                    if file_ext in AUDIO_EXTENSIONS:
-                        audio_files.append(filepath)
+            files = []
+            for ext in AUDIO_EXTENSIONS:
+                files.extend(source_dir.glob(f'*{ext}'))
         
-        total_files = len(audio_files)
-        logger.info(f"Found {total_files} audio files to process")
+        # Move each file
+        for file_path in files:
+            self.move_file(file_path)
         
-        # Process each file
-        for filepath in audio_files:
-            self.move_file(filepath, destination_root)
+        # Update playlists
+        if self.playlist_updater and self.path_mapping:
+            logger.info("Updating playlists...")
+            self.playlist_updater.update_all(self.path_mapping)
         
-        return self.moved_count, total_files
-    
-    def update_playlists(self) -> int:
-        """
-        Update all loaded playlists with new file paths using the PlaylistUpdater.
+        # Display errors if any
+        if self.error_messages:
+            logger.info("\nErrors encountered:")
+            for msg in self.error_messages:
+                logger.info(f"  {msg}")
         
-        Returns:
-            int: Number of playlists successfully updated
-        """
-        if not self.playlist_updater:
-            return 0
-        
-        return self.playlist_updater.update_playlists(self.path_mapping)
-
-
-def parse_arguments():
-    """
-    Parse command line arguments.
-    
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
-    parser = argparse.ArgumentParser(
-        description="Audio Library Organizer - Organize files into folder structures using metadata",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
-  # Organize music library using default format (copies files, skips files with no metadata): album/albumartist
-  python organize.py /path/to/music/library /path/to/organized/library
-
-  # Move files instead of copying them
-  python organize.py /music /organized --copy n
-
-  # Process files with no metadata using filename as folder name
-  python organize.py /music /organized --process-no-metadata y
-  python organize.py /music /organized --pnm y
-
-  # For music player compatibility (in the english language), use conservative character replacements and sanitization
-  python organize.py /music /organized --replace-char "/" "-" --replace-char "\\\\" "-" --replace-char ":" "-" --replace-char "|" "-" --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "
-
-  # Custom folder format with year and genre (copying files, skipping files with no metadata)
-  python organize.py /music /organized --folder-format "{year}/{genre}/{albumartist}/{album}"
-
-  # Artist-based organization with conservative sanitization, process files with no metadata, move files
-  python organize.py /music /organized --folder-format "{artist}/{album}" --sanitize --pnm y --copy n
-
-  # Detailed organization with track info and custom character replacement
-  python organize.py /music /organized --folder-format "{albumartist}/{year} - {album}" --replace-char ":" "-"
-
-  # Organize and update playlists
-  python organize.py /music /organized --update-playlists /playlists/my_playlist.m3u
-  python organize.py /music /organized --up /playlists/
-  
-  # Multiple playlist updates
-  python organize.py /music /organized --up playlist1.m3u --up playlist2.m3u --up /playlist_folder/
-
-Available pre-defined metadata fields:
-  {title}       - Song title (searches: title, Title, TITLE, TIT2, etc.)
-  {album}       - Album name (searches: album, Album, ALBUM, TALB, etc.)
-  {artist}      - Track artist (searches: artist, Artist, TPE1, etc.)
-  {albumartist} - Album artist (searches: albumartist, AlbumArtist, TPE2, etc.)
-  {track}       - Track number (searches: track, Track, tracknumber, etc.)
-  {year}        - Release year (searches: year, Year, date, Date, etc.)
-  {genre}       - Music genre (searches: genre, Genre, GENRE, etc.)
-  {disc}        - Disc number (searches: disc, Disc, discnumber, etc.)
-  {composer}    - Composer (searches: composer, Composer, TCOM, etc.)
-  {comment}     - Comment field (searches: comment, Comment, COMM, etc.)
-
-You can also use any raw metadata tag name (case-sensitive):
-  {ARTIST}      - Use exact tag name from file
-  {TPE1}        - Use ID3v2 tag directly
-  {Custom_Tag}  - Use any custom tag present in the file
-
-Character replacement examples (default: no replacements, files kept as-is):
-  --replace-char "/" "-"             # Replace forward slashes with dashes only
-  --rc ":" "-"                       # Replace colons with dashes only (using shortcut)
-  --replace-char "&" "and"           # Replace ampersands with 'and'
-  --rc "/" "-" --rc "&" "and"        # Multiple replacements using shortcuts
-  --replace-char "?" ""              # Remove question marks (replace with nothing)
-  --rc "/" "-" --rc "\\" "-" --rc ":" "-" --rc "|" "-"  # Conservative set for music players
-
-Sanitization examples (default: no sanitization, keep all characters):
-  --sanitize                         # Enable character filtering using conservative character set
-  -s                                 # Same as above using shortcut
-  --dont-sanitize                    # Explicitly disable character filtering (default behavior)
-  --ds                               # Same as above using shortcut
-  --sanitize "abcABC123-_ "          # Enable filtering with custom allowed character set
-  --s "0123456789"                   # Only allow numbers using shortcut
-  --sanitize ""                      # Enable filtering with default character set
-
-Custom sanitization examples:
-  --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ "  # Basic set
-  --sanitize "abcABC123[]()-_~@=+ "        # Include brackets and symbols (may cause issues)
-  --sanitize "αβγδεζηθικλμνξοπρστυφχψω"  # Greek letters only
-  --s "あいうえおかきくけこ"              # Japanese characters
-
-Folder format tips:
-  - Use forward slashes (/) to separate folder levels: "{artist}/{album}"
-  - Missing fields will be empty (logged as warnings)
-  - Files with no metadata are skipped by default (use --process-no-metadata y to include them)
-  - When --process-no-metadata y is used, files with no metadata use filename as folder name
-  - Character replacements are applied before sanitization
-  - When sanitization is enabled, problematic characters are removed/replaced
-  - For music player compatibility (with the english language), consider using: --sanitize "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_ " --rc "/" "-" --rc ":" "-" --rc "\\\\" "-" --rc "|" "-"
-  - Default character set excludes apostrophes and special chars for maximum compatibility
-""")
-    
-    # Input/Output options
-    parser.add_argument(
-        "source",
-        help="Source directory containing audio files to organize"
-    )
-    parser.add_argument(
-        "destination",
-        help="Destination root directory for organized library"
-    )
-    parser.add_argument(
-        "-r", "--recursive",
-        action="store_true",
-        default=False,
-        help="Recursively process subdirectories in source (default: False)"
-    )
-    
-    # Organization options
-    parser.add_argument(
-        "--folder-format",
-        default=DEFAULT_FOLDER_FORMAT,
-        help=f"Folder structure format using metadata fields in {{field}} syntax (default: '{DEFAULT_FOLDER_FORMAT}')"
-    )
-    parser.add_argument(
-        "--replace-char", "--rc",
-        action="append",
-        nargs=2,
-        metavar=("OLD", "NEW"),
-        help="Replace a specific character in folder names. Takes two arguments: old character and new character (e.g., --replace-char '/' '-'). Use multiple times for multiple replacements."
-    )
-    parser.add_argument(
-        "--dontreplace", "--dr",
-        action="store_true",
-        help="Disable standard character replacements. Only use custom --replace-char replacements."
-    )
-    parser.add_argument(
-        "--sanitize", "-s",
-        metavar="CHARS",
-        help="Enable folder name sanitization with custom character set. Provide all allowed characters as a string (e.g., --sanitize 'abcABC123-_ '). If no characters provided, uses default set."
-    )
-    parser.add_argument(
-        "--dont-sanitize", "--ds",
-        action="store_true",
-        help="Disable folder name sanitization (default: disabled). Use this to explicitly override --sanitize in longer commands where you might have accidentally included it."
-    )
-    
-    # Behavior options
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Show what would be organized without actually moving files"
-    )
-    parser.add_argument(
-        "--copy",
-        choices=["y", "n"],
-        default="y",
-        help="Copy files instead of moving them: y=yes (copy, default), n=no (move files)"
-    )
-    parser.add_argument(
-        "--skip-existing",
-        choices=["y", "n"],
-        default="y",
-        help="Skip files if target already exists: y=skip (default), n=auto-rename with counter"
-    )
-    parser.add_argument(
-        "--force-overwrite", "-f",
-        action="store_true",
-        help="Overwrite existing files at destination without prompting (replaces files)"
-    )
-    parser.add_argument(
-        "--process-no-metadata", "--pnm",
-        choices=["y", "n"],
-        default="n",
-        help="Process files with no metadata: y=yes (use filename as folder), n=no (skip files, default)"
-    )
-    parser.add_argument(
-        "--full-date",
-        action="store_true",
-        help="Use full date from metadata instead of just the year for {year} field"
-    )
-    parser.add_argument(
-        "--update-playlists", "--up",
-        action="append",
-        dest="update_playlists",
-        metavar="PATH",
-        help="Update playlist(s) with new file paths. Can be a .m3u file or directory containing playlists. Use multiple times for multiple paths."
-    )
-    
-    # Utility options
-    parser.add_argument(
-        "--logging",
-        choices=["low", "high"],
-        default="low",
-        help="Logging level: low (default) or high (verbose)"
-    )
-    parser.add_argument(
-        "--list-metadata",
-        metavar="FILE",
-        help="Show all available metadata fields for a specific file and exit"
-    )
-    parser.add_argument(
-        "--check-dir",
-        action="store_true",
-        default=False,
-        help="Check for common path formatting errors (like quoted paths) and prompt user for confirmation"
-    )
-    
-    return parser.parse_args()
-
-
-def parse_character_replacements(replace_char_list, no_defaults=False):
-    """
-    Parse character replacement arguments from command line.
-    
-    Args:
-        replace_char_list (list): List of [old_char, new_char] pairs
-        no_defaults (bool): If True, don't include any default replacements
-        
-    Returns:
-        dict: Dictionary mapping old characters to new characters
-    """
-    replacements = {}
-    
-    # Add standard replacements by default unless disabled
-    if not no_defaults:
-        replacements.update(STANDARD_CHAR_REPLACEMENTS)
-    
-    # Add custom replacements
-    if replace_char_list:
-        for replacement_pair in replace_char_list:
-            if len(replacement_pair) != 2:
-                logger.error(f"Invalid character replacement: expected 2 arguments, got {len(replacement_pair)}")
-                continue
-                
-            old_char, new_char = replacement_pair
-            
-            if len(old_char) != 1:
-                logger.warning(f"Character replacement '{old_char}' should be a single character")
-            
-            replacements[old_char] = new_char
-            logger.debug(f"Character replacement: '{old_char}' -> '{new_char}'")
-    
-    return replacements
-
-
-def validate_path_format(path_arg, arg_name):
-    """
-    Validate that a path argument doesn't contain invalid formatting like quoted strings.
-    
-    Args:
-        path_arg (str): The path argument to validate
-        arg_name (str): The name of the argument (for error messages)
-        
-    Returns:
-        bool: True if valid, False if invalid
-    """
-    # Check for paths wrapped in quotes (common user error)
-    if path_arg.startswith('"') or path_arg.startswith("'"):
-        logger.warning(f"Detected quotes in {arg_name} path: '{path_arg}'")
-        logger.warning(f"Using quotes in path arguments is a common error.")
-        quote_chars = "\"'"
-        suggested_path = path_arg.strip(quote_chars)
-        logger.warning(f"  Did you mean: {suggested_path}")
-        logger.warning(f"  Instead of: {path_arg}")
-        
-        try:
-            response = input("Are you sure you want to continue with the quoted path? (y/N): ").strip().lower()
-            if response not in ['y', 'yes']:
-                logger.info("Operation cancelled by user.")
-                return False
-        except (KeyboardInterrupt, EOFError):
-            logger.info("\nOperation cancelled by user.")
-            return False
-    
-    return True
+        return {
+            'moved': self.moved_count,
+            'skipped': self.skipped_count,
+            'errors': self.error_count,
+            'conflicts': self.conflict_count,
+            'metadata_errors': self.metadata_error_count
+        }
 
 
 def main():
-    """
-    Main function for the audio organizer.
-    """
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(
+        description='Organize audio library into folder structures based on metadata'
+    )
+    parser.add_argument('source', type=Path, help='Source file or directory')
+    parser.add_argument('target', type=Path, help='Target directory')
+    parser.add_argument('-f', '--format', default=DEFAULT_FOLDER_FORMAT,
+                       help=f'Folder format (default: {DEFAULT_FOLDER_FORMAT})')
+    parser.add_argument('-r', '--recursive', action='store_true',
+                       help='Process subdirectories')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Preview without moving')
+    parser.add_argument('--rc', action='append', nargs=2, metavar=('OLD', 'NEW'),
+                       help='Replace character OLD with NEW (e.g., --rc : -)')
+    parser.add_argument('--dont-sanitize', action='store_true',
+                       help='Skip character filtering')
+    parser.add_argument('--skip-no-metadata', action='store_true',
+                       help='Skip files missing critical metadata')
+    parser.add_argument('-p', '--update-playlists', action='append', type=Path,
+                       help='Update specified playlists with new paths')
     
-    # Set logging level
-    if args.logging == "high":
-        logger.setLevel(logging.DEBUG)
+    args = parser.parse_args()
     
-    # Handle metadata listing request
-    if args.list_metadata:
-        if not os.path.isfile(args.list_metadata):
-            logger.error(f"File not found: {args.list_metadata}")
-            sys.exit(1)
-        
-        try:
-            # Create a temporary organizer to get metadata
-            temp_organizer = FileRelocater({})
-            metadata = temp_organizer.get_file_metadata(args.list_metadata)
-            
-            print(f"\nMetadata for: {os.path.basename(args.list_metadata)}")
-            print("-" * 60)
-            
-            if not metadata:
-                print("No metadata found in this file.")
-                return
-            
-            # Show pre-defined fields first
-            print("Pre-defined fields (use these in folder format strings):")
-            for field_name in METADATA_TAG_MAPPINGS.keys():
-                value = metadata.get(field_name, '')
-                status = f"'{value}'" if value else "(not found)"
-                print(f"  {{{field_name}:<12}} -> {status}")
-            
-            # Show all raw metadata tags
-            print(f"\nAll raw metadata tags (case-sensitive):")
-            raw_tags = {k: v for k, v in metadata.items() if k not in METADATA_TAG_MAPPINGS}
-            if raw_tags:
-                for key, value in sorted(raw_tags.items()):
-                    print(f"  {{{key}:<15}} -> '{value}'")
-            else:
-                print("  No additional raw tags found.")
-            
-            print(f"\nExample folder format strings:")
-            print(f"  --folder-format \"{{albumartist}}/{{album}}\"")
-            print(f"  --folder-format \"{{year}}/{{genre}}/{{artist}}/{{album}}\"")
-            print(f"  --folder-format \"{{artist}}/{{year}} - {{album}}\"")
-            
-        except Exception as e:
-            logger.error(f"Error reading metadata: {str(e)}")
-            sys.exit(1)
-        return
+    # Build character replacements
+    char_replacements = {}
+    if args.rc:
+        for old, new in args.rc:
+            char_replacements[old] = new
     
-    # Validate source and destination
-    # Check for invalid path formats (like quoted strings) if requested
-    if args.check_dir:
-        if not validate_path_format(args.source, "source"):
-            sys.exit(1)
-        if not validate_path_format(args.destination, "destination"):
-            sys.exit(1)
-    
-    # Convert to absolute paths to avoid issues with relative paths
-    args.source = os.path.abspath(args.source)
-    args.destination = os.path.abspath(args.destination)
-    
-    if not os.path.exists(args.source):
-        logger.error(f"Source directory does not exist: {args.source}")
-        sys.exit(1)
-    
-    if not os.path.isdir(args.source):
-        logger.error(f"Source must be a directory: {args.source}")
-        sys.exit(1)
-    
-    # Parse character replacements
-    char_replacements = parse_character_replacements(args.replace_char, args.dontreplace)
-    
-    # Determine sanitization setting (default is False)
-    sanitize_enabled = False  # Default to disabled
-    custom_sanitize_chars = None
-    
-    if args.sanitize is not None:
-        sanitize_enabled = True
-        custom_sanitize_chars = args.sanitize if args.sanitize else None
-        if args.dont_sanitize:
-            logger.warning("Both --sanitize and --dont-sanitize specified. --dont-sanitize takes priority - sanitization disabled.")
-            sanitize_enabled = False
-    elif args.dont_sanitize:
-        sanitize_enabled = False
-    
-    # Determine metadata processing behavior
-    process_no_metadata = args.process_no_metadata == 'y'
-    skip_no_metadata = not process_no_metadata
-    
-    # Prepare options
-    options = {
-        'recursive': args.recursive,
-        'dry_run': args.dry_run,
-        'copy_mode': args.copy == 'y',
-        'skip_existing': args.skip_existing == 'y',
-        'force_overwrite': args.force_overwrite,
-        'skip_no_metadata': skip_no_metadata,
-        'process_no_metadata': process_no_metadata,
-        'folder_format': args.folder_format,
-        'char_replacements': char_replacements,
-        'dont_sanitize': not sanitize_enabled,
-        'full_date': args.full_date,
-        'update_playlists': args.update_playlists or [],
-    }
-    
-    # Add custom sanitization character set if provided
-    if custom_sanitize_chars:
-        options['custom_sanitize_chars'] = set(custom_sanitize_chars)
-        logger.info(f"Using custom character set for sanitization: '{custom_sanitize_chars}'")
-    
-    # Create organizer
     try:
-        organizer = FileRelocater(options)
+        relocater = FileRelocater(
+            target_dir=args.target,
+            folder_format=args.format,
+            char_replacements=char_replacements,
+            dont_sanitize=args.dont_sanitize,
+            skip_no_metadata=args.skip_no_metadata,
+            update_playlists=args.update_playlists,
+            dry_run=args.dry_run
+        )
         
-        # Show organization settings
-        operation = "copy" if args.copy == 'y' else "move"
-        logger.info(f"Using folder format: '{args.folder_format}'")
-        logger.info(f"Operation mode: {operation} files")
-        if char_replacements:
-            replacement_info = ", ".join([f"'{old}' -> '{new}'" for old, new in char_replacements.items()])
-            logger.info(f"Character replacements: {replacement_info}")
+        if args.source.is_dir():
+            stats = relocater.organize_directory(args.source, args.recursive)
         else:
-            logger.info("Character replacements: none (keeping original characters)")
-        if not sanitize_enabled:
-            logger.info("Folder name sanitization disabled - keeping all characters except replacements")
-        else:
-            logger.info("Folder name sanitization enabled - filtering to allowed character set")
+            relocater.move_file(args.source)
+            stats = {
+                'moved': relocater.moved_count,
+                'skipped': relocater.skipped_count,
+                'errors': relocater.error_count,
+                'conflicts': relocater.conflict_count,
+                'metadata_errors': relocater.metadata_error_count
+            }
         
-        # Organize the library
-        logger.info(f"Organizing audio library from: {args.source}")
-        logger.info(f"Destination root: {args.destination}")
+        print(f"\nOrganize complete:")
+        print(f"  Moved: {stats['moved']}")
+        print(f"  Skipped: {stats['skipped']}")
+        print(f"  Conflicts resolved: {stats['conflicts']}")
+        if stats['errors']:
+            print(f"  Errors: {stats['errors']}")
+        if stats['metadata_errors']:
+            print(f"  Metadata errors: {stats['metadata_errors']}")
         
-        moved_count, total_files = organizer.organize_directory(args.source, args.destination)
-        
-        # Update playlists if specified
-        if organizer.playlist_updater:
-            updated_playlists = organizer.update_playlists()
-            if updated_playlists > 0:
-                logger.info(f"\nPlaylist update completed: {updated_playlists} playlist(s) updated with new file paths")
-        
-        # Final summary
-        operation_verb = "copied" if args.copy == 'y' else "moved"
-        if args.dry_run:
-            logger.info(f"Dry run completed: {organizer.moved_count} files would be {operation_verb}")
-        else:
-            logger.info(f"Organization completed: {organizer.moved_count} files {operation_verb} successfully")
-        
-        # Show summary of what was processed
-        total_processed = organizer.moved_count + organizer.skipped_count + organizer.error_count + organizer.conflict_count
-        if total_processed > 0:
-            logger.info(f"Summary: {organizer.moved_count} organized, {organizer.skipped_count} skipped, {organizer.error_count + organizer.conflict_count} errors")
-        
-        # Report any issues that occurred
-        issues_found = False
-        operation = "copy" if args.copy == 'y' else "move"
-        if organizer.error_count > 0:
-            logger.error(f"ERRORS: {organizer.error_count} files failed to {operation} due to system errors")
-            issues_found = True
-        
-        if organizer.metadata_error_count > 0:
-            logger.error(f"METADATA ERRORS: {organizer.metadata_error_count} files had unreadable metadata")
-            issues_found = True
-        
-        if organizer.conflict_count > 0:
-            logger.error(f"FILE CONFLICTS: {organizer.conflict_count} files skipped due to existing target files")
-            issues_found = True
-        
-        if organizer.skipped_count > 0:
-            logger.error(f"SKIPPED FILES: {organizer.skipped_count} files skipped due to insufficient metadata")
-            logger.error("Files skipped (no metadata):")
-            for skipped_file in organizer.skipped_files:
-                logger.error(f"  - {skipped_file}")
-            issues_found = True
-        
-        if issues_found:
-            # Display all error messages collected during processing
-            if organizer.error_messages:
-                logger.error("="*60)
-                logger.error("DETAILED ERROR LIST:")
-                logger.error("="*60)
-                for error_msg in organizer.error_messages:
-                    logger.error(error_msg)
-                logger.error("="*60)
-            
-            logger.error("="*60)
-            logger.error("ATTENTION: Issues were encountered during processing!")
-            logger.error("Please review the errors above and consider:")
-            logger.error("- For metadata errors: Check if FFmpeg/FFprobe can read the files")
-            logger.error("- For file conflicts: Use --skip-existing=false to auto-rename")
-            logger.error("- For skipped files: Use --process-no-metadata y to include files with no metadata")
-            logger.error("="*60)
-            sys.exit(1)
+        return 1 if stats['errors'] else 0
         
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Error: {e}")
+        return 1
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())
