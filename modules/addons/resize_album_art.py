@@ -20,12 +20,6 @@ try:
     from modules.addons.image_converter import convert_image
     from modules.core.metadata import MetadataEditor
 except ImportError:
-    # Try alternative import paths
-    try:
-        from addons.image_converter_remade import convert_image
-    except ImportError:
-        convert_image = None
-    
     MetadataEditor = None
 
 # Configure logging
