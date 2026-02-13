@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+clone a playlist somewhere else with options for conversion
+"""
 
 import os
 import sys
@@ -10,8 +13,19 @@ from typing import List, Dict, Optional, Tuple
 
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from addons.convert import AudioConverter, SUPPORTED_OUTPUT_FORMATS, BITRATE_PRESETS
+from addons.convert import AudioConverter
 from addons.resize_album_art import resize_album_art
+
+# Define supported formats (from AudioConverter.FORMATS)
+SUPPORTED_OUTPUT_FORMATS = {
+    'mp3': {'ext': 'mp3'},
+    'aac': {'ext': 'm4a'},
+    'opus': {'ext': 'opus'},
+    'ogg': {'ext': 'ogg'},
+    'flac': {'ext': 'flac'},
+    'alac': {'ext': 'm4a'},
+    'wav': {'ext': 'wav'},
+}
 
 # Configure logging
 logging.basicConfig(
@@ -37,8 +51,9 @@ class PlaylistCloner:
                  dry_run: bool = False,
                  album_art_size: str = '1000x1000',
                  album_art_format: str = 'jpg',
-                 dont_resize: bool = True,
-                 dont_convert: bool = True):
+                 dont_resize: bool = False,
+                 dont_convert: bool = False,
+                 playlist_output_subdir: str = 'playlist_data'):
         """
         Initialize the PlaylistCloner.
         
@@ -48,15 +63,17 @@ class PlaylistCloner:
             output_format (str): Output audio format (default: aac)
             bitrate (str): Bitrate for lossy formats (default: 256k)
             preserve_structure (bool): If True, preserve folder structure; if False, flatten (default: True)
-            skip_existing (bool): Skip files that already exist in destination
-            dry_run (bool): If True, show what would be done without actually doing it
+            skip_existing (bool): Skip files that already exist in destination (default: True)
+            dry_run (bool): If True, show what would be done without actually doing it (default: False)
             album_art_size (str): Album art size for resizing (default: 1000x1000)
             album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
             dont_resize (bool): Skip album art resizing (default: False)
             dont_convert (bool): Skip format conversion, only copy files (default: False)
+            playlist_output_subdir (str): Subdirectory within output_dir for playlist files (default: playlist_data)
         """
         self.playlist_path = playlist_path
         self.output_dir = output_dir
+        self.playlist_output_subdir = playlist_output_subdir
         self.output_format = output_format
         self.bitrate = bitrate
         self.preserve_structure = preserve_structure
@@ -204,20 +221,20 @@ class PlaylistCloner:
             os.makedirs(self.output_dir, exist_ok=True)
         
         # Setup converter
-        converter_options = {
-            'output_format': self.output_format,
-            'bitrate': self.bitrate,
-            'metadata': 'y',
-            'skip_existing': self.skip_existing,
-            'force_overwrite': False,
-        }
-        converter = AudioConverter(converter_options)
+        converter = AudioConverter(
+            output_format=self.output_format,
+            bitrate=self.bitrate,
+            preserve_metadata=True,
+            delete_original=False
+        )
         
         # Step 1: Update playlist file first (before converting files)
         if not self.dry_run:
             output_ext = SUPPORTED_OUTPUT_FORMATS[self.output_format]['ext']
             playlist_name = os.path.basename(self.playlist_path)
-            output_playlist_path = os.path.join(self.output_dir, playlist_name)
+            playlist_output_dir = os.path.join(self.output_dir, self.playlist_output_subdir)
+            os.makedirs(playlist_output_dir, exist_ok=True)
+            output_playlist_path = os.path.join(playlist_output_dir, playlist_name)
             
             logger.info(f"Updating playlist file: {playlist_name}")
             
@@ -232,12 +249,18 @@ class PlaylistCloner:
                 if stripped and not stripped.startswith('#'):
                     # This is a file path - update extension and prepend Music/ folder
                     base = os.path.splitext(stripped)[0]
-                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
-                    if stripped.startswith('../'):
-                        updated_line = f"{base}.{output_ext}\n"
-                    else:
-                        # Extract just the relative path portion and prepend Music/
+                    # Remove any leading ../ or ./ since files are in Music/ subdirectory
+                    while base.startswith('../') or base.startswith('./'):
+                        if base.startswith('../'):
+                            base = base[3:]
+                        else:
+                            base = base[2:]
+                    # All files go into Music/ subdirectory relative to playlist
+                    # Check if path already starts with Music/ to avoid doubling it
+                    if not base.startswith('Music/'):
                         updated_line = f"Music/{base}.{output_ext}\n"
+                    else:
+                        updated_line = f"{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
@@ -276,46 +299,50 @@ class PlaylistCloner:
             # Check if conversion is needed
             if self._needs_conversion(input_file) and not self.dont_convert:
                 # Convert the file
-                output_subdir = os.path.dirname(output_path)
-                success, reason = converter.convert_file(input_file, output_subdir)
-                
-                if success and reason == 'converted':
-                    logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
-                    self.converted_files += 1
+                try:
+                    result_path = converter.convert_file(
+                        Path(input_file),
+                        Path(output_path),
+                        force_overwrite=not self.skip_existing
+                    )
                     
-                    # Resize album art if requested and not disabled
-                    if self.album_art_size and not self.dont_resize:
-                        try:
-                            format_map = {
-                                'jpg': 'jpeg',
-                                'jpeg': 'jpeg',
-                                'png': 'png',
-                                'gif': 'gif',
-                                'webp': 'webp',
-                            }
-                            resize_format = format_map.get(self.album_art_format.lower(), 'jpeg')
-                            
-                            logger.info(f"  Resizing album art to {self.album_art_size} ({self.album_art_format})")
-                            success = resize_album_art(
-                                audio_file=output_path,
-                                size=self.album_art_size,
-                                quality=100,
-                                format=resize_format,
-                                maintain_aspect=False,
-                                backup=False
-                            )
-                            
-                            if success:
-                                logger.info(f"  ✓ Album art resized successfully")
-                            else:
-                                logger.warning(f"  ⚠ Failed to resize album art")
-                        except Exception as e:
-                            logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
-                elif success and reason in ('already_target_format', 'skipped_existing'):
-                    logger.info(f"  → Skipped: {reason}")
-                    self.skipped_files += 1
-                else:
-                    logger.error(f"  ✗ Conversion failed")
+                    if result_path:
+                        logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                        self.converted_files += 1
+                        
+                        # Resize album art if requested and not disabled
+                        if self.album_art_size and not self.dont_resize:
+                            try:
+                                format_map = {
+                                    'jpg': 'jpeg',
+                                    'jpeg': 'jpeg',
+                                    'png': 'png',
+                                    'gif': 'gif',
+                                    'webp': 'webp',
+                                }
+                                resize_format = format_map.get(self.album_art_format.lower(), 'jpeg')
+                                
+                                logger.info(f"  Resizing album art to {self.album_art_size} ({self.album_art_format})")
+                                success = resize_album_art(
+                                    audio_file=output_path,
+                                    size=self.album_art_size,
+                                    quality=100,
+                                    format=resize_format,
+                                    maintain_aspect=False,
+                                    backup=False
+                                )
+                                
+                                if success:
+                                    logger.info(f"  ✓ Album art resized successfully")
+                                else:
+                                    logger.warning(f"  ⚠ Failed to resize album art")
+                            except Exception as e:
+                                logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
+                    else:
+                        logger.info(f"  → Skipped")
+                        self.skipped_files += 1
+                except Exception as e:
+                    logger.error(f"  ✗ Conversion failed: {str(e)}")
                     self.error_files += 1
             else:
                 # Copy the file (already in target format)
@@ -350,7 +377,8 @@ def parse_arguments():
         description="Clone audio files from playlist(s) to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone single playlist (just copy files, no conversion or resizing by default)
+  # Clone single playlist (converts to AAC 256k, resizes album art to 1000x1000 jpg)
+  # Playlists go to <output>/playlist_data/, audio files go to <output>/Music/
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
   # Clone multiple playlists
@@ -359,17 +387,20 @@ def parse_arguments():
   # Clone all playlists from a directory
   python playlist_cloner.py --playlist-dir /path/to/playlists /output/
   
+  # Clone with custom playlist output location
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --playlist-output-dir playlists
+  
   # Clone all playlists from directory with separate subdirectories for each
   python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --separate-dirs
   
-  # Clone all playlists with 256kbps AAC conversion
-  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --format aac --bitrate 256k
+  # Just copy files without conversion or resizing
+  python playlist_cloner.py my_playlist.m3u /output/ --dont-convert --dont-resize
   
   # Clone with MP3 format at 320kbps, no resizing
   python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k --dont-resize
   
-  # Clone with preserved folder structure and resize album art to 1000x1000
-  python playlist_cloner.py my_playlist.m3u /output/ --preserve-structure --album-art-size 1000x1000 --album-art-format jpg
+  # Clone with flattened folder structure (all files in one folder)
+  python playlist_cloner.py my_playlist.m3u /output/ --flatten
   
   # Clone to FLAC (lossless) - good for archival
   python playlist_cloner.py my_playlist.m3u /backup/ --format flac
@@ -388,8 +419,8 @@ Supported output formats:
 
 Common bitrate presets:
   Opus: 64k (low), 128k (medium), 192k (high - default), 256k (maximum)
-  MP3:  96k (low), 192k (medium), 320k (high)
-  AAC:  96k (low), 192k (medium), 256k (high)
+  MP3:  128k (low), 192k (medium), 320k (high)
+  AAC:  128k (low), 192k (medium), 256k (high)
 """
     )
     
@@ -497,9 +528,10 @@ Common bitrate presets:
     )
     
     parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
+        '--playlist-output-dir', '--pod',
+        dest='playlist_output_subdir',
+        default='playlist_data',
+        help='Subdirectory within output directory for playlist files (default: playlist_data)'
     )
     
     return parser.parse_args()
@@ -516,7 +548,8 @@ def clone_playlists_batch(playlist_files: List[str],
                           album_art_format: str = 'jpg',
                           dont_resize: bool = True,
                           dont_convert: bool = False,
-                          separate_dirs: bool = False) -> Tuple[int, int, int, int, int]:
+                          separate_dirs: bool = False,
+                          playlist_output_subdir: str = 'playlist_data') -> Tuple[int, int, int, int, int]:
     """
     Clone multiple playlists in an optimized batch mode.
     First updates all playlist files, then converts unique files only once.
@@ -534,6 +567,7 @@ def clone_playlists_batch(playlist_files: List[str],
         dont_resize (bool): Skip album art resizing
         dont_convert (bool): Skip conversion, only copy
         separate_dirs (bool): Create separate directories per playlist
+        playlist_output_subdir (str): Subdirectory for playlist files (default: playlist_data)
         
     Returns:
         Tuple of (total, converted, copied, skipped, errors)
@@ -560,7 +594,8 @@ def clone_playlists_batch(playlist_files: List[str],
             album_art_size=album_art_size,
             album_art_format=album_art_format,
             dont_resize=dont_resize,
-            dont_convert=dont_convert
+            dont_convert=dont_convert,
+            playlist_output_subdir=playlist_output_subdir
         )
         
         file_paths = cloner._load_playlist_paths()
@@ -571,18 +606,19 @@ def clone_playlists_batch(playlist_files: List[str],
     logger.info(f"Found {total_files} unique files across {len(playlist_files)} playlists")
     
     # Step 2: Update all playlist files to reference new format
-    logger.info("\\nStep 2: Updating playlist files to reference new format...")
+    logger.info("\nStep 2: Updating playlist files to reference new format...")
     output_ext = SUPPORTED_OUTPUT_FORMATS[output_format]['ext']
     
     for playlist_path in playlist_files:
         playlist_name = os.path.basename(playlist_path)
         
         # Determine output playlist directory
+        base_playlist_dir = os.path.join(output_dir, playlist_output_subdir)
         if separate_dirs:
             playlist_basename = os.path.splitext(playlist_name)[0]
-            playlist_output_dir = os.path.join(output_dir, playlist_basename)
+            playlist_output_dir = os.path.join(base_playlist_dir, playlist_basename)
         else:
-            playlist_output_dir = output_dir
+            playlist_output_dir = base_playlist_dir
         
         output_playlist_path = os.path.join(playlist_output_dir, playlist_name)
         
@@ -600,12 +636,18 @@ def clone_playlists_batch(playlist_files: List[str],
                 if stripped and not stripped.startswith('#'):
                     # This is a file path - update extension and prepend Music/ folder
                     base = os.path.splitext(stripped)[0]
-                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
-                    if stripped.startswith('../'):
-                        updated_line = f"{base}.{output_ext}\n"
-                    else:
-                        # Extract just the relative path portion and prepend Music/
+                    # Remove any leading ../ or ./ since files are in Music/ subdirectory
+                    while base.startswith('../') or base.startswith('./'):
+                        if base.startswith('../'):
+                            base = base[3:]
+                        else:
+                            base = base[2:]
+                    # All files go into Music/ subdirectory relative to playlist
+                    # Check if path already starts with Music/ to avoid doubling it
+                    if not base.startswith('Music/'):
                         updated_line = f"Music/{base}.{output_ext}\n"
+                    else:
+                        updated_line = f"{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
@@ -620,17 +662,15 @@ def clone_playlists_batch(playlist_files: List[str],
             logger.info(f"  Would update: {playlist_name}")
     
     # Step 3: Convert all unique files once
-    logger.info("\\nStep 3: Converting unique audio files...")
+    logger.info("\nStep 3: Converting unique audio files...")
     logger.info("=" * 80)
     
-    converter_options = {
-        'output_format': output_format,
-        'bitrate': bitrate,
-        'metadata': 'y',
-        'skip_existing': skip_existing,
-        'force_overwrite': False,
-    }
-    converter = AudioConverter(converter_options)
+    converter = AudioConverter(
+        output_format=output_format,
+        bitrate=bitrate,
+        preserve_metadata=True,
+        delete_original=False
+    )
     
     converted_count = 0
     copied_count = 0
@@ -649,7 +689,8 @@ def clone_playlists_batch(playlist_files: List[str],
         album_art_size=album_art_size,
         album_art_format=album_art_format,
         dont_resize=dont_resize,
-        dont_convert=dont_convert
+        dont_convert=dont_convert,
+        playlist_output_subdir=playlist_output_subdir
     )
     
     for idx, input_file in enumerate(sorted(all_files), 1):
@@ -674,43 +715,47 @@ def clone_playlists_batch(playlist_files: List[str],
         
         # Convert or copy file
         if first_cloner._needs_conversion(input_file) and not dont_convert:
-            output_subdir = os.path.dirname(output_path)
-            success, reason = converter.convert_file(input_file, output_subdir)
-            
-            if success and reason == 'converted':
-                logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
-                converted_count += 1
+            try:
+                result_path = converter.convert_file(
+                    Path(input_file),
+                    Path(output_path),
+                    force_overwrite=not skip_existing
+                )
                 
-                # Resize album art if requested
-                if album_art_size and not dont_resize:
-                    try:
-                        format_map = {
-                            'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png',
-                            'gif': 'gif', 'webp': 'webp',
-                        }
-                        resize_format = format_map.get(album_art_format.lower(), 'jpeg')
-                        
-                        logger.info(f"  Resizing album art to {album_art_size} ({album_art_format})")
-                        success = resize_album_art(
-                            audio_file=output_path,
-                            size=album_art_size,
-                            quality=100,
-                            format=resize_format,
-                            maintain_aspect=False,
-                            backup=False
-                        )
-                        
-                        if success:
-                            logger.info(f"  ✓ Album art resized successfully")
-                        else:
-                            logger.warning(f"  ⚠ Failed to resize album art")
-                    except Exception as e:
-                        logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
-            elif success and reason in ('already_target_format', 'skipped_existing'):
-                logger.info(f"  → Skipped: {reason}")
-                skipped_count += 1
-            else:
-                logger.error(f"  ✗ Conversion failed")
+                if result_path:
+                    logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                    converted_count += 1
+                    
+                    # Resize album art if requested
+                    if album_art_size and not dont_resize:
+                        try:
+                            format_map = {
+                                'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png',
+                                'gif': 'gif', 'webp': 'webp',
+                            }
+                            resize_format = format_map.get(album_art_format.lower(), 'jpeg')
+                            
+                            logger.info(f"  Resizing album art to {album_art_size} ({album_art_format})")
+                            success = resize_album_art(
+                                audio_file=output_path,
+                                size=album_art_size,
+                                quality=100,
+                                format=resize_format,
+                                maintain_aspect=False,
+                                backup=False
+                            )
+                            
+                            if success:
+                                logger.info(f"  ✓ Album art resized successfully")
+                            else:
+                                logger.warning(f"  ⚠ Failed to resize album art")
+                        except Exception as e:
+                            logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
+                else:
+                    logger.info(f"  → Skipped")
+                    skipped_count += 1
+            except Exception as e:
+                logger.error(f"  ✗ Conversion failed: {str(e)}")
                 error_count += 1
         else:
             # Copy the file
@@ -740,11 +785,6 @@ def main():
     Main entry point for the playlist cloner.
     """
     args = parse_arguments()
-    
-    # Set logging level
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-        logging.getLogger('AudioConverter').setLevel(logging.DEBUG)
     
     # Handle overwrite flag
     skip_existing = not args.overwrite if args.overwrite else args.skip_existing
@@ -811,7 +851,8 @@ def main():
                 album_art_format=args.album_art_format,
                 dont_resize=args.dont_resize,
                 dont_convert=args.dont_convert,
-                separate_dirs=args.separate_dirs
+                separate_dirs=args.separate_dirs,
+                playlist_output_subdir=args.playlist_output_subdir
             )
             total_errors = errors
         else:
@@ -842,7 +883,8 @@ def main():
                     album_art_size=args.album_art_size,
                     album_art_format=args.album_art_format,
                     dont_resize=args.dont_resize,
-                    dont_convert=args.dont_convert
+                    dont_convert=args.dont_convert,
+                    playlist_output_subdir=args.playlist_output_subdir
                 )
                 
                 # Clone the playlist

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+attempts to fix playlists that are missing files/can't load specific files
+"""
 
 import os
 import sys
@@ -28,16 +31,21 @@ class PlaylistFixer:
     Tool to fix missing songs in playlists by searching for replacements or prompting users.
     """
     
-    def __init__(self, playlist_path: str, search_dirs: List[str] = None):
+    def __init__(self, 
+                 playlist_path: str, 
+                 search_dirs: List[str] = None,
+                 auto_fix: bool = False):
         """
         Initialize the PlaylistFixer.
         
         Args:
             playlist_path (str): Path to the playlist file to fix
             search_dirs (List[str]): Optional list of directories to search for missing files
+            auto_fix (bool): Automatically replace when only one candidate found
         """
         self.playlist_path = playlist_path
         self.search_dirs = search_dirs or []
+        self.auto_fix = auto_fix
         self.playlist_data = None
         self.missing_songs = []
         self.fixed_count = 0
@@ -94,15 +102,16 @@ class PlaylistFixer:
                 logger.warning(f"Search directory does not exist: {search_dir}")
                 continue
             
+            # Use os.walk for efficiency - single pass through directory tree
             for root, _, files in os.walk(search_dir):
                 for file in files:
+                    # Fast extension check
                     if Path(file).suffix.lower() in AUDIO_EXTENSIONS:
                         full_path = os.path.join(root, file)
                         filename = os.path.basename(file)
                         
-                        if filename not in self.file_cache:
-                            self.file_cache[filename] = []
-                        self.file_cache[filename].append(full_path)
+                        # Use setdefault for fewer dictionary lookups
+                        self.file_cache.setdefault(filename, []).append(full_path)
         
         total_files = sum(len(paths) for paths in self.file_cache.values())
         logger.info(f"File cache built: {len(self.file_cache)} unique filenames, {total_files} total files")
@@ -120,10 +129,9 @@ class PlaylistFixer:
         filename = os.path.basename(missing_path)
         candidates = self.file_cache.get(filename, [])
         
-        # Filter out the original missing path if it somehow got cached
-        candidates = [c for c in candidates if os.path.abspath(c) != os.path.abspath(missing_path)]
-        
-        return candidates
+        # Filter out the original missing path (fast list comprehension)
+        missing_abs = os.path.abspath(missing_path)
+        return [c for c in candidates if os.path.abspath(c) != missing_abs]
     
     def prompt_user_for_replacement(self, missing_track: Dict, candidates: List[str]) -> Optional[str]:
         """
@@ -148,6 +156,12 @@ class PlaylistFixer:
         print("=" * 80)
         
         if candidates:
+            # Auto-fix if enabled and only one candidate
+            if self.auto_fix and len(candidates) == 1:
+                selected = candidates[0]
+                logger.info(f"Auto-fixing with single candidate: {selected}")
+                return selected
+            
             print(f"\nFound {len(candidates)} potential replacement(s):")
             for idx, candidate in enumerate(candidates, 1):
                 print(f"  {idx}. {candidate}")
@@ -312,6 +326,9 @@ Examples:
   # Fix a playlist with multiple search directories
   python modules/walrio.py playlist_fixer playlist.m3u --search /music/folder1 --search /music/folder2
 
+  # Auto-fix when only one candidate is found (efficient for bulk repairs)
+  python modules/walrio.py playlist_fixer playlist.m3u --search /music --auto-fix
+
   # Dry run to see what would be fixed
   python modules/walrio.py playlist_fixer playlist.m3u --search /music --dry-run
 
@@ -329,6 +346,11 @@ Examples:
         action='append',
         dest='search_dirs',
         help='Directory to search for missing files (can be used multiple times)'
+    )
+    parser.add_argument(
+        '--auto-fix',
+        action='store_true',
+        help='Automatically replace when only one candidate is found (more efficient)'
     )
     parser.add_argument(
         '--dry-run',
@@ -360,7 +382,7 @@ Examples:
     
     # Create fixer and run
     try:
-        fixer = PlaylistFixer(args.playlist, search_dirs)
+        fixer = PlaylistFixer(args.playlist, search_dirs, auto_fix=args.auto_fix)
         success = fixer.fix_playlist(dry_run=args.dry_run)
         
         if success:

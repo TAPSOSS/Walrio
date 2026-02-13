@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
+"""
+analyze and tag files with standard replay gain values for volume normalizaiton
+"""
 
-import os
-import sys
 import argparse
-import subprocess
-import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
 import json
+import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Dict, List, Optional, Any
 
-# Configure logging format
+# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -17,227 +20,130 @@ logging.basicConfig(
 )
 logger = logging.getLogger('ReplayGainAnalyzer')
 
-# Supported audio file extensions
-SUPPORTED_EXTENSIONS = {'.flac', '.mp3', '.m4a'}
+# Supported formats
+SUPPORTED_EXTENSIONS = {'.flac', '.mp3', '.m4a', '.ogg', '.opus', '.wv'}
 
 # Default LUFS target (ReplayGain 2.0 standard)
 DEFAULT_TARGET_LUFS = -18
 
+
 class ReplayGainAnalyzer:
     """
-    Audio ReplayGain analyzer using rsgain for LUFS analysis
+    ReplayGain analyzer using rsgain for LUFS analysis and tagging
     """
     
-    def __init__(self, target_lufs: int = DEFAULT_TARGET_LUFS):
+    def __init__(self, target_lufs: int = DEFAULT_TARGET_LUFS, 
+                 preserve_mtimes: bool = True):
         """
-        Initialize the ReplayGain analyzer.
-        
         Args:
-            target_lufs (int): Target LUFS value for analysis (default: -18)
+            target_lufs: Target LUFS value for analysis (default: -18)
+            preserve_mtimes: Preserve file modification times
         """
+        # Validate LUFS range
+        if target_lufs > -5 or target_lufs < -30:
+            raise ValueError(f"Target LUFS must be between -30 and -5 (got {target_lufs})")
+        
         self.target_lufs = target_lufs
+        self.preserve_mtimes = preserve_mtimes
         self.analyzed_count = 0
         self.error_count = 0
         self.tagged_count = 0
         
-        # Validate rsgain availability
         self._check_rsgain()
     
     def _check_rsgain(self):
-        """
-        Check if rsgain is available for analysis.
-        
-        Raises:
-            RuntimeError: If rsgain is not found.
-        """
+        """Check if rsgain is available"""
         try:
-            result = subprocess.run(
-                ['rsgain', '--version'],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            logger.debug("rsgain is available for ReplayGain analysis")
+            subprocess.run(['rsgain', '--version'], 
+                          capture_output=True, check=True)
+            logger.debug("rsgain available for ReplayGain analysis")
         except (subprocess.CalledProcessError, FileNotFoundError):
             raise RuntimeError(
-                "rsgain not found. Please install rsgain from https://github.com/complexlogic/rsgain and make sure it's in your PATH."
+                "rsgain not found. Install from https://github.com/complexlogic/rsgain"
             )
     
-    def is_supported_file(self, filepath: str) -> bool:
-        """
-        Check if a file is a supported audio file.
-        
-        Args:
-            filepath (str): Path to the file
-            
-        Returns:
-            bool: True if the file is supported, False otherwise
-        """
-        if not os.path.isfile(filepath):
-            return False
-        
-        ext = Path(filepath).suffix.lower()
-        return ext in SUPPORTED_EXTENSIONS
+    def print_analysis_settings(self, tag: bool = False, skip_tagged: bool = False):
+        """Print analysis parameters being used"""
+        print("\n" + "=" * 60)
+        print(f"ReplayGain Analysis Settings:")
+        print(f"  Target LUFS: {self.target_lufs}")
+        print(f"  Mode: {'Tag files' if tag else 'Analysis only'}")
+        if tag and skip_tagged:
+            print(f"  Skip Tagged: Yes")
+        print(f"  Preserve Modification Times: {'Yes' if self.preserve_mtimes else 'No'}")
+        print("=" * 60 + "\n")
     
-    def analyze_file(self, filepath: str) -> Optional[Dict[str, Any]]:
+    def is_supported_file(self, filepath: Path) -> bool:
         """
-        Analyze a single audio file for ReplayGain values using rsgain.
+        Check if file is supported
         
         Args:
-            filepath (str): Path to the audio file
+            filepath: File path
             
         Returns:
-            dict or None: Analysis results containing loudness, gain, and clipping info, or None if analysis failed
+            True if supported
+        """
+        return filepath.is_file() and filepath.suffix.lower() in SUPPORTED_EXTENSIONS
+    
+    def analyze_file(self, filepath: Path, current_file: int = None, 
+                     total_files: int = None) -> Optional[Dict[str, Any]]:
+        """
+        Analyze single audio file for ReplayGain values (no tagging)
+        
+        Args:
+            filepath: Audio file path
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
+            
+        Returns:
+            Analysis results with loudness, gain, clipping info, or None on failure
         """
         if not self.is_supported_file(filepath):
-            logger.warning(f"Unsupported file type: {os.path.basename(filepath)}")
+            logger.warning(f"Unsupported file type: {filepath.name}")
             return None
+        
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Analyzing {filepath.name}")
+        else:
+            print(f"\nAnalyzing {filepath.name}")
         
         try:
             # Use rsgain custom command for analysis without writing tags
+            lufs_str = f"-{abs(self.target_lufs)}"
             cmd = [
                 "rsgain", "custom",
-                "-O",  # Output format: tab-separated values
-                str(filepath)
-            ]
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-            
-            if result.returncode != 0:
-                logger.error(f"rsgain analysis failed for {os.path.basename(filepath)}: {result.stderr or result.stdout}")
-                self.error_count += 1
-                return None
-            
-            # Parse the output
-            lines = result.stdout.strip().splitlines()
-            if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {os.path.basename(filepath)}")
-                self.error_count += 1
-                return None
-            
-            # Parse header and values
-            header = lines[0].split('\t')
-            values = lines[1].split('\t')
-            
-            if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {os.path.basename(filepath)}")
-                self.error_count += 1
-                return None
-            
-            # Create column mapping
-            colmap = {k: i for i, k in enumerate(header)}
-            
-            # Extract values
-            analysis_result = {
-                'filepath': filepath,
-                'filename': os.path.basename(filepath),
-                'loudness_lufs': None,
-                'gain_db': None,
-                'clipping': None,
-                'raw_output': result.stdout.strip()
-            }
-            
-            # Get loudness value
-            lufs_col = colmap.get("Loudness (LUFS)", -1)
-            if lufs_col != -1 and lufs_col < len(values):
-                try:
-                    analysis_result['loudness_lufs'] = float(values[lufs_col])
-                except ValueError:
-                    analysis_result['loudness_lufs'] = values[lufs_col]  # Keep as string if not numeric
-            
-            # Get gain value
-            gain_col = colmap.get("Gain (dB)", -1)
-            if gain_col != -1 and gain_col < len(values):
-                try:
-                    analysis_result['gain_db'] = float(values[gain_col])
-                except ValueError:
-                    analysis_result['gain_db'] = values[gain_col]  # Keep as string if not numeric
-            
-            # Get clipping information
-            clip_col = colmap.get("Clipping", colmap.get("Clipping Adjustment?", -1))
-            if clip_col != -1 and clip_col < len(values):
-                clip_val = values[clip_col].strip().upper()
-                if clip_val in ("Y", "YES"):
-                    analysis_result['clipping'] = True
-                elif clip_val in ("N", "NO"):
-                    analysis_result['clipping'] = False
-                else:
-                    analysis_result['clipping'] = values[clip_col]  # Keep original value
-            
-            self.analyzed_count += 1
-            logger.debug(f"Analyzed {os.path.basename(filepath)}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
-            
-            return analysis_result
-            
-        except Exception as e:
-            logger.error(f"Error analyzing {os.path.basename(filepath)}: {str(e)}")
-            self.error_count += 1
-            return None
-    
-    def analyze_and_tag_file(self, filepath: str, skip_tagged: bool = True) -> Optional[Dict[str, Any]]:
-        """
-        Analyze a file and optionally apply ReplayGain tags.
-        
-        Args:
-            filepath (str): Path to the audio file
-            skip_tagged (bool): If True, skip files that already have ReplayGain tags
-            
-        Returns:
-            dict or None: Analysis results, or None if analysis failed
-        """
-        if not self.is_supported_file(filepath):
-            logger.warning(f"Unsupported file type: {os.path.basename(filepath)}")
-            return None
-        
-        try:
-            # Build rsgain command for analysis and tagging (following MuseAmp pattern)
-            lufs_str = f"-{abs(self.target_lufs)}"  # MuseAmp pattern: always negative
-            cmd = [
-                "rsgain", "custom",
-                "-s", "i",  # Apply tags (single file mode, integrated mode)
+                "-s", "s",  # Scan mode (no writing)
                 "-l", lufs_str,  # Target LUFS
                 "-O",  # Output format: tab-separated values
-                str(filepath)
             ]
             
-            # Add skip option if requested
-            if skip_tagged:
-                cmd.insert(2, "-S")  # Skip files with existing ReplayGain tags
-
-            logger.debug(f"Running command: {' '.join(cmd)}")  # Debug the exact command
+            # Add preserve mtimes if requested
+            if self.preserve_mtimes:
+                cmd.insert(2, "-p")
             
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False
-            )
-
+            cmd.append(str(filepath))
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            
             if result.returncode != 0:
-                logger.error(f"rsgain tagging failed for {os.path.basename(filepath)}: {result.stderr or result.stdout}")
+                logger.error(f"rsgain analysis failed for {filepath.name}: {result.stderr or result.stdout}")
                 self.error_count += 1
                 return None
-
-            # Parse the output (same format as analyze_file)
+            
+            # Parse output
             lines = result.stdout.strip().splitlines()
             if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {os.path.basename(filepath)}")
+                logger.error(f"Unexpected rsgain output format for {filepath.name}")
                 self.error_count += 1
                 return None
-
+            
             # Parse header and values
             header = lines[0].split('\t')
             values = lines[1].split('\t')
-            logger.debug(f"Header: {header}")  # Debug output
-            logger.debug(f"Values: {values}")  # Debug output
             
             if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {os.path.basename(filepath)}")
+                logger.error(f"Header/value mismatch in rsgain output for {filepath.name}")
                 self.error_count += 1
                 return None
             
@@ -246,13 +152,11 @@ class ReplayGainAnalyzer:
             
             # Extract values
             analysis_result = {
-                'filepath': filepath,
-                'filename': os.path.basename(filepath),
+                'filepath': str(filepath),
+                'filename': filepath.name,
                 'loudness_lufs': None,
                 'gain_db': None,
                 'clipping': None,
-                'tagged': True,
-                'target_lufs': self.target_lufs,
                 'raw_output': result.stdout.strip()
             }
             
@@ -284,365 +188,337 @@ class ReplayGainAnalyzer:
                     analysis_result['clipping'] = values[clip_col]
             
             self.analyzed_count += 1
-            self.tagged_count += 1
-            logger.info(f"Tagged {os.path.basename(filepath)}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
+            logger.debug(f"Analyzed {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
+            
+            # Display results
+            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
             
             return analysis_result
             
         except Exception as e:
-            logger.error(f"Error analyzing and tagging {os.path.basename(filepath)}: {str(e)}")
+            logger.error(f"Error analyzing {filepath.name}: {e}")
             self.error_count += 1
             return None
     
-    def analyze_directory(self, directory: str, recursive: bool = True, analyze_only: bool = True) -> List[Dict[str, Any]]:
+    def analyze_and_tag_file(self, filepath: Path, skip_tagged: bool = True,
+                            current_file: int = None, total_files: int = None) -> Optional[Dict[str, Any]]:
         """
-        Analyze all supported audio files in a directory.
+        Analyze file and write ReplayGain tags
         
         Args:
-            directory (str): Directory to analyze
-            recursive (bool): If True, process subdirectories recursively
-            analyze_only (bool): If True, only analyze without tagging
+            filepath: Audio file path
+            skip_tagged: Skip files that already have ReplayGain tags
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
             
         Returns:
-            list: List of analysis results for all processed files
+            Analysis results, or None on failure
         """
-        if not os.path.isdir(directory):
-            logger.error(f"Directory does not exist: {directory}")
-            return []
+        if not self.is_supported_file(filepath):
+            logger.warning(f"Unsupported file type: {filepath.name}")
+            return None
         
-        # Find all supported audio files
-        files_to_process = []
-        
-        if recursive:
-            for root, _, files in os.walk(directory):
-                for file in files:
-                    filepath = os.path.join(root, file)
-                    if self.is_supported_file(filepath):
-                        files_to_process.append(filepath)
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Analyzing {filepath.name}")
         else:
-            for file in os.listdir(directory):
-                filepath = os.path.join(directory, file)
-                if self.is_supported_file(filepath):
-                    files_to_process.append(filepath)
+            print(f"\nAnalyzing {filepath.name}")
         
-        if not files_to_process:
-            logger.warning(f"No supported audio files found in {directory}")
-            return []
-        
-        logger.info(f"Found {len(files_to_process)} supported audio files")
-        
-        # Process all files
-        results = []
-        for i, filepath in enumerate(files_to_process, 1):
-            logger.debug(f"Processing file {i}/{len(files_to_process)}: {os.path.basename(filepath)}")
+        try:
+            # Build rsgain command for analysis and tagging
+            lufs_str = f"-{abs(self.target_lufs)}"
+            cmd = [
+                "rsgain", "custom",
+                "-s", "i",  # Apply tags (single file mode, integrated mode)
+                "-l", lufs_str,  # Target LUFS
+                "-O",  # Output format: tab-separated values
+            ]
             
-            if analyze_only:
-                result = self.analyze_file(filepath)
-            else:
-                result = self.analyze_and_tag_file(filepath)
+            # Add skip option if requested
+            if skip_tagged:
+                cmd.insert(2, "-S")  # Skip files with existing tags
             
-            if result:
-                results.append(result)
-        
-        return results
+            # Add preserve mtimes if requested
+            if self.preserve_mtimes:
+                cmd.insert(2, "-p")
+            
+            cmd.append(str(filepath))
+            
+            logger.debug(f"Running: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            
+            if result.returncode != 0:
+                logger.error(f"rsgain tagging failed for {filepath.name}: {result.stderr or result.stdout}")
+                self.error_count += 1
+                return None
+            
+            # Parse output (same format as analyze_file)
+            lines = result.stdout.strip().splitlines()
+            if len(lines) < 2:
+                logger.error(f"Unexpected rsgain output format for {filepath.name}")
+                self.error_count += 1
+                return None
+            
+            header = lines[0].split('\t')
+            values = lines[1].split('\t')
+            
+            if len(header) != len(values):
+                logger.error(f"Header/value mismatch in rsgain output for {filepath.name}")
+                self.error_count += 1
+                return None
+            
+            colmap = {k: i for i, k in enumerate(header)}
+            
+            analysis_result = {
+                'filepath': str(filepath),
+                'filename': filepath.name,
+                'loudness_lufs': None,
+                'gain_db': None,
+                'clipping': None,
+                'tagged': True,
+                'target_lufs': self.target_lufs,
+                'raw_output': result.stdout.strip()
+            }
+            
+            # Get loudness
+            lufs_col = colmap.get("Loudness (LUFS)", -1)
+            if lufs_col != -1 and lufs_col < len(values):
+                try:
+                    analysis_result['loudness_lufs'] = float(values[lufs_col])
+                except ValueError:
+                    analysis_result['loudness_lufs'] = values[lufs_col]
+            
+            # Get gain
+            gain_col = colmap.get("Gain (dB)", -1)
+            if gain_col != -1 and gain_col < len(values):
+                try:
+                    analysis_result['gain_db'] = float(values[gain_col])
+                except ValueError:
+                    analysis_result['gain_db'] = values[gain_col]
+            
+            # Get clipping
+            clip_col = colmap.get("Clipping", colmap.get("Clipping Adjustment?", -1))
+            if clip_col != -1 and clip_col < len(values):
+                clip_val = values[clip_col].strip().upper()
+                if clip_val in ("Y", "YES"):
+                    analysis_result['clipping'] = True
+                elif clip_val in ("N", "NO"):
+                    analysis_result['clipping'] = False
+                else:
+                    analysis_result['clipping'] = values[clip_col]
+            
+            self.analyzed_count += 1
+            self.tagged_count += 1
+            logger.info(f"Tagged {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
+            
+            # Display results
+            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            print(f"  ✓ ReplayGain tags written")
+            
+            return analysis_result
+            
+        except Exception as e:
+            logger.error(f"Error analyzing and tagging {filepath.name}: {e}")
+            self.error_count += 1
+            return None
     
-    def print_analysis_summary(self, results: List[Dict[str, Any]], detailed: bool = False):
+    def delete_tags_file(self, filepath: Path, current_file: int = None, 
+                        total_files: int = None) -> bool:
         """
-        Print a summary of analysis results.
+        Delete ReplayGain tags from file
         
         Args:
-            results (list): List of analysis results
-            detailed (bool): If True, print detailed per-file results
+            filepath: Audio file path
+            current_file: Current file number (for progress display)
+            total_files: Total number of files (for progress display)
+            
+        Returns:
+            True if successful, False otherwise
         """
-        if not results:
-            print("No analysis results to display.")
-            return
+        if not self.is_supported_file(filepath):
+            logger.warning(f"Unsupported file type: {filepath.name}")
+            return False
         
-        print(f"\nReplayGain Analysis Summary")
-        print("=" * 60)
-        print(f"Target LUFS: {self.target_lufs}")
-        print(f"Files analyzed: {len(results)}")
-        print(f"Files with errors: {self.error_count}")
+        # Display progress
+        if current_file and total_files:
+            print(f"\nFile {current_file}/{total_files}: Deleting ReplayGain tags from {filepath.name}")
+        else:
+            print(f"\nDeleting ReplayGain tags from {filepath.name}")
         
-        # Calculate statistics
-        valid_loudness = [r['loudness_lufs'] for r in results if isinstance(r['loudness_lufs'], (int, float))]
-        valid_gain = [r['gain_db'] for r in results if isinstance(r['gain_db'], (int, float))]
-        clipping_files = [r for r in results if r['clipping'] is True]
+        try:
+            # Build rsgain command for deleting tags
+            cmd = [
+                "rsgain", "custom",
+                "-s", "d",  # Delete mode
+            ]
+            
+            # Add preserve mtimes if requested
+            if self.preserve_mtimes:
+                cmd.insert(2, "-p")
+            
+            cmd.append(str(filepath))
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            
+            if result.returncode != 0:
+                logger.error(f"Failed to delete tags from {filepath.name}: {result.stderr or result.stdout}")
+                self.error_count += 1
+                return False
+            
+            print(f"  ✓ ReplayGain tags deleted")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error deleting tags from {filepath.name}: {e}")
+            self.error_count += 1
+            return False
+    
+    def analyze_directory(self, directory: Path, recursive: bool = True, 
+                         tag: bool = False, skip_tagged: bool = True,
+                         delete_tags: bool = False) -> List[Dict[str, Any]]:
+        """
+        Analyze all supported audio files in directory
         
-        if valid_loudness:
-            avg_loudness = sum(valid_loudness) / len(valid_loudness)
-            min_loudness = min(valid_loudness)
-            max_loudness = max(valid_loudness)
-            print(f"Average loudness: {avg_loudness:.2f} LUFS")
-            print(f"Loudness range: {min_loudness:.2f} to {max_loudness:.2f} LUFS")
+        Args:
+            directory: Directory to scan
+            recursive: Process subdirectories
+            tag: Write ReplayGain tags
+            skip_tagged: Skip files that already have tags
+            delete_tags: Delete ReplayGain tags from files
+            
+        Returns:
+            List of analysis results
+        """
+        if not directory.is_dir():
+            raise NotADirectoryError(f"Not a directory: {directory}")
         
-        if valid_gain:
-            avg_gain = sum(valid_gain) / len(valid_gain)
-            min_gain = min(valid_gain)
-            max_gain = max(valid_gain)
-            print(f"Average gain: {avg_gain:.2f} dB")
-            print(f"Gain range: {min_gain:.2f} to {max_gain:.2f} dB")
+        # Find audio files
+        if recursive:
+            files = []
+            for ext in SUPPORTED_EXTENSIONS:
+                files.extend(directory.rglob(f'*{ext}'))
+        else:
+            files = []
+            for ext in SUPPORTED_EXTENSIONS:
+                files.extend(directory.glob(f'*{ext}'))
         
-        if clipping_files:
-            print(f"Files with clipping: {len(clipping_files)}")
+        # Print settings and file count
+        if files:
+            if delete_tags:
+                print("\n" + "=" * 60)
+                print(f"ReplayGain Tag Deletion:")
+                print(f"  Preserve Modification Times: {'Yes' if self.preserve_mtimes else 'No'}")
+                print("=" * 60 + "\n")
+                print(f"Found {len(files)} audio file(s) to process\n")
+            else:
+                self.print_analysis_settings(tag, skip_tagged)
+                print(f"Found {len(files)} audio file(s) to analyze\n")
         
-        # Detailed per-file results
-        if detailed:
-            print(f"\nDetailed Results:")
-            print("-" * 60)
-            for result in results:
-                filename = result['filename']
-                loudness = result.get('loudness_lufs', 'N/A')
-                gain = result.get('gain_db', 'N/A')
-                clipping = result.get('clipping', 'N/A')
-                
-                # Format values
-                if isinstance(loudness, (int, float)):
-                    loudness_str = f"{loudness:.2f} LUFS"
-                else:
-                    loudness_str = str(loudness)
-                
-                if isinstance(gain, (int, float)):
-                    gain_str = f"{gain:.2f} dB"
-                else:
-                    gain_str = str(gain)
-                
-                if isinstance(clipping, bool):
-                    clipping_str = "Yes" if clipping else "No"
-                else:
-                    clipping_str = str(clipping)
-                
-                tagged_str = " [TAGGED]" if result.get('tagged', False) else ""
-                
-                print(f"{filename:<40} {loudness_str:<12} {gain_str:<10} Clipping: {clipping_str}{tagged_str}")
-
-
-def parse_arguments():
-    """
-    Parse command line arguments.
-    
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
-    parser = argparse.ArgumentParser(
-        description="ReplayGain LUFS Analyzer - Analyze and tag audio files with ReplayGain values",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
-  # Analyze files without tagging (dry run)
-  python replaygain.py /path/to/music --analyze-only
-
-  # Analyze and tag files with default -18 LUFS target
-  python replaygain.py /path/to/music --tag
-
-  # Use custom LUFS target
-  python replaygain.py /path/to/music --tag --target-lufs -16
-
-  # Analyze specific files
-  python replaygain.py song1.flac song2.mp3 --analyze-only
-
-  # Show detailed per-file results
-  python replaygain.py /path/to/music --analyze-only --detailed
-
-  # Tag files but skip those already tagged
-  python replaygain.py /path/to/music --tag --skip-tagged
-
-  # Force retag all files (default behavior - don't use --skip-tagged)
-  python replaygain.py /path/to/music --tag
-
-Supported file formats:
-  - FLAC (.flac)
-  - MP3 (.mp3)
-  - M4A (.m4a)
-
-LUFS Target Values:
-  -18 LUFS: ReplayGain 2.0 standard (default)
-  -16 LUFS: Apple Music standard
-  -14 LUFS: Spotify, Amazon Music, YouTube standard
-  -20 LUFS: TV broadcast standard
-
-Requirements:
-  - rsgain tool (https://github.com/complexlogic/rsgain)
-""")
-    
-    # Input options
-    parser.add_argument(
-        "input",
-        nargs="+",
-        help="Audio files or directories to analyze"
-    )
-    
-    # Operation mode
-    mode_group = parser.add_mutually_exclusive_group(required=True)
-    mode_group.add_argument(
-        "--analyze-only", "--analyze",
-        action="store_true",
-        help="Only analyze files without applying ReplayGain tags"
-    )
-    mode_group.add_argument(
-        "--tag",
-        action="store_true",
-        help="Analyze files and apply ReplayGain tags"
-    )
-    
-    # Analysis options
-    parser.add_argument(
-        "--target-lufs", "--lufs",
-        type=int,
-        default=DEFAULT_TARGET_LUFS,
-        help=f"Target LUFS value for ReplayGain calculation (default: {DEFAULT_TARGET_LUFS})"
-    )
-    parser.add_argument(
-        "--skip-tagged",
-        action="store_true",
-        default=False,
-        help="Skip files that already have ReplayGain tags (default: False - process all files)"
-    )
-    
-    # Directory processing options
-    parser.add_argument(
-        "--recursive", "-r",
-        action="store_true",
-        default=False,
-        help="Process directories recursively (default: False)"
-    )
-    
-    # Output options
-    parser.add_argument(
-        "--detailed", "--verbose",
-        action="store_true",
-        help="Show detailed per-file analysis results"
-    )
-    parser.add_argument(
-        "--quiet", "-q",
-        action="store_true",
-        help="Suppress progress messages, only show summary"
-    )
-    parser.add_argument(
-        "--json",
-        metavar="FILE",
-        help="Save analysis results to JSON file"
-    )
-    
-    # Utility options
-    parser.add_argument(
-        "--check-rsgain",
-        action="store_true",
-        help="Check if rsgain is available and exit"
-    )
-    
-    return parser.parse_args()
+        results = []
+        deleted_count = 0
+        for idx, file_path in enumerate(files, 1):
+            if delete_tags:
+                if self.delete_tags_file(file_path, current_file=idx, total_files=len(files)):
+                    deleted_count += 1
+            elif tag:
+                result = self.analyze_and_tag_file(file_path, skip_tagged, 
+                                                   current_file=idx, total_files=len(files))
+                if result:
+                    results.append(result)
+            else:
+                result = self.analyze_file(file_path, 
+                                          current_file=idx, total_files=len(files))
+                if result:
+                    results.append(result)
+        
+        if delete_tags:
+            # Return summary for delete mode
+            return {'deleted': deleted_count, 'errors': self.error_count}
+        
+        return results
 
 
 def main():
-    """
-    Main function for the ReplayGain analyzer.
-    """
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(
+        description='Analyze and apply ReplayGain tags to audio files'
+    )
+    parser.add_argument('input', type=Path, help='File or directory to process')
+    parser.add_argument('-r', '--recursive', action='store_true',
+                       help='Process subdirectories')
+    parser.add_argument('-t', '--tag', action='store_true',
+                       help='Write ReplayGain tags (default: analyze only)')
+    parser.add_argument('-s', '--skip-tagged', action='store_true',
+                       help='Skip files that already have ReplayGain tags')
+    parser.add_argument('--delete-tags', action='store_true',
+                       help='Delete ReplayGain tags from files')
+    parser.add_argument('-l', '--target-lufs', type=int, default=DEFAULT_TARGET_LUFS,
+                       help=f'Target LUFS value from -30 to -5 (default: {DEFAULT_TARGET_LUFS})')
+    parser.add_argument('--no-preserve-mtimes', action='store_true',
+                       help='Do not preserve file modification times')
     
-    # Set logging level
-    if args.quiet:
-        logger.setLevel(logging.WARNING)
-    
-    # Handle rsgain check
-    if args.check_rsgain:
-        try:
-            analyzer = ReplayGainAnalyzer()
-            print("rsgain is available and ready for use.")
-            sys.exit(0)
-        except RuntimeError as e:
-            print(f"Error: {e}")
-            sys.exit(1)
-    
-    # Use skip-tagged setting directly
-    skip_tagged = args.skip_tagged
-    
-    # Use recursive setting directly
-    recursive = args.recursive
-    
-    # Validate target LUFS range
-    if not (-30 <= args.target_lufs <= -5):
-        logger.warning(f"Target LUFS {args.target_lufs} is outside typical range (-30 to -5). This may not be optimal.")
+    args = parser.parse_args()
     
     try:
-        # Create analyzer
-        analyzer = ReplayGainAnalyzer(target_lufs=args.target_lufs)
+        analyzer = ReplayGainAnalyzer(
+            target_lufs=args.target_lufs,
+            preserve_mtimes=not args.no_preserve_mtimes
+        )
         
-        # Process all inputs
-        all_results = []
-        
-        for input_path in args.input:
-            if not os.path.exists(input_path):
-                logger.error(f"Input does not exist: {input_path}")
-                continue
-            
-            if os.path.isfile(input_path):
-                # Single file
-                if not analyzer.is_supported_file(input_path):
-                    logger.warning(f"Unsupported file: {input_path}")
-                    continue
-                
-                logger.info(f"Processing file: {os.path.basename(input_path)}")
-                
-                if args.analyze_only:
-                    result = analyzer.analyze_file(input_path)
-                else:
-                    result = analyzer.analyze_and_tag_file(input_path, skip_tagged)
-                
-                if result:
-                    all_results.append(result)
-            
-            elif os.path.isdir(input_path):
-                # Directory
-                logger.info(f"Processing directory: {input_path}")
-                
-                if args.analyze_only:
-                    # Use the analyze_directory method for analysis-only mode
-                    results = analyzer.analyze_directory(input_path, recursive, args.analyze_only)
-                else:
-                    # For tagging mode, process each file individually with proper settings
-                    results = []
-                    for root, _, files in os.walk(input_path) if recursive else [(input_path, [], os.listdir(input_path))]:
-                        for file in files:
-                            filepath = os.path.join(root, file)
-                            if analyzer.is_supported_file(filepath):
-                                result = analyzer.analyze_and_tag_file(filepath, skip_tagged)
-                                if result:
-                                    results.append(result)
-                
-                all_results.extend(results)
-            
+        if args.delete_tags:
+            # Delete mode
+            if args.input.is_dir():
+                result = analyzer.analyze_directory(
+                    args.input, args.recursive, delete_tags=True
+                )
+                print(f"\nTag deletion complete:")
+                print(f"  Deleted: {result['deleted']}")
+                if result['errors']:
+                    print(f"  Errors: {result['errors']}")
+                    return 1
             else:
-                logger.error(f"Input is neither file nor directory: {input_path}")
+                # Single file
+                success = analyzer.delete_tags_file(args.input)
+                if not success:
+                    return 1
         
-        # Print summary
-        if not args.quiet:
-            analyzer.print_analysis_summary(all_results, args.detailed)
+        elif args.input.is_dir():
+            # Directory analysis
+            results = analyzer.analyze_directory(
+                args.input, args.recursive, args.tag, args.skip_tagged
+            )
+            
+            print(f"\nAnalysis complete:")
+            print(f"  Analyzed: {analyzer.analyzed_count}")
+            if args.tag:
+                print(f"  Tagged: {analyzer.tagged_count}")
+            if analyzer.error_count:
+                print(f"  Errors: {analyzer.error_count}")
         
-        # Save JSON results if requested
-        if args.json:
-            try:
-                with open(args.json, 'w') as f:
-                    json.dump(all_results, f, indent=2, default=str)
-                logger.info(f"Analysis results saved to: {args.json}")
-            except Exception as e:
-                logger.error(f"Failed to save JSON results: {e}")
+        else:
+            # Single file analysis
+            if args.tag:
+                result = analyzer.analyze_and_tag_file(args.input, args.skip_tagged)
+            else:
+                result = analyzer.analyze_file(args.input)
+            
+            if result:
+                print(f"\nResults for {result['filename']}:")
+                print(f"  Loudness: {result['loudness_lufs']} LUFS")
+                print(f"  Gain: {result['gain_db']} dB")
+                print(f"  Clipping: {result['clipping']}")
+                if args.tag:
+                    print(f"  Tagged: Yes")
+            else:
+                print("Analysis failed")
+                return 1
         
-        # Exit with error code if there were errors
-        if analyzer.error_count > 0:
-            logger.error(f"Analysis completed with {analyzer.error_count} errors")
-            sys.exit(1)
+        return 0
         
-        # Success summary
-        operation = "analyzed" if args.analyze_only else "analyzed and tagged"
-        logger.info(f"Successfully {operation} {analyzer.analyzed_count} files")
-        
-        if not args.analyze_only:
-            logger.info(f"Applied ReplayGain tags to {analyzer.tagged_count} files")
-    
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        sys.exit(1)
+        logger.error(f"Error: {e}")
+        return 1
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())

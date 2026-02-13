@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+create/manages a sqlite database holding information about a music library for fast queries/information displays
+"""
 
 import sys
 import os
@@ -7,14 +10,20 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
-from . import metadata
 
-# Import playlist loading function
+# Handle imports for both package and standalone execution
 try:
+    from . import metadata
     from .playlist import load_m3u_playlist
 except ImportError:
-    print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
-    load_m3u_playlist = None
+    # Add parent directory to path for standalone execution
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core import metadata
+    try:
+        from core.playlist import load_m3u_playlist
+    except ImportError:
+        print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
+        load_m3u_playlist = None
 
 # Supported audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.wav', '.m4a', '.aac', '.wma', '.opus', '.ape', '.mpc'}
@@ -36,7 +45,7 @@ def create_database(db_path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    # Create main songs table heavily based on Strawberry Music Player schema (https://github.com/strawberrymusicplayer/strawberry)
+    # Create main songs table heavily based on Strawberry Music Player schema
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS songs (
             -- Basic metadata
@@ -135,7 +144,6 @@ def create_database(db_path):
     conn.commit()
     return conn
 
-# Generate a simple hash for the file based on path and size
 def get_file_hash(filepath):
     """
     Generate a simple hash for the file based on path and size.
@@ -227,25 +235,16 @@ def scan_directory(directory_path, conn):
                     print(f"Processing: {filepath}")
                     
                     # Extract metadata
-                    metadata = extract_metadata(filepath)
-                    if metadata is None:
+                    metadata_dict = extract_metadata(filepath)
+                    if metadata_dict is None:
                         print(f"Warning: Could not extract metadata from {filepath}")
                         continue
                     
                     # Generate IDs
                     fingerprint = get_file_hash(filepath)
                     song_id = fingerprint
-                    artist_id = hashlib.md5(metadata['artist'].encode()).hexdigest() if metadata['artist'] else ''
-                    album_id = hashlib.md5(f"{metadata['albumartist'] or metadata['artist']}:{metadata['album']}".encode()).hexdigest() if metadata['album'] else ''
-                    
-                    # Check if song already exists in database
-                    cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
-                    existing_song = cursor.fetchone()
-                    
-                    if existing_song:
-                        # Update lastseen timestamp for existing song
-                        cursor.execute('UPDATE songs SET lastseen = ? WHERE id = ?', (int(time.time()), existing_song[0]))
-                        continue
+                    artist_id = hashlib.md5(metadata_dict['artist'].encode()).hexdigest() if metadata_dict['artist'] else ''
+                    album_id = hashlib.md5(f"{metadata_dict['albumartist'] or metadata_dict['artist']}:{metadata_dict['album']}".encode()).hexdigest() if metadata_dict['album'] else ''
                     
                     # Insert into database
                     cursor.execute('''
@@ -258,14 +257,14 @@ def scan_directory(directory_path, conn):
                             lastseen, source
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
-                        metadata['title'], metadata['album'], metadata['artist'], metadata['albumartist'],
-                        metadata['track'], metadata['disc'], metadata['year'], metadata['originalyear'],
-                        metadata['genre'], metadata['composer'], metadata['performer'], metadata['grouping'],
-                        metadata['comment'], metadata['lyrics'],
+                        metadata_dict['title'], metadata_dict['album'], metadata_dict['artist'], metadata_dict['albumartist'],
+                        metadata_dict['track'], metadata_dict['disc'], metadata_dict['year'], metadata_dict['originalyear'],
+                        metadata_dict['genre'], metadata_dict['composer'], metadata_dict['performer'], metadata_dict['grouping'],
+                        metadata_dict['comment'], metadata_dict['lyrics'],
                         file_url, directory_id, Path(filepath).name, file_ext[1:], stat.st_size,
                         int(stat.st_mtime), int(stat.st_ctime),
-                        metadata['length'], metadata['bitrate'], metadata['samplerate'], metadata['bitdepth'],
-                        metadata['compilation'], metadata['art_embedded'], fingerprint, song_id, artist_id, album_id,
+                        metadata_dict['length'], metadata_dict['bitrate'], metadata_dict['samplerate'], metadata_dict['bitdepth'],
+                        metadata_dict['compilation'], metadata_dict['art_embedded'], fingerprint, song_id, artist_id, album_id,
                         int(time.time()), 2  # source = 2 (Collection)
                     ))
                     
@@ -281,6 +280,7 @@ def scan_directory(directory_path, conn):
     print(f"Audio files found: {audio_files_found}")
     print(f"Audio files processed: {audio_files_processed}")
     print(f"Database updated: {audio_files_processed} songs added")
+
 
 def load_playlist_to_database(playlist_path, conn):
     """
@@ -362,8 +362,8 @@ def load_playlist_to_database(playlist_path, conn):
             directory_id = cursor.fetchone()[0]
             
             # Extract metadata
-            metadata = extract_metadata(file_path)
-            if metadata is None:
+            metadata_dict = extract_metadata(file_path)
+            if metadata_dict is None:
                 print(f"  Warning: Could not extract metadata from {file_path}")
                 skipped_count += 1
                 continue
@@ -371,17 +371,8 @@ def load_playlist_to_database(playlist_path, conn):
             # Generate IDs
             fingerprint = get_file_hash(file_path)
             song_id = fingerprint
-            artist_id = hashlib.md5(metadata['artist'].encode()).hexdigest() if metadata['artist'] else ''
-            album_id = hashlib.md5(f"{metadata['albumartist'] or metadata['artist']}:{metadata['album']}".encode()).hexdigest() if metadata['album'] else ''
-            
-            # Check if song already exists in database
-            cursor.execute('SELECT id FROM songs WHERE url = ?', (file_url,))
-            existing_song = cursor.fetchone()
-            
-            if existing_song:
-                print(f"  Already exists: {metadata['artist']} - {metadata['title']}")
-                skipped_count += 1
-                continue
+            artist_id = hashlib.md5(metadata_dict['artist'].encode()).hexdigest() if metadata_dict['artist'] else ''
+            album_id = hashlib.md5(f"{metadata_dict['albumartist'] or metadata_dict['artist']}:{metadata_dict['album']}".encode()).hexdigest() if metadata_dict['album'] else ''
             
             # Insert into database
             file_ext = Path(file_path).suffix.lower()
@@ -395,19 +386,19 @@ def load_playlist_to_database(playlist_path, conn):
                     lastseen, source
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                metadata['title'], metadata['album'], metadata['artist'], metadata['albumartist'],
-                metadata['track'], metadata['disc'], metadata['year'], metadata['originalyear'],
-                metadata['genre'], metadata['composer'], metadata['performer'], metadata['grouping'],
-                metadata['comment'], metadata['lyrics'],
+                metadata_dict['title'], metadata_dict['album'], metadata_dict['artist'], metadata_dict['albumartist'],
+                metadata_dict['track'], metadata_dict['disc'], metadata_dict['year'], metadata_dict['originalyear'],
+                metadata_dict['genre'], metadata_dict['composer'], metadata_dict['performer'], metadata_dict['grouping'],
+                metadata_dict['comment'], metadata_dict['lyrics'],
                 file_url, directory_id, Path(file_path).name, file_ext[1:], stat.st_size,
                 int(stat.st_mtime), int(stat.st_ctime),
-                metadata['length'], metadata['bitrate'], metadata['samplerate'], metadata['bitdepth'],
-                metadata['compilation'], metadata['art_embedded'], fingerprint, song_id, artist_id, album_id,
+                metadata_dict['length'], metadata_dict['bitrate'], metadata_dict['samplerate'], metadata_dict['bitdepth'],
+                metadata_dict['compilation'], metadata_dict['art_embedded'], fingerprint, song_id, artist_id, album_id,
                 int(time.time()), 3  # source = 3 (Playlist)
             ))
             
             added_count += 1
-            print(f"  Added: {metadata['artist']} - {metadata['title']}")
+            print(f"  Added: {metadata_dict['artist']} - {metadata_dict['title']}")
                 
         except Exception as e:
             print(f"  Error processing {file_path}: {e}")
@@ -563,6 +554,6 @@ def main():
     # Exit with appropriate code for success or failure
     sys.exit(0 if success else 1)
 
-# Run file
+
 if __name__ == "__main__":
     main()

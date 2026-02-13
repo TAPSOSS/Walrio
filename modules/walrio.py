@@ -1,108 +1,79 @@
 #!/usr/bin/env python3
-
-
 import os
 import sys
-import argparse
 import subprocess
-import re
 from pathlib import Path
-from typing import Dict
 
-# Add the current directory to Python path for imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
+# Module categories
+CORE_MODULES = ['database', 'metadata', 'player', 'playlist', 'queue']
+ADDON_MODULES = [
+    'apply_loudness', 'convert', 'file_relocater', 'image_converter',
+    'playlist_case_conflicts', 'playlist_cleaner', 'playlist_cloner',
+    'playlist_deleter', 'playlist_fixer', 'playlist_mover',
+    'playlist_overlap', 'playlist_updater', 'rename', 'replay_gain',
+    'resize_album_art'
+]
+NICHE_MODULES = ['walrio_import']
 
-def discover_modules() -> Dict[str, Dict[str, str]]:
-    """
-    Dynamically discover all modules in the addons, niche, and core directories.
-    
-    Returns:
-        dict: Dictionary with module info organized by category
-    """
-    modules_by_category = {
+def discover_modules():
+    """Dynamically discover all modules in the addons, niche, and core directories."""
+    modules_dir = Path(__file__).parent
+    modules = {
+        'core': {},
         'addons': {},
-        'niche': {},
-        'core': {}
+        'niche': {}
     }
     
-    for category in modules_by_category.keys():
-        category_path = Path(current_dir) / category
-        if category_path.exists():
-            for py_file in category_path.glob('*.py'):
-                if not py_file.name.startswith('__'):
-                    module_name = py_file.stem
-                    relative_path = f"{category}/{py_file.name}"
-                    description = extract_module_description(str(py_file))
-                    
-                    modules_by_category[category][module_name] = {
-                        'path': relative_path,
-                        'full_path': str(py_file),
-                        'description': description
-                    }
+    # Scan each directory for Python files
+    for category in ['core', 'addons', 'niche']:
+        category_dir = modules_dir / category
+        if category_dir.exists():
+            for py_file in category_dir.glob('*.py'):
+                # Skip __init__.py and private files
+                if py_file.name.startswith('_'):
+                    continue
+                
+                # Use the full file name (without .py extension) as the module name
+                module_name = py_file.stem
+                
+                modules[category][module_name] = str(py_file)
     
-    return modules_by_category
+    return modules
 
-def extract_module_description(file_path: str) -> str:
-    """
-    Extract description from a Python module's docstring or header comments.
-    
-    Args:
-        file_path (str): Path to the Python file
-        
-    Returns:
-        str: Description of the module
-    """
+def extract_module_description(file_path):
+    """Extract description from a Python module's docstring or header comments."""
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        # First try to extract from docstring
-        docstring_match = re.search(r'"""([^"]*?)"""', content, re.DOTALL)
-        if docstring_match:
-            docstring = docstring_match.group(1).strip()
-            # Look for the first line that's not just metadata
-            lines = docstring.split('\n')
-            for line in lines:
-                line = line.strip()
-                if line and not line.startswith('Copyright') and not line.startswith('Project:') and not line.startswith('Licensed'):
-                    return line
-        
-        # If no docstring, look for header comments
-        lines = content.split('\n')
-        description_started = False
-        for line in lines:
-            line = line.strip()
-            if line.startswith('"""') or line.startswith("'''"):
-                description_started = True
-                continue
-            if description_started and line and not line.startswith('#') and not line.startswith('Copyright') and not line.startswith('Project:'):
-                return line.replace('"""', '').replace("'''", '').strip()
-        
-        # Fallback: try to find any descriptive comment
-        for line in lines[:20]:  # Check first 20 lines
-            if line.strip().startswith('#') and len(line.strip()) > 10:
-                comment = line.strip()[1:].strip()
-                if not comment.startswith('!') and not comment.lower().startswith('copyright'):
-                    return comment
-        
-        return f"Module: {Path(file_path).stem}"
-    except Exception:
-        return f"Module: {Path(file_path).stem}"
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
+            
+            # Look for module docstring
+            in_docstring = False
+            docstring = []
+            
+            for line in lines[:50]:  # Check first 50 lines
+                if '"""' in line or "'''" in line:
+                    if in_docstring:
+                        break
+                    in_docstring = True
+                    continue
+                if in_docstring:
+                    docstring.append(line.strip())
+            
+            if docstring:
+                return ' '.join(docstring[:2])  # First 2 lines
+            
+            # Fall back to file name conversion
+            name = Path(file_path).stem
+            return name.replace('_', ' ').title()
+    except:
+        return "No description available"
 
-def get_all_modules() -> Dict[str, str]:
-    """
-    Get a flattened dictionary of all modules and their paths.
-    
-    Returns:
-        dict: Module name -> relative path mapping
-    """
-    modules_by_category = discover_modules()
+def get_all_modules():
+    """Get a flattened dictionary of all modules and their paths."""
+    discovered = discover_modules()
     all_modules = {}
-    
-    for category, modules in modules_by_category.items():
-        for module_name, module_info in modules.items():
-            all_modules[module_name] = module_info['path']
+    for category in discovered.values():
+        all_modules.update(category)
     
     # Add aliases for common variations (without underscores)
     module_aliases = {
@@ -134,150 +105,112 @@ def get_all_modules() -> Dict[str, str]:
     
     return all_modules
 
-def get_module_path(module_name: str) -> str:
-    """
-    Get the path to a module by its name.
-    
-    Args:
-        module_name (str): Name of the module
-        
-    Returns:
-        str: Path to the module file
-    """
+def get_module_path(module_name):
+    """Get the path to a module by its name."""
     all_modules = get_all_modules()
-    
-    if module_name in all_modules:
-        return all_modules[module_name]
-    else:
-        raise ValueError(f"Module '{module_name}' not found. Available modules: {', '.join(all_modules.keys())}")
+    return all_modules.get(module_name)
 
-def run_module(module_name: str, args: list) -> int:
-    """
-    Run a specific module with the given arguments.
-    
-    Args:
-        module_name (str): Name of the module to run
-        args (list): Command-line arguments to pass to the module
-        
-    Returns:
-        int: Exit code from the module
-    """
+def run_module(module_name, args):
+    """Run a specific module with the given arguments."""
     module_path = get_module_path(module_name)
     
     if not module_path:
-        print(f"Error: Unknown module '{module_name}'", file=sys.stderr)
+        print(f"Error: Module '{module_name}' not found.")
+        print(f"Use 'walrio --help-more' to see available modules.")
         return 1
-    
-    # Convert relative path to absolute path
-    full_module_path = os.path.join(current_dir, module_path)
-    
-    if not os.path.exists(full_module_path):
-        print(f"Error: Module file not found: {full_module_path}", file=sys.stderr)
-        return 1
-    
-    # Execute the module with the provided arguments
-    cmd = [sys.executable, full_module_path] + args
     
     try:
-        result = subprocess.run(cmd, cwd=current_dir)
+        # Run the module
+        cmd = [sys.executable, module_path] + args
+        result = subprocess.run(cmd)
         return result.returncode
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user", file=sys.stderr)
-        return 130
     except Exception as e:
-        print(f"Error running module '{module_name}': {e}", file=sys.stderr)
+        print(f"Error running module '{module_name}': {e}")
         return 1
 
 def print_help():
     """Print basic help information with simple examples."""
-    print("Walrio - Unified Music Library Management System")
-    print("=" * 50)
+    print("Walrio - Unified Audio Library Management System")
     print()
-    print("QUICK START - Common Commands:")
-    print("  python walrio.py convert /path/to/music --format flac")
-    print("  python walrio.py rename /path/to/music")
-    print("  python walrio.py replaygain /path/to/music")
+    print("Usage: walrio <module> [options]")
     print()
-    print("USAGE:")
-    print("  python walrio.py <module_name> [arguments...]")
+    print("Core Modules:")
+    print("  database     - Scan music directories and build SQLite database")
+    print("  metadata     - Edit audio file metadata tags")
+    print("  player       - Play audio files with GStreamer")
+    print("  playlist     - Create and manage M3U playlists")
+    print("  queue        - Manage playback queues")
     print()
-    print("For module-specific help:")
-    print("  python walrio.py <module_name> --help")
+    print("Examples:")
+    print("  walrio database /path/to/music --db-path library.db")
+    print("  walrio playlist --name 'Rock' --artist 'Queen' -o playlists/")
+    print("  walrio player song.mp3")
+    print("  walrio metadata song.mp3 --show")
     print()
-    print("For a list of all modules and descriptions:")
-    print("  python walrio.py --help-more")
-    print()
-    print("For detailed documentation:")
-    print("  https://tapsoss.github.io/Walrio/")
+    print("Options:")
+    print("  --help-more  Show all available modules with descriptions")
+    print("  --version    Show version information")
     print()
 
 def print_help_more():
     """Print detailed help information about all available modules."""
-    print("Walrio - All Available Modules")
-    print("=" * 50)
+    print("Walrio - Complete Module List")
+    print("=" * 70)
     print()
     
-    modules_by_category = discover_modules()
+    modules = discover_modules()
     
-    # Print modules organized by category
-    for category, modules in modules_by_category.items():
-        if modules:  # Only show categories that have modules
-            print(f"{category.upper()} MODULES:")
-            print("-" * 20)
-            for module_name, module_info in sorted(modules.items()):
-                print(f"  {module_name:<15} - {module_info['description']}")
-            print()
-    
-    print("USAGE:")
-    print("  python walrio.py <module_name> [arguments...]")
-    print()
-    print("For module-specific help:")
-    print("  python walrio.py <module_name> --help")
-    print()
-    print("For detailed documentation:")
-    print("  https://tapsoss.github.io/Walrio/")
+    print("CORE MODULES:")
+    print("-" * 70)
+    for name in sorted(modules['core'].keys()):
+        desc = extract_module_description(modules['core'][name])
+        print(f"  {name:20} - {desc}")
     print()
     
-    # Show available modules as a list
-    all_modules = get_all_modules()
-    if all_modules:
-        print(f"Available modules: {', '.join(sorted(all_modules.keys()))}")
+    print("ADDON MODULES:")
+    print("-" * 70)
+    for name in sorted(modules['addons'].keys()):
+        desc = extract_module_description(modules['addons'][name])
+        print(f"  {name:20} - {desc}")
+    print()
+    
+    print("NICHE MODULES:")
+    print("-" * 70)
+    for name in sorted(modules['niche'].keys()):
+        desc = extract_module_description(modules['niche'][name])
+        print(f"  {name:20} - {desc}")
+    print()
+    print("Usage: walrio <module> [module-specific-options]")
     print()
 
 def print_version():
     """Print version information."""
-    print("Walrio Audio Processing Tool")
-    print("Copyright (c) 2025 TAPS OSS")
-    print("Project: https://github.com/TAPSOSS/Walrio")
-    print("Licensed under the BSD-3-Clause License")
+    print("Walrio v2.0 (Remade Edition)")
+    print("Audio Library Management System")
+    print()
 
 def main():
     """Main entry point for the unified Walrio interface."""
     if len(sys.argv) < 2:
         print_help()
-        return
+        return 0
     
-    # Handle help commands
-    if sys.argv[1] in ['-h', '--help']:
+    command = sys.argv[1]
+    
+    # Handle special commands
+    if command in ['--help', '-h', 'help']:
         print_help()
-        return
-    elif sys.argv[1] == '--help-more':
+        return 0
+    elif command in ['--help-more', '-hm']:
         print_help_more()
-        return
+        return 0
+    elif command in ['--version', '-v']:
+        print_version()
+        return 0
     
-    module_name = sys.argv[1]
-    module_args = sys.argv[2:]
-    
-    try:
-        run_module(module_name, module_args)
-    except ValueError as e:
-        print(f"Error: {e}")
-        print()
-        print_help()
-        sys.exit(1)
-    except Exception as e:
-        print(f"Error running module '{module_name}': {e}")
-        sys.exit(1)
+    # Run module
+    module_args = sys.argv[2:] if len(sys.argv) > 2 else []
+    return run_module(command, module_args)
 
 if __name__ == "__main__":
     sys.exit(main())

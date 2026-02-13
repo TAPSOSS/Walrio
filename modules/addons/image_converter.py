@@ -1,39 +1,30 @@
 #!/usr/bin/env python3
+"""
+convert and resize images
+"""
 
-import os
-import sys
 import argparse
 import logging
 import subprocess
+import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 
-
-def setup_logging(level: str = "INFO") -> logging.Logger:
-    """
-    Set up logging configuration.
-    
-    Args:
-        level (str): Logging level ('DEBUG', 'INFO', 'WARNING', 'ERROR')
-        
-    Returns:
-        logging.Logger: Configured logger instance
-    """
-    log_level = getattr(logging, level.upper(), logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    return logging.getLogger(__name__)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger(__name__)
 
 
 def check_imagemagick() -> bool:
     """
-    Check if ImageMagick is available on the system.
+    Check if ImageMagick is available
     
     Returns:
-        bool: True if ImageMagick is available, False otherwise
+        True if available
     """
     try:
         result = subprocess.run(['convert', '-version'], 
@@ -45,10 +36,10 @@ def check_imagemagick() -> bool:
 
 def get_supported_formats() -> Dict[str, str]:
     """
-    Get supported image formats with descriptions.
+    Get supported image formats with descriptions
     
     Returns:
-        dict: Dictionary of format extensions and their descriptions
+        Dictionary of format extensions and descriptions
     """
     return {
         'png': 'PNG - Portable Network Graphics (lossless)',
@@ -70,16 +61,16 @@ def get_supported_formats() -> Dict[str, str]:
 
 def validate_format(format_name: str) -> str:
     """
-    Validate and normalize image format.
+    Validate and normalize image format
     
     Args:
-        format_name (str): Image format name
+        format_name: Image format name
         
     Returns:
-        str: Normalized format name
+        Normalized format name
         
     Raises:
-        ValueError: If format is not supported
+        ValueError: If format not supported
     """
     format_name = format_name.lower().lstrip('.')
     supported = get_supported_formats()
@@ -98,17 +89,26 @@ def validate_format(format_name: str) -> str:
 
 def parse_size(size_str: str, force_stretch: bool = False) -> Tuple[Optional[str], bool]:
     """
-    Parse size string into ImageMagick geometry format.
+    Parse size string into ImageMagick geometry format
+    
+    Supports:
+    - 'WIDTHxHEIGHT' - Resize to fit within dimensions, maintaining aspect ratio
+    - 'WIDTHxHEIGHT!' - Force exact dimensions, ignoring aspect ratio
+    - 'WIDTHxHEIGHT>' - Only shrink larger images
+    - 'WIDTHxHEIGHT<' - Only enlarge smaller images
+    - 'WIDTH' - Set width, maintain aspect ratio
+    - 'xHEIGHT' - Set height, maintain aspect ratio
+    - 'N%' - Percentage scaling
     
     Args:
-        size_str (str): Size string in format 'WIDTHxHEIGHT', 'WIDTH', or 'xHEIGHT'
-        force_stretch (bool): Force exact dimensions, ignoring aspect ratio
+        size_str: Size string
+        force_stretch: Force exact dimensions, ignoring aspect ratio
         
     Returns:
-        tuple: (geometry_string, maintain_aspect_ratio)
+        Tuple of (geometry_string, maintain_aspect_ratio)
         
     Raises:
-        ValueError: If size string is invalid
+        ValueError: If size string invalid
     """
     if not size_str:
         return None, True
@@ -116,6 +116,12 @@ def parse_size(size_str: str, force_stretch: bool = False) -> Tuple[Optional[str
     # Check for percentage
     if size_str.endswith('%'):
         return size_str, True
+    
+    # Check for special suffixes
+    suffix = ''
+    if size_str.endswith(('>', '<', '!', '^', '#')):
+        suffix = size_str[-1]
+        size_str = size_str[:-1]
     
     # Parse dimensions
     if 'x' in size_str:
@@ -125,44 +131,33 @@ def parse_size(size_str: str, force_stretch: bool = False) -> Tuple[Optional[str
         if not width_str and not height_str:
             raise ValueError("Invalid size format. Use 'WIDTHxHEIGHT', 'WIDTH', or 'xHEIGHT'")
         
-        # ImageMagick geometry: WIDTHxHEIGHT! forces exact size (ignores aspect ratio)
+        # Build geometry string
         if force_stretch and width_str and height_str:
             geometry = f"{width_str}x{height_str}!"
             maintain_aspect = False
         else:
-            geometry = f"{width_str}x{height_str}"
-            maintain_aspect = True
+            geometry = f"{width_str}x{height_str}{suffix}"
+            maintain_aspect = suffix != '!'
         
         return geometry, maintain_aspect
     else:
         # Single dimension - assume it's width, maintain aspect ratio
-        return f"{size_str}x", True
+        return f"{size_str}x{suffix}", True
 
 
-def get_image_info(image_path: str) -> Optional[Dict[str, Any]]:
+def get_image_info(image_path: Path) -> Optional[Dict[str, Any]]:
     """
-    Get information about an image using ImageMagick identify command.
+    Get image information using ImageMagick identify
     
     Args:
-        image_path (str): Path to the image file
+        image_path: Path to image file
         
     Returns:
-        dict or None: Image information or None if error
+        Dictionary with image info or None on error
     """
-    logger = logging.getLogger(__name__)
-    
     try:
-        cmd = [
-            'identify',
-            '-format', '%w %h %m %Q %[colorspace] %[orientation]',
-            image_path
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode != 0:
-            logger.error(f"Error getting image info: {result.stderr}")
-            return None
+        cmd = ['identify', '-format', '%w %h %m %Q %[colorspace] %[orientation] %b', str(image_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
         
         parts = result.stdout.strip().split()
         if len(parts) >= 4:
@@ -170,433 +165,380 @@ def get_image_info(image_path: str) -> Optional[Dict[str, Any]]:
                 'width': int(parts[0]),
                 'height': int(parts[1]),
                 'format': parts[2],
-                'quality': parts[3] if parts[3] != '0' else 'N/A',
+                'quality': parts[3] if len(parts) > 3 and parts[3] != '0' else 'N/A',
                 'colorspace': parts[4] if len(parts) > 4 else 'Unknown',
-                'orientation': parts[5] if len(parts) > 5 else 'Unknown'
+                'orientation': parts[5] if len(parts) > 5 else 'Unknown',
+                'size': parts[6] if len(parts) > 6 else 'Unknown'
             }
-        
         return None
-        
-    except (subprocess.TimeoutExpired, ValueError, IndexError) as e:
-        logger.error(f"Error getting image info for {image_path}: {e}")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, IndexError):
         return None
 
 
-def convert_image(input_path: str, 
-                 output_path: str = None,
-                 output_format: str = None,
-                 geometry: str = None,
+def convert_image(input_path: Path, output_path: Path,
+                 output_format: Optional[str] = None,
+                 geometry: Optional[str] = None,
                  quality: int = 100,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
-                 background_color: str = "white") -> bool:
+                 background_color: str = 'white',
+                 current_file: Optional[int] = None,
+                 total_files: Optional[int] = None) -> bool:
     """
-    Convert a single image file using ImageMagick.
+    Convert and/or resize image using ImageMagick
     
     Args:
-        input_path (str): Path to input image file
-        output_path (str, optional): Path for output file (auto-generated if None)
-        output_format (str, optional): Output format (detected from extension if None)
-        geometry (str, optional): ImageMagick geometry string for resizing
-        quality (int): JPEG/WebP quality (1-100, only for lossy formats)
-        auto_orient (bool): Auto-rotate based on EXIF orientation
-        strip_metadata (bool): Remove EXIF metadata
-        background_color (str): Background color for transparency removal
+        input_path: Input image path
+        output_path: Output image path
+        output_format: Target format (inferred from output_path if None)
+        geometry: ImageMagick geometry string (e.g., '800x800', '800x800!')
+        quality: Output quality (1-100)
+        auto_orient: Auto-orient based on EXIF orientation
+        strip_metadata: Remove metadata from output
+        background_color: Background color for transparent images
+        current_file: Current file number for progress display
+        total_files: Total number of files for progress display
         
     Returns:
-        bool: True if conversion successful, False otherwise
+        True if successful
     """
-    logger = logging.getLogger(__name__)
+    if not input_path.exists():
+        logger.error(f"Input file not found: {input_path}")
+        return False
+    
+    # Display progress
+    if current_file and total_files:
+        print(f"\nFile {current_file}/{total_files}: Processing {input_path.name}")
+    else:
+        print(f"\nProcessing {input_path.name}")
+    
+    # Build command
+    cmd = ['convert', str(input_path)]
+    
+    # Auto-orient
+    if auto_orient:
+        cmd.append('-auto-orient')
+        print(f"  → Auto-orienting based on EXIF...")
+    
+    # Resize
+    if geometry:
+        cmd.extend(['-resize', geometry])
+        print(f"  → Resizing to {geometry}...")
+    
+    # Background color (for transparent images)
+    if background_color and output_format in ('jpeg', 'jpg', 'bmp'):
+        cmd.extend(['-background', background_color])
+        cmd.append('-flatten')
+        print(f"  → Flattening transparency with {background_color} background...")
+    
+    # Quality
+    cmd.extend(['-quality', str(quality)])
+    
+    # Strip metadata
+    if strip_metadata:
+        cmd.append('-strip')
+        print(f"  → Stripping metadata...")
+    
+    # Output format
+    if output_format:
+        cmd.append(f"{validate_format(output_format).upper()}:{output_path}")
+    else:
+        cmd.append(str(output_path))
     
     try:
-        # Validate input file
-        if not os.path.isfile(input_path):
-            logger.error(f"Input file does not exist: {input_path}")
-            return False
-        
-        # Determine output path and format
-        if output_path is None:
-            input_stem = Path(input_path).stem
-            output_format = output_format or 'png'
-            output_path = f"{input_stem}_converted.{output_format}"
-        
-        if output_format is None:
-            output_format = Path(output_path).suffix.lstrip('.').lower()
-        
-        output_format = validate_format(output_format)
-        
-        # Build ImageMagick command
-        cmd = ['convert', input_path]
-        
-        # Auto-orient based on EXIF
-        if auto_orient:
-            cmd.append('-auto-orient')
-        
-        # Strip metadata if requested
-        if strip_metadata:
-            cmd.append('-strip')
-        
-        # Resize if geometry specified
-        if geometry:
-            cmd.extend(['-resize', geometry])
-        
-        # Handle transparency for formats that don't support it
-        if output_format in ('jpeg', 'bmp'):
-            cmd.extend(['-background', background_color, '-flatten'])
-        
-        # Set quality for lossy formats
-        if output_format in ('jpeg', 'webp', 'jxl'):
-            cmd.extend(['-quality', str(quality)])
-        
-        # Set output format and path
-        cmd.append(f"{output_format.upper()}:{output_path}")
-        
-        # Execute conversion
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        
-        if result.returncode != 0:
-            logger.error(f"ImageMagick conversion failed: {result.stderr}")
-            return False
-        
-        logger.info(f"Converted: {input_path} -> {output_path}")
+        print(f"  → Converting to {output_format or output_path.suffix.lstrip('.')}...")
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
+        print(f"  ✓ Complete: Saved to {output_path.name}\n")
+        logger.debug(f"Converted {input_path.name} to {output_path.name}")
         return True
-        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"ImageMagick conversion failed: {e.stderr}")
+        return False
     except subprocess.TimeoutExpired:
-        logger.error(f"Conversion timeout for {input_path}")
-        return False
-    except Exception as e:
-        logger.error(f"Error converting {input_path}: {e}")
+        logger.error(f"Conversion timed out for {input_path}")
         return False
 
 
-def convert_batch(input_paths: List[str],
-                 output_dir: str = None,
-                 output_format: str = 'png',
-                 geometry: str = None,
+class ImageConverter:
+    """
+    Image converter with advanced size parsing and format support
+    """
+    
+    def __init__(self, output_format: str = 'png', 
+                 size: str = '1000x1000',
                  quality: int = 100,
+                 force_stretch: bool = True,
                  auto_orient: bool = True,
                  strip_metadata: bool = False,
-                 background_color: str = "white",
-                 overwrite: bool = False) -> Tuple[int, int]:
-    """
-    Convert multiple images in batch using ImageMagick.
-    
-    Args:
-        input_paths (list): List of input image file paths
-        output_dir (str, optional): Output directory (same as input if None)
-        output_format (str): Output format for all images
-        geometry (str, optional): ImageMagick geometry string for resizing
-        quality (int): JPEG/WebP quality (1-100, only for lossy formats)
-        auto_orient (bool): Auto-rotate based on EXIF orientation
-        strip_metadata (bool): Remove EXIF metadata
-        background_color (str): Background color for transparency removal
-        overwrite (bool): Overwrite existing output files
+                 background_color: str = 'white'):
+        """
+        Args:
+            output_format: Target format
+            size: Size specification (e.g., '800x800', '800x800!', '50%')
+            quality: Output quality (1-100)
+            force_stretch: Force exact dimensions
+            auto_orient: Auto-orient based on EXIF
+            strip_metadata: Remove metadata
+            background_color: Background color for transparency removal
+        """
+        self.output_format = validate_format(output_format)
+        self.quality = quality
+        self.force_stretch = force_stretch
+        self.auto_orient = auto_orient
+        self.strip_metadata = strip_metadata
+        self.background_color = background_color
+        self.size_str = size
         
-    Returns:
-        tuple: (successful_count, total_count)
-    """
-    logger = logging.getLogger(__name__)
-    
-    successful = 0
-    total = len(input_paths)
-    
-    # Validate output format
-    try:
-        output_format = validate_format(output_format)
-    except ValueError as e:
-        logger.error(str(e))
-        return 0, total
-    
-    # Create output directory if specified
-    if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-    
-    for input_path in input_paths:
-        try:
-            # Generate output path
-            input_file = Path(input_path)
-            
-            if output_dir:
-                output_path = os.path.join(output_dir, f"{input_file.stem}.{output_format}")
-            else:
-                output_path = str(input_file.with_suffix(f".{output_format}"))
-            
-            # Check if output exists
-            if os.path.exists(output_path) and not overwrite:
-                logger.warning(f"Output file exists, skipping: {output_path}")
-                continue
-            
-            # Convert image
-            if convert_image(
-                input_path=input_path,
-                output_path=output_path,
-                output_format=output_format,
-                geometry=geometry,
-                quality=quality,
-                auto_orient=auto_orient,
-                strip_metadata=strip_metadata,
-                background_color=background_color
-            ):
-                successful += 1
-                
-        except Exception as e:
-            logger.error(f"Error processing {input_path}: {e}")
-    
-    logger.info(f"Batch conversion complete: {successful}/{total} successful")
-    return successful, total
-
-
-def scan_directory(directory: str, recursive: bool = False) -> List[str]:
-    """
-    Scan directory for image files.
-    
-    Args:
-        directory (str): Directory path to scan
-        recursive (bool): Scan subdirectories recursively
+        # Parse size
+        self.geometry, self.maintain_aspect = parse_size(size, force_stretch)
         
-    Returns:
-        list: List of image file paths
-    """
-    logger = logging.getLogger(__name__)
+        # Statistics
+        self.processed_count = 0
+        self.error_count = 0
+        
+        if not check_imagemagick():
+            raise RuntimeError("ImageMagick not found. Install with: apt install imagemagick")
     
-    image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif', 
-                       '.gif', '.ico', '.svg', '.pdf', '.eps', '.psd'}
-    image_files = []
+    def print_settings(self, output_dir: Optional[Path] = None):
+        """Print conversion settings"""
+        print("\n" + "=" * 60)
+        print(f"Image Conversion Settings:")
+        print(f"  Output Format: {self.output_format.upper()}")
+        print(f"  Target Size: {self.size_str}")
+        aspect_mode = "Force exact dimensions" if self.force_stretch else "Maintain aspect ratio"
+        print(f"  Resize Mode: {aspect_mode}")
+        print(f"  Quality: {self.quality}")
+        print(f"  Auto-orient: {'Yes' if self.auto_orient else 'No'}")
+        print(f"  Strip Metadata: {'Yes' if self.strip_metadata else 'No'}")
+        print(f"  Background Color: {self.background_color}")
+        if output_dir:
+            print(f"  Output Directory: {output_dir}")
+        print("=" * 60 + "\n")
     
-    try:
-        if recursive:
-            for root, _, files in os.walk(directory):
-                for file in files:
-                    if Path(file).suffix.lower() in image_extensions:
-                        image_files.append(os.path.join(root, file))
+    def convert_file(self, input_path: Path, output_path: Optional[Path] = None,
+                    overwrite: bool = False, current_file: Optional[int] = None,
+                    total_files: Optional[int] = None) -> Optional[Path]:
+        """
+        Convert single image file
+        
+        Args:
+            input_path: Input image
+            output_path: Output path (auto-generated if None)
+            overwrite: Overwrite existing files
+            current_file: Current file number for progress
+            total_files: Total file count for progress
+            
+        Returns:
+            Path to output file or None on failure
+        """
+        if not input_path.exists():
+            logger.error(f"Input file not found: {input_path}")
+            return None
+        
+        # Determine output path
+        if output_path is None:
+            output_path = input_path.with_suffix(f'.{self.output_format}')
+        
+        # Check if output exists
+        if output_path.exists() and not overwrite:
+            logger.warning(f"Output exists: {output_path} (use --overwrite to overwrite)")
+            return None
+        
+        # Convert
+        success = convert_image(
+            input_path, output_path,
+            output_format=self.output_format,
+            geometry=self.geometry,
+            quality=self.quality,
+            auto_orient=self.auto_orient,
+            strip_metadata=self.strip_metadata,
+            background_color=self.background_color,
+            current_file=current_file,
+            total_files=total_files
+        )
+        
+        if success:
+            self.processed_count += 1
         else:
-            for file in os.listdir(directory):
-                file_path = os.path.join(directory, file)
-                if os.path.isfile(file_path) and Path(file).suffix.lower() in image_extensions:
-                    image_files.append(file_path)
+            self.error_count += 1
         
-        logger.info(f"Found {len(image_files)} image files in {directory}")
-        return sorted(image_files)
+        return output_path if success else None
+    
+    def convert_directory(self, input_dir: Path, output_dir: Optional[Path] = None,
+                         recursive: bool = False, overwrite: bool = False) -> Dict[str, int]:
+        """
+        Convert all images in directory
         
-    except Exception as e:
-        logger.error(f"Error scanning directory {directory}: {e}")
-        return []
-
-
-def parse_arguments():
-    """
-    Parse command line arguments.
-    
-    Returns:
-        argparse.Namespace: Parsed arguments
-    """
-    parser = argparse.ArgumentParser(
-        description="Image Converter - Convert images between different formats and sizes using ImageMagick",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Convert single image to 1000x1000 PNG lossless (default behavior)
-  python imageconverter.py image.png
-
-  # Convert to JXL with lossy compression for smaller file size
-  python imageconverter.py image.png --format jxl --quality 90
-
-  # Convert to different format, keeping default 1000x1000 size
-  python imageconverter.py image.png --format webp
-
-  # Convert with custom dimensions (maintains aspect ratio by default)
-  python imageconverter.py image.png --size 800x600
-
-  # Convert with forced stretching to exact dimensions
-  python imageconverter.py image.png --size 800x600 --stretch true
-
-  # Convert and resize by percentage
-  python imageconverter.py image.png --size 50%
-
-  # Batch convert all images in directory to default 1000x1000 PNG lossless
-  python imageconverter.py /path/to/images --recursive
-
-  # Convert with custom quality and strip metadata
-  python imageconverter.py image.jpg --quality 80 --strip-exif-metadata true
-
-  # Get image information
-  python imageconverter.py image.jpg --info
-
-Supported formats: {}
-
-Note: By default, images maintain their aspect ratio when resized (e.g., 800x600 fits within those dimensions).
-Use --stretch true to force exact dimensions and stretch the image instead.
-
-JXL Quality Modes:
-  Quality 100 (default) - Lossless compression, perfect quality, larger files
-  Quality 90-99        - Near-lossless, visually identical, smaller than lossless
-  Quality 70-89        - High quality lossy, good balance of size/quality
-  Quality < 70         - Lower quality lossy, smallest file sizes
-
-ImageMagick geometry examples:
-  800x600   - Fit within 800x600 maintaining aspect ratio (default behavior)
-  800x600   - With --stretch true: resize to exactly 800x600 (stretches image)
-  800x600!  - Force exact size (stretches - same as --stretch true)
-  800x600>  - Only shrink if larger than 800x600
-  800x600<  - Only enlarge if smaller than 800x600
-  50%       - Resize to 50% of original size
-        """.format(', '.join(get_supported_formats().keys()))
-    )
-    
-    parser.add_argument(
-        'input',
-        nargs='*',
-        help='Input image file(s) or directory'
-    )
-    
-    parser.add_argument(
-        '-f', '--format',
-        default='png',
-        help='Output format (default: png)'
-    )
-    
-    parser.add_argument(
-        '-o', '--output',
-        help='Output file or directory (auto-generated if not specified)'
-    )
-    
-    parser.add_argument(
-        '-s', '--size',
-        default='1000x1000',
-        help='Target size using ImageMagick geometry (default: 1000x1000)'
-    )
-    
-    parser.add_argument(
-        '--stretch', '--st',
-        choices=['true', 'false'],
-        default='true',
-        help='Stretch images to exact dimensions instead of maintaining aspect ratio (default: true)'
-    )
-    
-    parser.add_argument(
-        '-q', '--quality',
-        type=int,
-        default=100,
-        help='Quality setting (1-100, default: 100). For JXL: 100=lossless, <100=lossy. For JPEG/WebP: higher=better quality'
-    )
-    
-    parser.add_argument(
-        '--no-auto-orient',
-        action='store_true',
-        help='Disable auto-orientation based on EXIF'
-    )
-    
-    parser.add_argument(
-        '--strip-exif-metadata', '--sem',
-        choices=['true', 'false'],
-        default='false',
-        help='Remove EXIF metadata from images (default: false)'
-    )
-    
-    parser.add_argument(
-        '--background',
-        default='white',
-        help='Background color for transparency removal (default: white)'
-    )
-    
-    parser.add_argument(
-        '--overwrite',
-        action='store_true',
-        default=False,
-        help='Overwrite existing output files (default: False)'
-    )
-    
-    parser.add_argument(
-        '-r', '--recursive',
-        action='store_true',
-        default=False,
-        help='Process directories recursively (default: False)'
-    )
-    
-    parser.add_argument(
-        '--info',
-        action='store_true',
-        help='Show image information and exit'
-    )
-    
-    parser.add_argument(
-        '--list-formats',
-        action='store_true',
-        help='List supported formats and exit'
-    )
-    
-    parser.add_argument(
-        '--logging',
-        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-        default='INFO',
-        help='Logging level (default: INFO)'
-    )
-    
-    return parser.parse_args()
+        Args:
+            input_dir: Input directory
+            output_dir: Output directory (defaults to input_dir)
+            recursive: Process subdirectories
+            overwrite: Overwrite existing files
+            
+        Returns:
+            Statistics dictionary
+        """
+        if not input_dir.is_dir():
+            raise NotADirectoryError(f"Not a directory: {input_dir}")
+        
+        output_dir = output_dir or input_dir
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Find image files
+        image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', 
+                     '.webp', '.jxl', '.svg', '.ico', '.pdf', '.eps', '.psd'}
+        
+        if recursive:
+            files = []
+            for ext in image_exts:
+                files.extend(input_dir.rglob(f'*{ext}'))
+        else:
+            files = []
+            for ext in image_exts:
+                files.extend(input_dir.glob(f'*{ext}'))
+        
+        if not files:
+            logger.warning(f"No image files found in {input_dir}")
+            return {'converted': 0, 'skipped': 0, 'errors': 0}
+        
+        # Print settings
+        self.print_settings(output_dir)
+        print(f"Found {len(files)} image file(s) to process\n")
+        
+        # Convert each file
+        stats = {'converted': 0, 'skipped': 0, 'errors': 0}
+        
+        for i, file_path in enumerate(files, 1):
+            try:
+                # Preserve directory structure
+                rel_path = file_path.relative_to(input_dir)
+                output_path = output_dir / rel_path.with_suffix(f'.{self.output_format}')
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                result = self.convert_file(file_path, output_path, overwrite, 
+                                          current_file=i, total_files=len(files))
+                if result:
+                    stats['converted'] += 1
+                else:
+                    stats['skipped'] += 1
+                
+            except Exception as e:
+                logger.error(f"Error converting {file_path.name}: {e}")
+                stats['errors'] += 1
+        
+        return stats
 
 
 def main():
-    """
-    Main function for the image converter.
-    """
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(
+        description='Image Converter - Convert images between different formats and sizes using ImageMagick',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Convert single image to 1000x1000 PNG with quality 100 (defaults)
+  %(prog)s image.png
+
+  # Convert to JXL with lossy compression for smaller file size
+  %(prog)s image.png --format jxl --quality 90
+
+  # Convert to different format, keeping default 1000x1000 size
+  %(prog)s image.png --format webp
+
+  # Convert with custom dimensions (forced exact size by default)
+  %(prog)s image.png --size 800x600
+
+  # Convert maintaining aspect ratio instead of stretching
+  %(prog)s image.png --size 800x600 --no-force-stretch
+
+  # Convert and resize by percentage
+  %(prog)s image.png --size 50%%
+
+  # Batch convert all images in directory to default 1000x1000 PNG
+  %(prog)s /path/to/images --recursive
+
+  # Convert with custom quality and strip metadata
+  %(prog)s image.jpg --quality 80 --strip-metadata
+
+  # Get image information
+  %(prog)s image.jpg --info
+
+Supported formats: {}
+
+Note: By default, images are forced to exact dimensions (e.g., 800x600 stretches if needed).
+Use --no-force-stretch to maintain aspect ratio and fit within dimensions instead.
+
+Quality Modes:
+  Quality 100 (default) - Best quality, lossless for formats that support it
+  Quality 90-99        - High quality, good balance for most uses
+  Quality 70-89        - Good quality, smaller file sizes
+  Quality < 70         - Lower quality, smallest file sizes
+
+ImageMagick geometry examples:
+  800x600   - Exact 800x600 (with --force-stretch, default)
+  800x600   - Fit within 800x600 (with --no-force-stretch)
+  800x600!  - Force exact size regardless of --force-stretch flag
+  800x600>  - Only shrink if larger than 800x600
+  800x600<  - Only enlarge if smaller than 800x600
+  50%%      - Resize to 50%% of original size
+        """.format(', '.join(get_supported_formats().keys()))
+    )
     
-    # Set up logging
-    logger = setup_logging(args.logging)
+    parser.add_argument('input', nargs='*', help='Input image file(s) or directory')
+    parser.add_argument('-f', '--format', default='png', help='Output format (default: png)')
+    parser.add_argument('-o', '--output', help='Output file or directory (auto-generated if not specified)')
+    parser.add_argument('-s', '--size', default='1000x1000', help='Target size using ImageMagick geometry (default: 1000x1000)')
+    parser.add_argument('-q', '--quality', type=int, default=100, help='Quality (1-100, default: 100)')
+    parser.add_argument('--force-stretch', action='store_true', default=True, help='Force exact dimensions (default: True)')
+    parser.add_argument('--no-force-stretch', action='store_true', help='Maintain aspect ratio instead of forcing exact dimensions')
+    parser.add_argument('--no-auto-orient', action='store_true', help='Disable auto-orientation based on EXIF')
+    parser.add_argument('--strip-metadata', action='store_true', help='Remove EXIF metadata from images')
+    parser.add_argument('--background', default='white', help='Background color for transparency removal (default: white)')
+    parser.add_argument('--overwrite', action='store_true', default=False, help='Overwrite existing output files (default: False)')
+    parser.add_argument('-r', '--recursive', action='store_true', default=False, help='Process directories recursively (default: False)')
+    parser.add_argument('--info', action='store_true', help='Show image information and exit')
+    parser.add_argument('--list-formats', action='store_true', help='List supported formats and exit')
     
-    # Check if ImageMagick is available
-    if not check_imagemagick():
-        logger.error("ImageMagick is not installed or not in PATH")
-        logger.error("Please install ImageMagick: https://imagemagick.org/script/download.php")
-        sys.exit(1)
+    args = parser.parse_args()
     
     # List formats and exit
     if args.list_formats:
         print("Supported image formats:")
         for fmt, desc in get_supported_formats().items():
             print(f"  {fmt:<6} - {desc}")
-        return
+        return 0
     
-    # Check for input files (required for non-info operations)
+    # Check for input files
     if not args.input and not args.info:
         logger.error("Input files or directories are required")
-        sys.exit(1)
+        return 1
     
     # Validate quality
     if not 1 <= args.quality <= 100:
         logger.error("Quality must be between 1 and 100")
-        sys.exit(1)
+        return 1
     
-    # Parse size/geometry (always has a default value now)
-    try:
-        # Stretch only if explicitly enabled with --stretch true
-        force_stretch = args.stretch == 'true'
-        geometry, _ = parse_size(args.size, force_stretch)
-    except ValueError as e:
-        logger.error(f"Invalid size format: {e}")
-        sys.exit(1)
+    # Determine stretch mode
+    force_stretch = args.force_stretch and not args.no_force_stretch
     
     # Validate format
     try:
         output_format = validate_format(args.format)
     except ValueError as e:
         logger.error(str(e))
-        sys.exit(1)
+        return 1
     
     # Collect input files
     input_files = []
-    for input_path in args.input:
-        if os.path.isfile(input_path):
+    input_dirs = []
+    
+    for input_path_str in args.input:
+        input_path = Path(input_path_str)
+        if input_path.is_file():
             input_files.append(input_path)
-        elif os.path.isdir(input_path):
-            dir_files = scan_directory(input_path, args.recursive)
-            input_files.extend(dir_files)
+        elif input_path.is_dir():
+            input_dirs.append(input_path)
         else:
             logger.warning(f"Input path does not exist: {input_path}")
-    
-    if not input_files:
-        logger.error("No valid input files found")
-        sys.exit(1)
     
     # Show image info and exit
     if args.info:
@@ -609,42 +551,95 @@ def main():
                 print(f"  Quality: {info['quality']}")
                 print(f"  Colorspace: {info['colorspace']}")
                 print(f"  Orientation: {info['orientation']}")
+                print(f"  File size: {info['size']}")
             else:
                 print(f"\n{input_path}: Unable to get image information")
-        return
+        return 0
     
-    # Single file conversion
-    if len(input_files) == 1 and args.output and not os.path.isdir(args.output):
-        success = convert_image(
-            input_path=input_files[0],
-            output_path=args.output,
+    if not input_files and not input_dirs:
+        logger.error("No valid input files or directories found")
+        return 1
+    
+    try:
+        converter = ImageConverter(
             output_format=output_format,
-            geometry=geometry,
+            size=args.size,
             quality=args.quality,
+            force_stretch=force_stretch,
             auto_orient=not args.no_auto_orient,
-            strip_metadata=args.strip_exif_metadata == 'true',
+            strip_metadata=args.strip_metadata,
             background_color=args.background
         )
-        sys.exit(0 if success else 1)
-    
-    # Batch conversion
-    else:
-        output_dir = args.output if args.output and os.path.isdir(args.output) else None
         
-        successful, total = convert_batch(
-            input_paths=input_files,
-            output_dir=output_dir,
-            output_format=output_format,
-            geometry=geometry,
-            quality=args.quality,
-            auto_orient=not args.no_auto_orient,
-            strip_metadata=args.strip_exif_metadata == 'true',
-            background_color=args.background,
-            overwrite=args.overwrite
-        )
+        total_converted = 0
+        total_skipped = 0
+        total_errors = 0
         
-        sys.exit(0 if successful == total else 1)
+        # Process directories
+        for input_dir in input_dirs:
+            output_dir = Path(args.output) if args.output else input_dir
+            stats = converter.convert_directory(input_dir, output_dir, args.recursive, args.overwrite)
+            total_converted += stats['converted']
+            total_skipped += stats['skipped']
+            total_errors += stats['errors']
+        
+        # Process individual files
+        if input_files:
+            # Determine output handling
+            if args.output:
+                output_path = Path(args.output)
+                if len(input_files) == 1 and not output_path.is_dir():
+                    # Single file to specific output
+                    converter.print_settings()
+                    print(f"Found 1 image file to process\n")
+                    result = converter.convert_file(input_files[0], output_path, args.overwrite)
+                    if result:
+                        total_converted += 1
+                    else:
+                        total_errors += 1
+                else:
+                    # Multiple files or directory output
+                    output_path.mkdir(parents=True, exist_ok=True)
+                    converter.print_settings(output_path)
+                    print(f"Found {len(input_files)} image file(s) to process\n")
+                    
+                    for i, input_file in enumerate(input_files, 1):
+                        out_file = output_path / f"{input_file.stem}.{output_format}"
+                        result = converter.convert_file(input_file, out_file, args.overwrite,
+                                                       current_file=i, total_files=len(input_files))
+                        if result:
+                            total_converted += 1
+                        else:
+                            total_errors += 1
+            else:
+                # In-place conversion
+                converter.print_settings()
+                print(f"Found {len(input_files)} image file(s) to process\n")
+                
+                for i, input_file in enumerate(input_files, 1):
+                    output_path = input_file.with_suffix(f'.{output_format}')
+                    result = converter.convert_file(input_file, output_path, args.overwrite,
+                                                   current_file=i, total_files=len(input_files))
+                    if result:
+                        total_converted += 1
+                    else:
+                        total_errors += 1
+        
+        # Print summary
+        print(f"\nConversion completed:")
+        print(f"  Successful: {total_converted}")
+        if total_skipped > 0:
+            print(f"  Skipped: {total_skipped}")
+        if total_errors > 0:
+            print(f"  Errors: {total_errors}")
+            return 1
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        return 1
 
 
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    sys.exit(main())

@@ -58,9 +58,11 @@ jobs:
       - name: Validate PR
         id: validate
         uses: actions/github-script@v7
+        env:
+          PR_BODY: ${{ steps.pr.outputs.result }}
         with:
           script: |
-            const prBody = `${{ steps.pr.outputs.result }}`;
+            const prBody = process.env.PR_BODY || '';
             let errors = [];
             
             // Check for description
@@ -284,7 +286,7 @@ jobs:
                     
                     // Check for class or function definition (not nested in strings)
                     const classMatch = trimmed.match(/^class\s+(\w+)/);
-                    const funcMatch = trimmed.match(/^def\s+(\w+)\s*\((.*?)\)/);
+                    const funcMatch = trimmed.match(/^def\s+(\w+)/);
                     
                     if (classMatch || funcMatch) {
                       const defType = classMatch ? 'class' : 'function';
@@ -375,10 +377,24 @@ jobs:
                       
                       // For functions, check for Args and Returns sections if needed
                       if (funcMatch) {
-                        const params = funcMatch[2];
+                        // Collect full function signature (may span multiple lines)
+                        let fullDef = line;
+                        let parenCount = (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+                        let k = i + 1;
+                        while (parenCount > 0 && k < lines.length) {
+                          fullDef += ' ' + lines[k];
+                          parenCount += (lines[k].match(/\(/g) || []).length - (lines[k].match(/\)/g) || []).length;
+                          k++;
+                        }
+                        
+                        // Extract parameters from full signature
+                        const paramMatch = fullDef.match(/def\s+\w+\s*\(([^)]*)\)/);
+                        const params = paramMatch ? paramMatch[1] : '';
                         const hasParams = params.trim().length > 0 && 
                                          params.trim() !== 'self' && 
-                                         params.trim() !== 'cls';
+                                         params.trim() !== 'cls' &&
+                                         !params.trim().startsWith('self,') &&
+                                         !params.trim().startsWith('cls,');
                         
                         // Check for Args section if function has parameters
                         if (hasParams && !docstring.includes('Args:') && !docstring.includes('Arguments:')) {
@@ -391,7 +407,6 @@ jobs:
                         }
                         
                         // Check for Returns section if function has return type annotation
-                        const fullDef = line + (lines[i + 1] || '');
                         if (fullDef.includes('->') && fullDef.includes('-> None') === false) {
                           if (!docstring.includes('Returns:') && !docstring.includes('Return:')) {
                             issues.push({
@@ -432,11 +447,15 @@ jobs:
       
       - name: Post validation result
         uses: actions/github-script@v7
+        env:
+          VALIDATION_RESULT: ${{ steps.validate.outputs.result }}
+          EMOJI_CHECK_RESULT: ${{ steps.emoji-check.outputs.result }}
+          DOCSTRING_CHECK_RESULT: ${{ steps.docstring-check.outputs.result }}
         with:
           script: |
-            const validation = JSON.parse(`${{ steps.validate.outputs.result }}`);
-            const emojiCheck = JSON.parse(`${{ steps.emoji-check.outputs.result }}`);
-            const docstringCheck = JSON.parse(`${{ steps.docstring-check.outputs.result }}`);
+            const validation = JSON.parse(process.env.VALIDATION_RESULT);
+            const emojiCheck = JSON.parse(process.env.EMOJI_CHECK_RESULT);
+            const docstringCheck = JSON.parse(process.env.DOCSTRING_CHECK_RESULT);
             
             // Track individual test results
             const hasDescription = !validation.errors.some(err => err.includes('description'));

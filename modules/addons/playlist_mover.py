@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+"""
+move playlist file while updating filepaths so they still work correctly when loaded
+"""
 
 import os
 import sys
@@ -148,7 +151,7 @@ def update_playlist_paths(playlist_path, source_dir, dest_dir, dry_run=False):
     return sorted_lines
 
 
-def move_playlist(playlist_path, source_dir, dest_dir, dry_run=False, overwrite=False):
+def move_playlist(playlist_path, source_dir, dest_dir, dry_run=False, overwrite=False, delete_original=False):
     """
     Move a single playlist file to destination directory with updated paths.
     
@@ -158,6 +161,7 @@ def move_playlist(playlist_path, source_dir, dest_dir, dry_run=False, overwrite=
         dest_dir (str): Destination directory.
         dry_run (bool): If True, only show what would be done.
         overwrite (bool): If True, overwrite existing files.
+        delete_original (bool): If True, delete original file after copying.
         
     Returns:
         bool: True if successful, False otherwise.
@@ -187,11 +191,12 @@ def move_playlist(playlist_path, source_dir, dest_dir, dry_run=False, overwrite=
         with open(dest_path, 'w', encoding='utf-8') as f:
             f.writelines(updated_lines)
         
-        print(f"  Successfully moved to: {dest_path}")
+        print(f"  Successfully copied to: {dest_path}")
         
-        # Remove original file after successful copy
-        os.remove(playlist_path)
-        print(f"  Removed original file")
+        # Remove original file if requested
+        if delete_original:
+            os.remove(playlist_path)
+            print(f"  Removed original file")
         
         return True
         
@@ -200,7 +205,7 @@ def move_playlist(playlist_path, source_dir, dest_dir, dry_run=False, overwrite=
         return False
 
 
-def move_all_playlists(source_dir, dest_dir, dry_run=False, overwrite=False, recursive=False):
+def move_all_playlists(source_dir, dest_dir, dry_run=False, overwrite=False, recursive=False, delete_original=False):
     """
     Move all playlist files from source to destination directory.
     
@@ -210,6 +215,7 @@ def move_all_playlists(source_dir, dest_dir, dry_run=False, overwrite=False, rec
         dry_run (bool): If True, only show what would be done.
         overwrite (bool): If True, overwrite existing files.
         recursive (bool): If True, search subdirectories as well.
+        delete_original (bool): If True, delete original files after copying.
         
     Returns:
         tuple: (success_count, skip_count, error_count)
@@ -254,7 +260,7 @@ def move_all_playlists(source_dir, dest_dir, dry_run=False, overwrite=False, rec
     error_count = 0
     
     for playlist_path in playlist_files:
-        result = move_playlist(playlist_path, source_dir, dest_dir, dry_run, overwrite)
+        result = move_playlist(playlist_path, source_dir, dest_dir, dry_run, overwrite, delete_original)
         if result:
             success_count += 1
         elif os.path.exists(os.path.join(dest_dir, os.path.basename(playlist_path))):
@@ -315,6 +321,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--delete-original',
+        action='store_true',
+        help='Delete original playlist files after copying (default: keep originals)'
+    )
+    
+    parser.add_argument(
         '-v', '--version',
         action='version',
         version='Walrio Playlist Mover 1.0'
@@ -340,7 +352,8 @@ Examples:
         dest_dir,
         dry_run=args.dry_run,
         overwrite=args.overwrite,
-        recursive=args.recursive
+        recursive=args.recursive,
+        delete_original=args.delete_original
     )
     
     # Print summary
@@ -349,10 +362,11 @@ Examples:
     print("="*60)
     
     if args.dry_run:
-        print(f"Would move: {success} playlist(s)")
+        print(f"Would copy: {success} playlist(s)")
         print(f"Would skip: {skip} playlist(s) (already exist)")
     else:
-        print(f"Successfully moved: {success} playlist(s)")
+        action = "moved" if args.delete_original else "copied"
+        print(f"Successfully {action}: {success} playlist(s)")
         print(f"Skipped: {skip} playlist(s) (already exist)")
         print(f"Errors: {error} playlist(s)")
     
