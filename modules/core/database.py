@@ -2,7 +2,6 @@
 """
 create/manages a sqlite database holding information about a music library for fast queries/information displays
 """
-
 import sys
 import os
 import sqlite3

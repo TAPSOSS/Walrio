@@ -2,7 +2,6 @@
 """
 convert and resize images
 """
-
 import argparse
 import logging
 import subprocess
@@ -248,7 +247,7 @@ def convert_image(input_path: Path, output_path: Path,
     try:
         print(f"  → Converting to {output_format or output_path.suffix.lstrip('.')}...")
         result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
-        print(f"  ✓ Complete: Saved to {output_path.name}\n")
+        print(f"  [OK] Complete: Saved to {output_path.name}\n")
         logger.debug(f"Converted {input_path.name} to {output_path.name}")
         return True
     except subprocess.CalledProcessError as e:

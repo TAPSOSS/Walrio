@@ -2,7 +2,6 @@
 """
 attempts to clean playlists by removing duplicates and files that dont exist
 """
-
 import argparse
 import logging
 import shutil
@@ -258,7 +257,7 @@ class PlaylistCleaner:
             for full_entry, file_path in cleaned_entries:
                 f.write(full_entry + '\n')
         
-        logger.info("✓ Playlist cleaned successfully!")
+        logger.info("[OK] Playlist cleaned successfully!")
 
 
 def main():

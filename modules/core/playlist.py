@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-
 """
-create and manage Extended M3U (EXTM3U) playlists
+create and manage Extended M3U (EXTM3U) playlists (compatible with M3U)
 """
-
 import sys
 import os
 import sqlite3

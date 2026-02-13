@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
-Database-powered audio queue - requires walrio_library.db to be set up first.
-Optimized version that assumes database exists and skips fallback checks.
+database-powered audio queue requires walrio_library.db to be set up first via database.py module
 """
-
 import os
 import sys
 import argparse

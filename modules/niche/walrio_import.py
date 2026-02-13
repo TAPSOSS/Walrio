@@ -2,7 +2,6 @@
 """
 'import' script which converts to standard filetype, normalizes file loudness, normalizes album art, and renames files. combination of multiple other scripts runnign one after another to normalize a music library.
 """
-
 import sys
 import argparse
 import subprocess

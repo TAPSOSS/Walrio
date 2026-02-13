@@ -2,7 +2,6 @@
 """
 relocate audio files into organized folders based on their metadata
 """
-
 import argparse
 import json
 import logging

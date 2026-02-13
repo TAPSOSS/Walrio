@@ -2,7 +2,6 @@
 """
 file metadata viewer and editor, largley a mutegen wrapper for less outward dependency
 """
-
 import os
 import sys
 import argparse
@@ -502,7 +501,7 @@ class MetadataEditor:
                     del audio.tags['covr']
             
             audio.save()
-            logger.info(f"✓ Removed album art from: {filepath}")
+            logger.info(f"[OK] Removed album art from: {filepath}")
             return True
         except Exception as e:
             logger.error(f"Error removing album art from {filepath}: {e}")
@@ -545,7 +544,7 @@ class MetadataEditor:
                         audio.tags.delall(tag)
                     else:
                         del audio.tags[tag]
-                    logger.info(f"✓ Removed tag '{tag}' from: {Path(filepath).name}")
+                    logger.info(f"[OK] Removed tag '{tag}' from: {Path(filepath).name}")
                     removed = True
                 except:
                     pass
@@ -654,6 +653,12 @@ def extract_metadata(filepath: str) -> Optional[Dict[str, Any]]:
     """
     Convenience function for database.py compatibility.
     Extract metadata from an audio file in database format.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Dictionary with metadata, or None if extraction fails.
     """
     return _get_editor().extract_metadata_for_database(filepath)
 
@@ -661,26 +666,65 @@ def extract_metadata_for_playlist(filepath: str) -> Optional[Dict[str, Any]]:
     """
     Convenience function for playlist.py compatibility.
     Extract metadata from an audio file in playlist format.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Dictionary with simplified metadata, or None if extraction fails.
     """
     return _get_editor().extract_metadata_for_playlist(filepath)
 
 def set_metadata(filepath: str, metadata: Dict[str, Any]) -> bool:
-    """Convenience function to set metadata for a file."""
+    """
+    Convenience function to set metadata for a file.
+    
+    Args:
+        filepath: Path to the audio file.
+        metadata: Dictionary with metadata tags to set.
+        
+    Returns:
+        True if successful, False otherwise.
+    """
     return _get_editor().set_metadata(filepath, metadata)
 
 def set_album_art(filepath: str, image_path: str) -> bool:
-    """Convenience function to set album art for a file."""
+    """
+    Convenience function to set album art for a file.
+    
+    Args:
+        filepath: Path to the audio file.
+        image_path: Path to the image file.
+        
+    Returns:
+        True if successful, False otherwise.
+    """
     return _get_editor().set_album_art(filepath, image_path)
 
 def embed_opus_album_art(opus_filepath: str, image_path: str) -> bool:
     """
     Convenience function to embed album art in OPUS files.
     OPUS files use the same method as OGG Vorbis.
+    
+    Args:
+        opus_filepath: Path to the OPUS audio file.
+        image_path: Path to the image file.
+        
+    Returns:
+        True if successful, False otherwise.
     """
     return set_album_art(opus_filepath, image_path)
 
 def get_duration(filepath: str) -> float:
-    """Get the duration of an audio file in seconds."""
+    """
+    Get the duration of an audio file in seconds.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Duration in seconds, or 0.0 if unavailable.
+    """
     metadata = extract_metadata(filepath)
     return float(metadata.get('length', 0)) if metadata else 0.0
 
@@ -701,51 +745,147 @@ def _get_specific_tag(filepath: str, tag_key: str, alt_keys=None) -> str:
     return str(value)
 
 def get_title(filepath: str) -> str:
-    """Get the title tag from an audio file."""
+    """
+    Get the title tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Title string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'title')
 
 def get_artist(filepath: str) -> str:
-    """Get the artist tag from an audio file."""
+    """
+    Get the artist tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Artist string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'artist')
 
 def get_album(filepath: str) -> str:
-    """Get the album tag from an audio file."""
+    """
+    Get the album tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Album string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'album')
 
 def get_albumartist(filepath: str) -> str:
-    """Get the albumartist tag from an audio file."""
+    """
+    Get the albumartist tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Album artist string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'albumartist')
 
 def get_year(filepath: str) -> str:
-    """Get the year/date tag from an audio file."""
+    """
+    Get the year/date tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Year string, or empty string if not found.
+    """
     return str(_get_specific_tag(filepath, 'year'))
 
 def get_genre(filepath: str) -> str:
-    """Get the genre tag from an audio file."""
+    """
+    Get the genre tag from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Genre string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'genre')
 
 def get_track(filepath: str) -> str:
-    """Get the track number from an audio file."""
+    """
+    Get the track number from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Track number string, or empty string if not found.
+    """
     return str(_get_specific_tag(filepath, 'track'))
 
 def get_disc(filepath: str) -> str:
-    """Get the disc number from an audio file."""
+    """
+    Get the disc number from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Disc number string, or empty string if not found.
+    """
     return str(_get_specific_tag(filepath, 'disc'))
 
 def get_comment(filepath: str) -> str:
-    """Get the comment from an audio file."""
+    """
+    Get the comment from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Comment string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'comment')
 
 def get_composer(filepath: str) -> str:
-    """Get the composer from an audio file."""
+    """
+    Get the composer from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Composer string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'composer')
 
 def get_performer(filepath: str) -> str:
-    """Get the performer from an audio file."""
+    """
+    Get the performer from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Performer string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'performer')
 
 def get_grouping(filepath: str) -> str:
-    """Get the grouping from an audio file."""
+    """
+    Get the grouping from an audio file.
+    
+    Args:
+        filepath: Path to the audio file.
+        
+    Returns:
+        Grouping string, or empty string if not found.
+    """
     return _get_specific_tag(filepath, 'grouping')
 
 def main():

@@ -2,7 +2,6 @@
 """
 clone a playlist somewhere else with options for conversion
 """
-
 import os
 import sys
 import argparse
@@ -270,7 +269,7 @@ class PlaylistCloner:
             with open(output_playlist_path, 'w', encoding='utf-8') as f:
                 f.writelines(updated_lines)
             
-            logger.info(f"  ✓ Playlist file updated: {playlist_name}")
+            logger.info(f"  [OK] Playlist file updated: {playlist_name}")
             logger.info("=" * 80)
         
         # Step 2: Process each audio file
@@ -307,7 +306,7 @@ class PlaylistCloner:
                     )
                     
                     if result_path:
-                        logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                        logger.info(f"  [OK] Converted to: {os.path.basename(output_path)}")
                         self.converted_files += 1
                         
                         # Resize album art if requested and not disabled
@@ -333,7 +332,7 @@ class PlaylistCloner:
                                 )
                                 
                                 if success:
-                                    logger.info(f"  ✓ Album art resized successfully")
+                                    logger.info(f"  [OK] Album art resized successfully")
                                 else:
                                     logger.warning(f"  ⚠ Failed to resize album art")
                             except Exception as e:
@@ -349,7 +348,7 @@ class PlaylistCloner:
                 try:
                     os.makedirs(os.path.dirname(output_path), exist_ok=True)
                     shutil.copy2(input_file, output_path)
-                    logger.info(f"  ✓ Copied to: {os.path.basename(output_path)}")
+                    logger.info(f"  [OK] Copied to: {os.path.basename(output_path)}")
                     self.copied_files += 1
                 except Exception as e:
                     logger.error(f"  ✗ Copy failed: {str(e)}")
@@ -657,7 +656,7 @@ def clone_playlists_batch(playlist_files: List[str],
             with open(output_playlist_path, 'w', encoding='utf-8') as f:
                 f.writelines(updated_lines)
             
-            logger.info(f"  ✓ Updated: {playlist_name}")
+            logger.info(f"  [OK] Updated: {playlist_name}")
         else:
             logger.info(f"  Would update: {playlist_name}")
     
@@ -723,7 +722,7 @@ def clone_playlists_batch(playlist_files: List[str],
                 )
                 
                 if result_path:
-                    logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                    logger.info(f"  [OK] Converted to: {os.path.basename(output_path)}")
                     converted_count += 1
                     
                     # Resize album art if requested
@@ -746,7 +745,7 @@ def clone_playlists_batch(playlist_files: List[str],
                             )
                             
                             if success:
-                                logger.info(f"  ✓ Album art resized successfully")
+                                logger.info(f"  [OK] Album art resized successfully")
                             else:
                                 logger.warning(f"  ⚠ Failed to resize album art")
                         except Exception as e:
@@ -762,7 +761,7 @@ def clone_playlists_batch(playlist_files: List[str],
             try:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 shutil.copy2(input_file, output_path)
-                logger.info(f"  ✓ Copied to: {os.path.basename(output_path)}")
+                logger.info(f"  [OK] Copied to: {os.path.basename(output_path)}")
                 copied_count += 1
             except Exception as e:
                 logger.error(f"  ✗ Copy failed: {str(e)}")

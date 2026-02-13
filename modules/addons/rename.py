@@ -2,7 +2,6 @@
 """
 rename audio files based on metadata tags
 """
-
 import argparse
 import logging
 import os
@@ -302,12 +301,9 @@ class AudioRenamer:
             if field in metadata and metadata[field].strip():
                 format_values[field] = self.sanitize_filename(metadata[field].strip())
             else:
-                if field in METADATA_TAG_MAPPINGS:
-                    missing_fields.append(field)
-                    format_values[field] = ""
-                else:
-                    logger.warning(f"Custom field '{field}' not found in {filepath.name}")
-                    format_values[field] = ""
+                # Field is missing or empty
+                missing_fields.append(field)
+                format_values[field] = ""
         
         if missing_fields:
             logger.warning(f"Missing fields {missing_fields} in {filepath.name}")

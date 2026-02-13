@@ -2,7 +2,6 @@
 """
 move playlist file while updating filepaths so they still work correctly when loaded
 """
-
 import os
 import sys
 import shutil

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 """
 play and manage a song queue with shuffle, repeat, and more
-For database-powered queue, use db_queue.py instead
 """
-
 import sys
 import os
 import argparse

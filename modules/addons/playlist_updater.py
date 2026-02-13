@@ -2,7 +2,6 @@
 """
 updates file paths in playlists when the new path is known (unlike fixer which tries to find the new files afterward)
 """
-
 import logging
 import os
 from pathlib import Path
@@ -251,7 +250,7 @@ class PlaylistUpdater:
                             playlist_data,
                             playlist_name=playlist_path.stem
                         )
-                        logger.info(f"\n✓ Updated {changes_count} track(s) in playlist: {playlist_name}")
+                        logger.info(f"\n[OK] Updated {changes_count} track(s) in playlist: {playlist_name}")
                     
                     self.updated_count += 1
                 else:

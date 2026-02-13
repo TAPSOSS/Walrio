@@ -2,7 +2,6 @@
 """
 convert audio files between various formats with format-specific options
 """
-
 import argparse
 from pathlib import Path
 import subprocess
@@ -256,7 +255,7 @@ class AudioConverter:
                 check=True
             )
             
-            print(f"  ✓ Success: {output_path.name}")
+            print(f"  [OK] Success: {output_path.name}")
             
             # Delete original if requested
             if self.delete_original and output_path.exists() and input_path != output_path:
@@ -390,6 +389,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
 
 
 def main():
+    """Main entry point for audio conversion tool."""
     parser = argparse.ArgumentParser(
         description='Convert audio files between formats using FFmpeg'
     )
