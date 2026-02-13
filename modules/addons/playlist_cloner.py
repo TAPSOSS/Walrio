@@ -52,7 +52,8 @@ class PlaylistCloner:
                  album_art_size: str = '1000x1000',
                  album_art_format: str = 'jpg',
                  dont_resize: bool = False,
-                 dont_convert: bool = False):
+                 dont_convert: bool = False,
+                 playlist_output_subdir: str = 'playlist_data'):
         """
         Initialize the PlaylistCloner.
         
@@ -68,9 +69,11 @@ class PlaylistCloner:
             album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
             dont_resize (bool): Skip album art resizing (default: False)
             dont_convert (bool): Skip format conversion, only copy files (default: False)
+            playlist_output_subdir (str): Subdirectory within output_dir for playlist files (default: playlist_data)
         """
         self.playlist_path = playlist_path
         self.output_dir = output_dir
+        self.playlist_output_subdir = playlist_output_subdir
         self.output_format = output_format
         self.bitrate = bitrate
         self.preserve_structure = preserve_structure
@@ -229,7 +232,9 @@ class PlaylistCloner:
         if not self.dry_run:
             output_ext = SUPPORTED_OUTPUT_FORMATS[self.output_format]['ext']
             playlist_name = os.path.basename(self.playlist_path)
-            output_playlist_path = os.path.join(self.output_dir, playlist_name)
+            playlist_output_dir = os.path.join(self.output_dir, self.playlist_output_subdir)
+            os.makedirs(playlist_output_dir, exist_ok=True)
+            output_playlist_path = os.path.join(playlist_output_dir, playlist_name)
             
             logger.info(f"Updating playlist file: {playlist_name}")
             
@@ -368,7 +373,8 @@ def parse_arguments():
         description="Clone audio files from playlist(s) to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone single playlist (converts to AAC 256k, resizes album art to 1000x1000 jpg by default)
+  # Clone single playlist (converts to AAC 256k, resizes album art to 1000x1000 jpg)
+  # Playlists go to <output>/playlist_data/, audio files go to <output>/Music/
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
   # Clone multiple playlists
@@ -376,6 +382,9 @@ def parse_arguments():
   
   # Clone all playlists from a directory
   python playlist_cloner.py --playlist-dir /path/to/playlists /output/
+  
+  # Clone with custom playlist output location
+  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --playlist-output-dir playlists
   
   # Clone all playlists from directory with separate subdirectories for each
   python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --separate-dirs
@@ -514,6 +523,13 @@ Common bitrate presets:
         help='Use batch mode: update all playlists first, then convert unique files once (recommended for multiple playlists)'
     )
     
+    parser.add_argument(
+        '--playlist-output-dir', '--pod',
+        dest='playlist_output_subdir',
+        default='playlist_data',
+        help='Subdirectory within output directory for playlist files (default: playlist_data)'
+    )
+    
     return parser.parse_args()
 
 
@@ -528,7 +544,8 @@ def clone_playlists_batch(playlist_files: List[str],
                           album_art_format: str = 'jpg',
                           dont_resize: bool = True,
                           dont_convert: bool = False,
-                          separate_dirs: bool = False) -> Tuple[int, int, int, int, int]:
+                          separate_dirs: bool = False,
+                          playlist_output_subdir: str = 'playlist_data') -> Tuple[int, int, int, int, int]:
     """
     Clone multiple playlists in an optimized batch mode.
     First updates all playlist files, then converts unique files only once.
@@ -546,6 +563,7 @@ def clone_playlists_batch(playlist_files: List[str],
         dont_resize (bool): Skip album art resizing
         dont_convert (bool): Skip conversion, only copy
         separate_dirs (bool): Create separate directories per playlist
+        playlist_output_subdir (str): Subdirectory for playlist files (default: playlist_data)
         
     Returns:
         Tuple of (total, converted, copied, skipped, errors)
@@ -572,7 +590,8 @@ def clone_playlists_batch(playlist_files: List[str],
             album_art_size=album_art_size,
             album_art_format=album_art_format,
             dont_resize=dont_resize,
-            dont_convert=dont_convert
+            dont_convert=dont_convert,
+            playlist_output_subdir=playlist_output_subdir
         )
         
         file_paths = cloner._load_playlist_paths()
@@ -590,11 +609,12 @@ def clone_playlists_batch(playlist_files: List[str],
         playlist_name = os.path.basename(playlist_path)
         
         # Determine output playlist directory
+        base_playlist_dir = os.path.join(output_dir, playlist_output_subdir)
         if separate_dirs:
             playlist_basename = os.path.splitext(playlist_name)[0]
-            playlist_output_dir = os.path.join(output_dir, playlist_basename)
+            playlist_output_dir = os.path.join(base_playlist_dir, playlist_basename)
         else:
-            playlist_output_dir = output_dir
+            playlist_output_dir = base_playlist_dir
         
         output_playlist_path = os.path.join(playlist_output_dir, playlist_name)
         
@@ -661,7 +681,8 @@ def clone_playlists_batch(playlist_files: List[str],
         album_art_size=album_art_size,
         album_art_format=album_art_format,
         dont_resize=dont_resize,
-        dont_convert=dont_convert
+        dont_convert=dont_convert,
+        playlist_output_subdir=playlist_output_subdir
     )
     
     for idx, input_file in enumerate(sorted(all_files), 1):
@@ -822,7 +843,8 @@ def main():
                 album_art_format=args.album_art_format,
                 dont_resize=args.dont_resize,
                 dont_convert=args.dont_convert,
-                separate_dirs=args.separate_dirs
+                separate_dirs=args.separate_dirs,
+                playlist_output_subdir=args.playlist_output_subdir
             )
             total_errors = errors
         else:
@@ -853,7 +875,8 @@ def main():
                     album_art_size=args.album_art_size,
                     album_art_format=args.album_art_format,
                     dont_resize=args.dont_resize,
-                    dont_convert=args.dont_convert
+                    dont_convert=args.dont_convert,
+                    playlist_output_subdir=args.playlist_output_subdir
                 )
                 
                 # Clone the playlist
