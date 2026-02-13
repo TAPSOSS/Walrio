@@ -243,20 +243,42 @@ def extract_metadata(file_path):
             'genre': 'Unknown'
         }
 
-def scan_directory(directory_path):
-    """Scan directory recursively for audio files."""
+def scan_directory(directory_path, recursive=False):
+    """Scan directory for audio files.
+    
+    Args:
+        directory_path: Path to directory to scan
+        recursive: If True, scan subdirectories recursively
+    """
     audio_files = []
     
-    for root, dirs, files in os.walk(directory_path):
-        for file in sorted(files):
-            file_path = os.path.join(root, file)
-            if Path(file_path).suffix.lower() in AUDIO_EXTENSIONS:
-                audio_files.append(file_path)
+    if recursive:
+        # Scan recursively with os.walk
+        for root, dirs, files in os.walk(directory_path):
+            for file in sorted(files):
+                file_path = os.path.join(root, file)
+                if Path(file_path).suffix.lower() in AUDIO_EXTENSIONS:
+                    audio_files.append(file_path)
+    else:
+        # Only scan top level directory
+        if os.path.isdir(directory_path):
+            for file in sorted(os.listdir(directory_path)):
+                file_path = os.path.join(directory_path, file)
+                if os.path.isfile(file_path) and Path(file_path).suffix.lower() in AUDIO_EXTENSIONS:
+                    audio_files.append(file_path)
     
     return audio_files
 
-def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False, playlist_name="Playlist"):
-    """Create playlist from list of files and folders."""
+def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False, playlist_name="Playlist", recursive=False):
+    """Create playlist from list of files and folders.
+    
+    Args:
+        inputs: List of file or directory paths
+        playlist_path: Output path for the playlist
+        use_absolute_paths: Use absolute paths in playlist
+        playlist_name: Name of the playlist
+        recursive: Scan directories recursively
+    """
     songs = []
     
     for input_path in inputs:
@@ -281,9 +303,10 @@ def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False,
                         'length': 0
                     })
         elif os.path.isdir(input_path):
-            # Directory - scan recursively
-            print(f"Scanning directory: {input_path}")
-            audio_files = scan_directory(input_path)
+            # Directory - scan with or without recursion
+            scan_msg = f"Scanning directory{' recursively' if recursive else ''}: {input_path}"
+            print(scan_msg)
+            audio_files = scan_directory(input_path, recursive=recursive)
             
             for file_path in audio_files:
                 meta = extract_metadata(file_path)
@@ -320,6 +343,7 @@ def main():
     parser.add_argument('--name', help='Name of the playlist')
     parser.add_argument('--output', '-o', help='Output directory or full path for playlist file')
     parser.add_argument('--absolute', action='store_true', help='Use absolute paths instead of relative')
+    parser.add_argument('--recursive', '-r', action='store_true', help='Scan directories recursively')
     
     # Database query options
     parser.add_argument('--db-path', default=DEFAULT_DB_PATH, 
@@ -376,7 +400,7 @@ def main():
                 print(f"Error: Input file not found: {args.input_file}")
                 return 1
         
-        if create_playlist_from_inputs(inputs, output_path, args.absolute, args.name):
+        if create_playlist_from_inputs(inputs, output_path, args.absolute, args.name, args.recursive):
             return 0
         else:
             return 1
