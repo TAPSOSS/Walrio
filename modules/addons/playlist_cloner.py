@@ -13,8 +13,19 @@ from typing import List, Dict, Optional, Tuple
 
 # Add parent directory to path for module imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from addons.convert import AudioConverter, SUPPORTED_OUTPUT_FORMATS, BITRATE_PRESETS
+from addons.convert import AudioConverter
 from addons.resize_album_art import resize_album_art
+
+# Define supported formats (from AudioConverter.FORMATS)
+SUPPORTED_OUTPUT_FORMATS = {
+    'mp3': {'ext': 'mp3'},
+    'aac': {'ext': 'm4a'},
+    'opus': {'ext': 'opus'},
+    'ogg': {'ext': 'ogg'},
+    'flac': {'ext': 'flac'},
+    'alac': {'ext': 'm4a'},
+    'wav': {'ext': 'wav'},
+}
 
 # Configure logging
 logging.basicConfig(
@@ -207,14 +218,12 @@ class PlaylistCloner:
             os.makedirs(self.output_dir, exist_ok=True)
         
         # Setup converter
-        converter_options = {
-            'output_format': self.output_format,
-            'bitrate': self.bitrate,
-            'metadata': 'y',
-            'skip_existing': self.skip_existing,
-            'force_overwrite': False,
-        }
-        converter = AudioConverter(converter_options)
+        converter = AudioConverter(
+            output_format=self.output_format,
+            bitrate=self.bitrate,
+            preserve_metadata=True,
+            delete_original=False
+        )
         
         # Step 1: Update playlist file first (before converting files)
         if not self.dry_run:
@@ -279,46 +288,50 @@ class PlaylistCloner:
             # Check if conversion is needed
             if self._needs_conversion(input_file) and not self.dont_convert:
                 # Convert the file
-                output_subdir = os.path.dirname(output_path)
-                success, reason = converter.convert_file(input_file, output_subdir)
-                
-                if success and reason == 'converted':
-                    logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
-                    self.converted_files += 1
+                try:
+                    result_path = converter.convert_file(
+                        Path(input_file),
+                        Path(output_path),
+                        force_overwrite=not self.skip_existing
+                    )
                     
-                    # Resize album art if requested and not disabled
-                    if self.album_art_size and not self.dont_resize:
-                        try:
-                            format_map = {
-                                'jpg': 'jpeg',
-                                'jpeg': 'jpeg',
-                                'png': 'png',
-                                'gif': 'gif',
-                                'webp': 'webp',
-                            }
-                            resize_format = format_map.get(self.album_art_format.lower(), 'jpeg')
-                            
-                            logger.info(f"  Resizing album art to {self.album_art_size} ({self.album_art_format})")
-                            success = resize_album_art(
-                                audio_file=output_path,
-                                size=self.album_art_size,
-                                quality=100,
-                                format=resize_format,
-                                maintain_aspect=False,
-                                backup=False
-                            )
-                            
-                            if success:
-                                logger.info(f"  ✓ Album art resized successfully")
-                            else:
-                                logger.warning(f"  ⚠ Failed to resize album art")
-                        except Exception as e:
-                            logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
-                elif success and reason in ('already_target_format', 'skipped_existing'):
-                    logger.info(f"  → Skipped: {reason}")
-                    self.skipped_files += 1
-                else:
-                    logger.error(f"  ✗ Conversion failed")
+                    if result_path:
+                        logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                        self.converted_files += 1
+                        
+                        # Resize album art if requested and not disabled
+                        if self.album_art_size and not self.dont_resize:
+                            try:
+                                format_map = {
+                                    'jpg': 'jpeg',
+                                    'jpeg': 'jpeg',
+                                    'png': 'png',
+                                    'gif': 'gif',
+                                    'webp': 'webp',
+                                }
+                                resize_format = format_map.get(self.album_art_format.lower(), 'jpeg')
+                                
+                                logger.info(f"  Resizing album art to {self.album_art_size} ({self.album_art_format})")
+                                success = resize_album_art(
+                                    audio_file=output_path,
+                                    size=self.album_art_size,
+                                    quality=100,
+                                    format=resize_format,
+                                    maintain_aspect=False,
+                                    backup=False
+                                )
+                                
+                                if success:
+                                    logger.info(f"  ✓ Album art resized successfully")
+                                else:
+                                    logger.warning(f"  ⚠ Failed to resize album art")
+                            except Exception as e:
+                                logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
+                    else:
+                        logger.info(f"  → Skipped")
+                        self.skipped_files += 1
+                except Exception as e:
+                    logger.error(f"  ✗ Conversion failed: {str(e)}")
                     self.error_files += 1
             else:
                 # Copy the file (already in target format)
@@ -391,8 +404,8 @@ Supported output formats:
 
 Common bitrate presets:
   Opus: 64k (low), 128k (medium), 192k (high - default), 256k (maximum)
-  MP3:  96k (low), 192k (medium), 320k (high)
-  AAC:  96k (low), 192k (medium), 256k (high)
+  MP3:  128k (low), 192k (medium), 320k (high)
+  AAC:  128k (low), 192k (medium), 256k (high)
 """
     )
     
@@ -620,14 +633,12 @@ def clone_playlists_batch(playlist_files: List[str],
     logger.info("\nStep 3: Converting unique audio files...")
     logger.info("=" * 80)
     
-    converter_options = {
-        'output_format': output_format,
-        'bitrate': bitrate,
-        'metadata': 'y',
-        'skip_existing': skip_existing,
-        'force_overwrite': False,
-    }
-    converter = AudioConverter(converter_options)
+    converter = AudioConverter(
+        output_format=output_format,
+        bitrate=bitrate,
+        preserve_metadata=True,
+        delete_original=False
+    )
     
     converted_count = 0
     copied_count = 0
@@ -671,43 +682,47 @@ def clone_playlists_batch(playlist_files: List[str],
         
         # Convert or copy file
         if first_cloner._needs_conversion(input_file) and not dont_convert:
-            output_subdir = os.path.dirname(output_path)
-            success, reason = converter.convert_file(input_file, output_subdir)
-            
-            if success and reason == 'converted':
-                logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
-                converted_count += 1
+            try:
+                result_path = converter.convert_file(
+                    Path(input_file),
+                    Path(output_path),
+                    force_overwrite=not skip_existing
+                )
                 
-                # Resize album art if requested
-                if album_art_size and not dont_resize:
-                    try:
-                        format_map = {
-                            'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png',
-                            'gif': 'gif', 'webp': 'webp',
-                        }
-                        resize_format = format_map.get(album_art_format.lower(), 'jpeg')
-                        
-                        logger.info(f"  Resizing album art to {album_art_size} ({album_art_format})")
-                        success = resize_album_art(
-                            audio_file=output_path,
-                            size=album_art_size,
-                            quality=100,
-                            format=resize_format,
-                            maintain_aspect=False,
-                            backup=False
-                        )
-                        
-                        if success:
-                            logger.info(f"  ✓ Album art resized successfully")
-                        else:
-                            logger.warning(f"  ⚠ Failed to resize album art")
-                    except Exception as e:
-                        logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
-            elif success and reason in ('already_target_format', 'skipped_existing'):
-                logger.info(f"  → Skipped: {reason}")
-                skipped_count += 1
-            else:
-                logger.error(f"  ✗ Conversion failed")
+                if result_path:
+                    logger.info(f"  ✓ Converted to: {os.path.basename(output_path)}")
+                    converted_count += 1
+                    
+                    # Resize album art if requested
+                    if album_art_size and not dont_resize:
+                        try:
+                            format_map = {
+                                'jpg': 'jpeg', 'jpeg': 'jpeg', 'png': 'png',
+                                'gif': 'gif', 'webp': 'webp',
+                            }
+                            resize_format = format_map.get(album_art_format.lower(), 'jpeg')
+                            
+                            logger.info(f"  Resizing album art to {album_art_size} ({album_art_format})")
+                            success = resize_album_art(
+                                audio_file=output_path,
+                                size=album_art_size,
+                                quality=100,
+                                format=resize_format,
+                                maintain_aspect=False,
+                                backup=False
+                            )
+                            
+                            if success:
+                                logger.info(f"  ✓ Album art resized successfully")
+                            else:
+                                logger.warning(f"  ⚠ Failed to resize album art")
+                        except Exception as e:
+                            logger.warning(f"  ⚠ Error resizing album art: {str(e)}")
+                else:
+                    logger.info(f"  → Skipped")
+                    skipped_count += 1
+            except Exception as e:
+                logger.error(f"  ✗ Conversion failed: {str(e)}")
                 error_count += 1
         else:
             # Copy the file
