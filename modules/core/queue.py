@@ -540,7 +540,6 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 # Display song info
                 print(f"\n[{queue_manager.current_index + 1}/{len(songs)}] Now playing: {format_song_info(song)}")
                 print(f"File: {file_path}")
-                print("queue/play> ", end="", flush=True)
                 
                 # Load and play the song
                 if not player.load_file(file_path):
@@ -552,6 +551,9 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                     if not queue_manager.next_track_skip_missing():
                         break
                     continue
+                
+                # Show prompt after playback starts
+                print("queue/play> ", end="", flush=True)
                 
                 # Track if we manually changed tracks
                 manual_track_change = False
@@ -601,7 +603,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
     print(f"Volume: {player.get_volume():.2f}")
     print("\nPlayback running in background. Type commands below:")
-    print("Commands: next, previous, pause, resume, stop, current, queue, all, volume, seek, shuffle, repeat, backlog, help")
+    print("Commands: next, previous, pause, resume, stop, current, queue, list, volume, seek, shuffle, repeat, backlog, help")
     
     # Command loop
     while playback_active['running'] and thread.is_alive():
@@ -764,7 +766,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                     print(f"\n  ... and {remaining - 10} more songs")
                 print()
             
-            elif command in ['all', 'list']:
+            elif command in ['list']:
                 # Show entire queue
                 print("\n=== Complete Queue ===")
                 current_idx = queue_manager.current_index
@@ -784,7 +786,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 print("  stop/quit - Stop playback and return to queue mode")
                 print("  current/c - Show current song info and position")
                 print("  queue/show - Show upcoming songs in queue")
-                print("  all/list - Show entire queue with current position")
+                print("  list - Show entire queue with current position")
                 print("  volume <0.0-1.0> - Set volume (or volume +0.1, volume -0.1)")
                 print("  seek <seconds> - Seek to position (or seek +10, seek -10)")
                 print("  shuffle - Toggle shuffle mode")
@@ -942,7 +944,7 @@ def interactive_mode(conn):
                 print("  stop/quit - Stop playback and return to queue mode")
                 print("  current/c - Show current song info and playback position")
                 print("  queue/show - Show upcoming songs in queue")
-                print("  all/list - Show entire queue with current position")
+                print("  list - Show entire queue with current position")
                 print("  volume <value> - Set volume (0.0-1.0), or volume +0.1, volume -0.1")
                 print("  seek <seconds> - Seek to position, or seek +10, seek -10")
                 print("  shuffle - Toggle shuffle mode on/off")
