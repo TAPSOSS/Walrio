@@ -53,12 +53,12 @@ class LoudnessApplicator:
     
     def _check_ffmpeg(self):
         """Check FFmpeg availability"""
-        for tool in ['ffmpeg', 'ffprobe']:
-            try:
-                subprocess.run([tool, '-version'], capture_output=True, check=True)
-                logger.debug(f"{tool} is available")
-            except (subprocess.CalledProcessError, FileNotFoundError):
-                raise RuntimeError(f"{tool} not found. Install FFmpeg.")
+        # Only check ffmpeg, not ffprobe (we use metadata module instead)
+        try:
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            logger.debug("ffmpeg is available")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            raise RuntimeError("ffmpeg not found. Install FFmpeg.")
     
     def is_supported_file(self, filepath: str) -> bool:
         """Check if file is supported"""
@@ -214,32 +214,23 @@ class LoudnessApplicator:
             return None
     
     def get_audio_properties(self, filepath: str) -> Dict[str, Any]:
-        """Get audio properties using FFprobe"""
+        """Get audio properties using metadata module"""
         try:
-            cmd = [
-                "ffprobe", "-v", "error",
-                "-select_streams", "a:0",
-                "-show_entries", "stream=bits_per_raw_sample,bits_per_sample,sample_rate,channels",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(filepath)
-            ]
+            handler = metadata.MetadataEditor()
+            file_metadata = handler.get_metadata(filepath)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            
-            if result.returncode != 0:
+            if not file_metadata:
                 return {}
             
-            lines = result.stdout.strip().splitlines()
             properties = {}
             
-            if len(lines) >= 1 and lines[0].isdigit():
-                properties['bits_per_raw_sample'] = int(lines[0])
-            if len(lines) >= 2 and lines[1].isdigit():
-                properties['bits_per_sample'] = int(lines[1])
-            if len(lines) >= 3 and lines[2].isdigit():
-                properties['sample_rate'] = int(lines[2])
-            if len(lines) >= 4 and lines[3].isdigit():
-                properties['channels'] = int(lines[3])
+            # Map metadata fields to expected property names
+            if 'bitdepth' in file_metadata and file_metadata['bitdepth']:
+                properties['bits_per_sample'] = int(file_metadata['bitdepth'])
+            if 'samplerate' in file_metadata and file_metadata['samplerate']:
+                properties['sample_rate'] = int(file_metadata['samplerate'])
+            if 'channels' in file_metadata and file_metadata['channels']:
+                properties['channels'] = int(file_metadata['channels'])
             
             return properties
             
@@ -267,18 +258,16 @@ class LoudnessApplicator:
         print("=" * 60 + "\n")
     
     def _has_album_art(self, filepath: str) -> bool:
-        """Check if file has album art"""
+        """Check if file has album art using metadata module"""
         try:
-            cmd = [
-                "ffprobe", "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=codec_type",
-                "-of", "csv=p=0",
-                str(filepath)
-            ]
+            handler = metadata.MetadataEditor()
+            file_metadata = handler.get_metadata(filepath)
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-            return result.returncode == 0 and "video" in result.stdout.lower()
+            if not file_metadata:
+                return False
+            
+            # Check 'art_embedded' field from metadata
+            return file_metadata.get('art_embedded', 0) == 1
             
         except Exception:
             return False

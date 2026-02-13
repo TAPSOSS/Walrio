@@ -4,11 +4,9 @@ rename audio files based on metadata tags
 """
 
 import argparse
-import json
 import logging
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -21,6 +19,12 @@ try:
 except ImportError:
     PlaylistUpdater = None
     logging.warning("PlaylistUpdater not available - playlist updating disabled")
+
+try:
+    from core import metadata
+except ImportError:
+    metadata = None
+    logging.warning("metadata module not available - metadata extraction disabled")
 
 # Configure logging
 logging.basicConfig(
@@ -38,20 +42,6 @@ AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.ogg', '.m4a', '.aac', '.opus', '.
 
 # Default naming format
 DEFAULT_FORMAT = "{title} - {album} - {albumartist} - {year}"
-
-# Metadata tag mappings for common fields
-METADATA_TAG_MAPPINGS = {
-    'title': ['title', 'Title', 'TITLE', 'TIT2', 'track_title', 'Track Title'],
-    'album': ['album', 'Album', 'ALBUM', 'TALB', 'album_title', 'Album Title'],
-    'artist': ['artist', 'Artist', 'ARTIST', 'TPE1', 'AlbumArtist', 'albumartist', 'ALBUMARTIST'],
-    'albumartist': ['albumartist', 'AlbumArtist', 'ALBUMARTIST', 'TPE2', 'album_artist', 'Album Artist', 'ALBUM ARTIST'],
-    'track': ['track', 'Track', 'TRACK', 'TRCK', 'tracknumber', 'TrackNumber', 'track_number'],
-    'year': ['year', 'Year', 'YEAR', 'date', 'Date', 'DATE', 'TYER', 'TDRC'],
-    'genre': ['genre', 'Genre', 'GENRE', 'TCON'],
-    'disc': ['disc', 'Disc', 'DISC', 'discnumber', 'DiscNumber', 'disc_number', 'TPOS'],
-    'composer': ['composer', 'Composer', 'COMPOSER', 'TCOM'],
-    'comment': ['comment', 'Comment', 'COMMENT', 'COMM'],
-}
 
 
 class AudioRenamer:
@@ -113,15 +103,9 @@ class AudioRenamer:
         if update_playlists and PlaylistUpdater:
             self.playlist_updater = PlaylistUpdater(update_playlists, dry_run)
         
-        self._check_ffprobe()
-    
-    def _check_ffprobe(self):
-        """Check FFprobe availability"""
-        try:
-            subprocess.run(['ffprobe', '-version'], 
-                          capture_output=True, check=True)
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("FFprobe not found. Install FFmpeg.")
+        # Check metadata module availability
+        if not metadata:
+            raise RuntimeError("metadata module not available. Check installation.")
     
     def prompt_allow_special_chars(self, original: str, sanitized: str) -> bool:
         """
@@ -255,7 +239,7 @@ class AudioRenamer:
     
     def get_file_metadata(self, filepath: Path) -> Dict[str, str]:
         """
-        Extract metadata using FFprobe
+        Extract metadata using metadata module
         
         Args:
             filepath: Audio file path
@@ -264,40 +248,29 @@ class AudioRenamer:
             Metadata dictionary
         """
         try:
-            cmd = [
-                'ffprobe', '-v', 'quiet', 
-                '-print_format', 'json', 
-                '-show_format', str(filepath)
-            ]
+            editor = metadata.MetadataEditor()
+            raw_metadata = editor.get_metadata(str(filepath))
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            file_info = json.loads(result.stdout)
+            if not raw_metadata:
+                self.metadata_error_count += 1
+                return {}
             
-            metadata = {}
-            if 'format' in file_info and 'tags' in file_info['format']:
-                tags = file_info['format']['tags']
-                
-                # Map pre-defined fields
-                for field_name, tag_variants in METADATA_TAG_MAPPINGS.items():
-                    for tag_key in tag_variants:
-                        if tag_key in tags:
-                            metadata[field_name] = tags[tag_key]
-                            break
-                
-                # Special handling for year
-                if 'year' in metadata and not self.full_date:
-                    date_value = metadata['year']
-                    year_match = re.search(r'\b(19|20)\d{2}\b', str(date_value))
-                    if year_match:
-                        metadata['year'] = year_match.group(0)
-                
-                # Store all raw tags for custom access
-                for key, value in tags.items():
-                    metadata[key] = value
+            # Convert to string values for filename generation
+            result = {}
+            for key, value in raw_metadata.items():
+                if value:
+                    result[key] = str(value)
             
-            return metadata
+            # Special handling for year
+            if 'year' in result and not self.full_date:
+                year_value = result['year']
+                year_match = re.search(r'\b(19|20)\d{2}\b', str(year_value))
+                if year_match:
+                    result['year'] = year_match.group(0)
             
-        except (subprocess.CalledProcessError, json.JSONDecodeError) as e:
+            return result
+            
+        except Exception as e:
             logger.warning(f"Could not read metadata from {filepath.name}: {e}")
             self.metadata_error_count += 1
             return {}
