@@ -219,7 +219,7 @@ class PlaylistDeleter:
                     self._delete_empty_parent_dirs(file_path)
                     
                 except Exception as e:
-                    logger.error(f"  ✗ Failed to delete: {str(e)}")
+                    logger.error(f"  [ERROR] Failed to delete: {str(e)}")
                     self.error_files += 1
         
         logger.info("\n" + "=" * 80)
@@ -241,7 +241,7 @@ class PlaylistDeleter:
                     os.remove(self.playlist_path)
                     logger.info(f"[OK] Deleted playlist file: {self.playlist_path}")
                 except Exception as e:
-                    logger.error(f"✗ Failed to delete playlist file: {str(e)}")
+                    logger.error(f"[ERROR] Failed to delete playlist file: {str(e)}")
                     self.error_files += 1
         
         logger.info("=" * 80)

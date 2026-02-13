@@ -417,6 +417,7 @@ class FileRelocater:
 
 
 def main():
+    """CLI entry point for the file relocater tool."""
     parser = argparse.ArgumentParser(
         description='Organize audio library into folder structures based on metadata'
     )

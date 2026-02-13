@@ -519,6 +519,7 @@ class AudioRenamer:
 
 
 def main():
+    """CLI entry point for the rename tool."""
     parser = argparse.ArgumentParser(
         description='Rename audio files based on metadata'
     )

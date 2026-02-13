@@ -23,7 +23,14 @@ DEFAULT_DB_PATH = "walrio_library.db"
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.mp4', '.aac', '.wv', '.ape', '.mpc', '.wav'}
 
 def connect_to_database(db_path):
-    """Connect to the SQLite database and return connection."""
+    """Connect to the SQLite database and return connection.
+    
+    Args:
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        Database connection object or None on failure.
+    """
     if not os.path.exists(db_path):
         print(f"Error: Database not found: {db_path}")
         return None
@@ -36,7 +43,15 @@ def connect_to_database(db_path):
         return None
 
 def get_songs_from_database(conn, filters=None):
-    """Get songs from database based on filters."""
+    """Get songs from database based on filters.
+    
+    Args:
+        conn: Database connection object.
+        filters: Optional dict with 'artist', 'album', 'genre' keys for filtering.
+        
+    Returns:
+        List of song records matching the filters.
+    """
     cursor = conn.cursor()
     query = "SELECT * FROM songs WHERE unavailable = 0"
     params = []
@@ -58,7 +73,14 @@ def get_songs_from_database(conn, filters=None):
     return cursor.fetchall()
 
 def format_song_info(song):
-    """Format song information for display."""
+    """Format song information for display.
+    
+    Args:
+        song: Song record dict with keys like 'artist', 'title', 'album', etc.
+        
+    Returns:
+        Formatted string with song information.
+    """
     artist = song.get('artist') or 'Unknown Artist'
     title = song.get('title') or 'Unknown Title'
     album = song.get('album') or 'Unknown Album'
@@ -78,7 +100,15 @@ def format_song_info(song):
     return f"{track}{artist} - {title} ({album}){duration}"
 
 def get_relative_path(file_path, playlist_path):
-    """Convert file path to relative path from playlist location."""
+    """Convert file path to relative path from playlist location.
+    
+    Args:
+        file_path: Absolute path to audio file.
+        playlist_path: Path to the playlist file.
+        
+    Returns:
+        Relative path from playlist directory to the file.
+    """
     # Remove file:// prefix if present
     if file_path.startswith('file://'):
         file_path = file_path[7:]
@@ -92,7 +122,17 @@ def get_relative_path(file_path, playlist_path):
         return file_path
 
 def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist_name="Playlist"):
-    """Create Extended M3U (EXTM3U) playlist file with metadata from a list of songs."""
+    """Create Extended M3U (EXTM3U) playlist file with metadata from a list of songs.
+    
+    Args:
+        songs: List of song dicts with metadata.
+        playlist_path: Output path for the playlist file.
+        use_absolute_paths: Use absolute paths instead of relative.
+        playlist_name: Name/title for the playlist.
+        
+    Returns:
+        True if successful, False otherwise.
+    """
     try:
         # Ensure directory exists
         playlist_dir = Path(playlist_path).parent
@@ -144,7 +184,14 @@ def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist
         return False
 
 def load_m3u_playlist(playlist_path):
-    """Load songs from M3U/Extended M3U playlist file."""
+    """Load songs from M3U/Extended M3U playlist file.
+    
+    Args:
+        playlist_path: Path to the M3U playlist file.
+        
+    Returns:
+        List of song dicts with metadata and file paths.
+    """
     if not os.path.exists(playlist_path):
         print(f"Error: Playlist not found: {playlist_path}")
         return []
@@ -224,7 +271,14 @@ def load_m3u_playlist(playlist_path):
         return []
 
 def extract_metadata(file_path):
-    """Extract metadata from audio file using the centralized metadata module."""
+    """Extract metadata from audio file using the centralized metadata module.
+    
+    Args:
+        file_path: Path to the audio file.
+        
+    Returns:
+        Dict with metadata including title, artist, album, etc.
+    """
     try:
         return metadata.extract_metadata_for_playlist(file_path)
     except Exception as e:

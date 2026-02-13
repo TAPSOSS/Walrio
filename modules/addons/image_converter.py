@@ -429,6 +429,7 @@ class ImageConverter:
 
 
 def main():
+    """CLI entry point for the image converter tool."""
     parser = argparse.ArgumentParser(
         description='Image Converter - Convert images between different formats and sizes using ImageMagick',
         formatter_class=argparse.RawDescriptionHelpFormatter,
