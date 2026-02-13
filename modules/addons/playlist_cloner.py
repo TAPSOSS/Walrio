@@ -256,7 +256,11 @@ class PlaylistCloner:
                         else:
                             base = base[2:]
                     # All files go into Music/ subdirectory relative to playlist
-                    updated_line = f"Music/{base}.{output_ext}\n"
+                    # Check if path already starts with Music/ to avoid doubling it
+                    if not base.startswith('Music/'):
+                        updated_line = f"Music/{base}.{output_ext}\n"
+                    else:
+                        updated_line = f"{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
@@ -639,7 +643,11 @@ def clone_playlists_batch(playlist_files: List[str],
                         else:
                             base = base[2:]
                     # All files go into Music/ subdirectory relative to playlist
-                    updated_line = f"Music/{base}.{output_ext}\n"
+                    # Check if path already starts with Music/ to avoid doubling it
+                    if not base.startswith('Music/'):
+                        updated_line = f"Music/{base}.{output_ext}\n"
+                    else:
+                        updated_line = f"{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
