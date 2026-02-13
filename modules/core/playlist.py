@@ -9,7 +9,14 @@ import os
 import sqlite3
 import argparse
 from pathlib import Path
-from . import metadata
+
+# Handle imports for both package and standalone execution
+try:
+    from . import metadata
+except ImportError:
+    # Add parent directory to path for standalone execution
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core import metadata
 
 # Default database path
 DEFAULT_DB_PATH = "walrio_library.db"

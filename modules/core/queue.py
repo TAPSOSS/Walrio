@@ -12,9 +12,18 @@ import hashlib
 import time
 from pathlib import Path
 from enum import Enum
-from .player import play_audio
-from .playlist import load_m3u_playlist
-from . import metadata
+
+# Handle imports for both package and standalone execution
+try:
+    from .player import play_audio
+    from .playlist import load_m3u_playlist
+    from . import metadata
+except ImportError:
+    # Add parent directory to path for standalone execution
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core.player import play_audio
+    from core.playlist import load_m3u_playlist
+    from core import metadata
 
 # Debug mode - set to False to disable debug logging for efficiency
 DEBUG_MODE = False

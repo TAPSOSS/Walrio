@@ -10,14 +10,20 @@ import argparse
 import hashlib
 import time
 from pathlib import Path
-from . import metadata
 
-# Import playlist loading function
+# Handle imports for both package and standalone execution
 try:
+    from . import metadata
     from .playlist import load_m3u_playlist
 except ImportError:
-    print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
-    load_m3u_playlist = None
+    # Add parent directory to path for standalone execution
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from core import metadata
+    try:
+        from core.playlist import load_m3u_playlist
+    except ImportError:
+        print("Warning: playlist.py not found. Playlist loading functionality will be disabled.")
+        load_m3u_playlist = None
 
 # Supported audio file extensions
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.wav', '.m4a', '.aac', '.wma', '.opus', '.ape', '.mpc'}
