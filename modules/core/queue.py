@@ -553,17 +553,27 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                         break
                     continue
                 
+                # Track if we manually changed tracks
+                manual_track_change = False
+                
                 # Wait for playback to complete or command
                 while player.is_playing and playback_active['running']:
                     with playback_lock:
                         if playback_active['skip_requested']:
                             playback_active['skip_requested'] = False
+                            manual_track_change = True
                             player.stop()
+                            if not queue_manager.next_track_skip_missing():
+                                playback_active['running'] = False
                             break
                         if playback_active['previous_requested']:
                             playback_active['previous_requested'] = False
+                            manual_track_change = True
                             player.stop()
-                            queue_manager.previous_track()
+                            # previous_track() returns False if can't go back
+                            if not queue_manager.previous_track():
+                                print("Already at beginning of playback history.")
+                                manual_track_change = False  # Stay on current song
                             break
                     time.sleep(0.1)
                 
@@ -572,8 +582,8 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                     player.stop()
                     break
                 
-                # Move to next track after playback completes (if not manually skipped)
-                if player.is_playing == False and not playback_active['skip_requested'] and not playback_active['previous_requested']:
+                # Move to next track after natural playback completion (not manual skip/previous)
+                if not manual_track_change:
                     if not queue_manager.next_track_skip_missing():
                         break
         
@@ -591,7 +601,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
     print(f"Volume: {player.get_volume():.2f}")
     print("\nPlayback running in background. Type commands below:")
-    print("Commands: next, previous, pause, resume, stop, current, volume, seek, shuffle, repeat, backlog, help")
+    print("Commands: next, previous, pause, resume, stop, current, queue, all, volume, seek, shuffle, repeat, backlog, help")
     
     # Command loop
     while playback_active['running'] and thread.is_alive():
@@ -619,7 +629,6 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
             elif command in ['previous', 'prev', 'p']:
                 with playback_lock:
                     playback_active['previous_requested'] = True
-                print("Going to previous track...")
             
             elif command == 'pause':
                 player.pause()
@@ -718,6 +727,54 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 else:
                     print("No playback history yet.")
             
+            elif command in ['queue', 'show', 'q']:
+                # Show upcoming songs in queue
+                current_idx = queue_manager.current_index
+                print("\n=== Upcoming Queue ===")
+                print(f"Currently playing: [{current_idx + 1}/{len(queue_manager.songs)}]")
+                
+                # Show next 10 songs
+                upcoming_count = 0
+                temp_idx = current_idx
+                shown_indices = set()
+                
+                # Simulate what would play next based on current queue manager state
+                for i in range(min(10, len(queue_manager.songs))):
+                    # Calculate next index based on repeat mode
+                    if queue_manager.repeat_mode == RepeatMode.TRACK:
+                        next_idx = temp_idx
+                    elif queue_manager.repeat_mode == RepeatMode.QUEUE:
+                        next_idx = (temp_idx + 1) % len(queue_manager.songs)
+                    else:
+                        next_idx = temp_idx + 1
+                        if next_idx >= len(queue_manager.songs):
+                            break
+                    
+                    if next_idx < len(queue_manager.songs):
+                        song = queue_manager.songs[next_idx]
+                        marker = "(repeat)" if next_idx in shown_indices else ""
+                        print(f"  {i+1:2d}. {format_song_info(song)} {marker}")
+                        shown_indices.add(next_idx)
+                        temp_idx = next_idx
+                    else:
+                        break
+                
+                remaining = len(queue_manager.songs) - current_idx - 1
+                if remaining > 10:
+                    print(f"\n  ... and {remaining - 10} more songs")
+                print()
+            
+            elif command in ['all', 'list']:
+                # Show entire queue
+                print("\n=== Complete Queue ===")
+                current_idx = queue_manager.current_index
+                for i, song in enumerate(queue_manager.songs):
+                    marker = ">" if i == current_idx else " "
+                    print(f"{marker}  {i+1:3d}. {format_song_info(song)}")
+                print(f"\nTotal: {len(queue_manager.songs)} songs")
+                print(f"Shuffle: {'ON' if queue_manager.shuffle else 'OFF'}")
+                print(f"Repeat: {queue_manager.repeat_mode.name}\n")
+            
             elif command == 'help':
                 print("\nPlayback Commands:")
                 print("  next/n - Skip to next track")
@@ -726,6 +783,8 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 print("  resume - Resume playback")
                 print("  stop/quit - Stop playback and return to queue mode")
                 print("  current/c - Show current song info and position")
+                print("  queue/show - Show upcoming songs in queue")
+                print("  all/list - Show entire queue with current position")
                 print("  volume <0.0-1.0> - Set volume (or volume +0.1, volume -0.1)")
                 print("  seek <seconds> - Seek to position (or seek +10, seek -10)")
                 print("  shuffle - Toggle shuffle mode")
@@ -882,6 +941,8 @@ def interactive_mode(conn):
                 print("  resume - Resume playback")
                 print("  stop/quit - Stop playback and return to queue mode")
                 print("  current/c - Show current song info and playback position")
+                print("  queue/show - Show upcoming songs in queue")
+                print("  all/list - Show entire queue with current position")
                 print("  volume <value> - Set volume (0.0-1.0), or volume +0.1, volume -0.1")
                 print("  seek <seconds> - Seek to position, or seek +10, seek -10")
                 print("  shuffle - Toggle shuffle mode on/off")
