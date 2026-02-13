@@ -244,12 +244,14 @@ class PlaylistCloner:
                 if stripped and not stripped.startswith('#'):
                     # This is a file path - update extension and prepend Music/ folder
                     base = os.path.splitext(stripped)[0]
-                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
-                    if stripped.startswith('../'):
-                        updated_line = f"{base}.{output_ext}\n"
-                    else:
-                        # Extract just the relative path portion and prepend Music/
-                        updated_line = f"Music/{base}.{output_ext}\n"
+                    # Remove any leading ../ or ./ since files are in Music/ subdirectory
+                    while base.startswith('../') or base.startswith('./'):
+                        if base.startswith('../'):
+                            base = base[3:]
+                        else:
+                            base = base[2:]
+                    # All files go into Music/ subdirectory relative to playlist
+                    updated_line = f"Music/{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
@@ -610,12 +612,14 @@ def clone_playlists_batch(playlist_files: List[str],
                 if stripped and not stripped.startswith('#'):
                     # This is a file path - update extension and prepend Music/ folder
                     base = os.path.splitext(stripped)[0]
-                    # If path starts with ../ (relative), keep it; otherwise make it relative to Music folder
-                    if stripped.startswith('../'):
-                        updated_line = f"{base}.{output_ext}\n"
-                    else:
-                        # Extract just the relative path portion and prepend Music/
-                        updated_line = f"Music/{base}.{output_ext}\n"
+                    # Remove any leading ../ or ./ since files are in Music/ subdirectory
+                    while base.startswith('../') or base.startswith('./'):
+                        if base.startswith('../'):
+                            base = base[3:]
+                        else:
+                            base = base[2:]
+                    # All files go into Music/ subdirectory relative to playlist
+                    updated_line = f"Music/{base}.{output_ext}\n"
                     updated_lines.append(updated_line)
                 else:
                     # Comment or empty line - keep as is
