@@ -507,8 +507,8 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     print(f"\n=== Playing {len(songs)} songs ===")
     print(f"Repeat mode: {repeat_mode}")
     print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
-    print("Press Ctrl+C to control playback")
-    print("Controls: 'q'=quit, 'n'=next, 'p'=previous, 's'=toggle shuffle, 'i'=instant shuffle, 'r'=repeat mode\n")
+    print("\nPress Ctrl+C to access playback controls")
+    print("Controls: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog\n")
     
     while queue_manager.has_songs():
         song = queue_manager.current_song()
@@ -547,7 +547,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
         except KeyboardInterrupt:
             # Interactive control menu
             print("\n\nPlayback paused.")
-            print("Commands: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat")
+            print("Commands: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog, [c]urrent")
             
             try:
                 choice = input("Choose action: ").strip().lower()
@@ -579,6 +579,38 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                     current_idx = modes.index(queue_manager.repeat_mode)
                     next_mode = modes[(current_idx + 1) % len(modes)]
                     queue_manager.set_repeat_mode(next_mode)
+                elif choice == 'b':
+                    # Show playback history/backlog
+                    if queue_manager.playback_history:
+                        print("\n=== Playback History (Backlog) ===")
+                        # Show last 20 songs from history
+                        recent_history = queue_manager.playback_history[-20:]
+                        for i, idx in enumerate(recent_history, 1):
+                            if 0 <= idx < len(queue_manager.songs):
+                                song = queue_manager.songs[idx]
+                                print(f"  {i:2d}. {format_song_info(song)}")
+                        if len(queue_manager.playback_history) > 20:
+                            print(f"\n  ... and {len(queue_manager.playback_history) - 20} more songs in history")
+                        print()
+                    else:
+                        print("No playback history yet.")
+                elif choice == 'c':
+                    # Show current song info
+                    current = queue_manager.current_song()
+                    if current:
+                        print("\n=== Current Song ===")
+                        print(f"Position: [{queue_manager.current_index + 1}/{len(queue_manager.songs)}]")
+                        print(f"Title: {current.get('title', 'Unknown')}")
+                        print(f"Artist: {current.get('artist', 'Unknown')}")
+                        print(f"Album: {current.get('album', 'Unknown')}")
+                        print(f"Duration: {current.get('length', 0)} seconds")
+                        file_path = current.get('url', current.get('filepath', ''))
+                        if file_path.startswith('file://'):
+                            file_path = file_path[7:]
+                        print(f"File: {file_path}")
+                        print()
+                    else:
+                        print("No song currently playing.")
                 else:
                     print("Invalid choice. Resuming playback...")
             
@@ -629,7 +661,10 @@ def interactive_mode(conn):
     print("  shuffle - Toggle shuffle mode")
     print("  repeat - Toggle repeat mode")
     print("  clear - Clear current queue")
+    print("  info - Show playback controls information")
     print("  quit - Exit interactive mode")
+    print()
+    print("Note: During playback, press Ctrl+C for playback controls.")
     print()
     
     shuffle_mode = False
@@ -710,8 +745,19 @@ def interactive_mode(conn):
             elif command == 'clear':
                 queue = []
                 print("Queue cleared.")
+            elif command == 'info':
+                print("\n=== Playback Controls (available during playback) ===")
+                print("During playback, press Ctrl+C to access these controls:")
+                print("  [q]uit - Stop playback and return to queue mode")
+                print("  [n]ext - Skip to next track")
+                print("  [p]revious - Go to previous track (uses playback history)")
+                print("  [s]huffle - Toggle shuffle mode on/off")
+                print("  [i]nstant shuffle - Physically reorder the entire queue")
+                print("  [r]epeat - Cycle through repeat modes (off → track → queue)")
+                print("\nNote: Volume control and seeking require GStreamer integration.")
+                print("For more advanced controls, use the standalone player module.\n")
             elif command == 'help':
-                print("Commands: list, filter, load, playlist, show, play, shuffle, repeat, clear, quit")
+                print("Commands: list, filter, load, playlist, show, play, shuffle, repeat, clear, info, quit")
             else:
                 print("Unknown command. Type 'help' for available commands.")
                 
