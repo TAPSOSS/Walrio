@@ -51,8 +51,8 @@ class PlaylistCloner:
                  dry_run: bool = False,
                  album_art_size: str = '1000x1000',
                  album_art_format: str = 'jpg',
-                 dont_resize: bool = True,
-                 dont_convert: bool = True):
+                 dont_resize: bool = False,
+                 dont_convert: bool = False):
         """
         Initialize the PlaylistCloner.
         
@@ -62,8 +62,8 @@ class PlaylistCloner:
             output_format (str): Output audio format (default: aac)
             bitrate (str): Bitrate for lossy formats (default: 256k)
             preserve_structure (bool): If True, preserve folder structure; if False, flatten (default: True)
-            skip_existing (bool): Skip files that already exist in destination
-            dry_run (bool): If True, show what would be done without actually doing it
+            skip_existing (bool): Skip files that already exist in destination (default: True)
+            dry_run (bool): If True, show what would be done without actually doing it (default: False)
             album_art_size (str): Album art size for resizing (default: 1000x1000)
             album_art_format (str): Album art format (jpg, png, etc.) (default: jpg)
             dont_resize (bool): Skip album art resizing (default: False)
@@ -368,7 +368,7 @@ def parse_arguments():
         description="Clone audio files from playlist(s) to a new directory with optional format conversion",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  # Clone single playlist (just copy files, no conversion or resizing by default)
+  # Clone single playlist (converts to AAC 256k, resizes album art to 1000x1000 jpg by default)
   python playlist_cloner.py my_playlist.m3u /media/usb/music/
   
   # Clone multiple playlists
@@ -380,14 +380,14 @@ def parse_arguments():
   # Clone all playlists from directory with separate subdirectories for each
   python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --separate-dirs
   
-  # Clone all playlists with 256kbps AAC conversion
-  python playlist_cloner.py --playlist-dir /path/to/playlists /output/ --format aac --bitrate 256k
+  # Just copy files without conversion or resizing
+  python playlist_cloner.py my_playlist.m3u /output/ --dont-convert --dont-resize
   
   # Clone with MP3 format at 320kbps, no resizing
   python playlist_cloner.py my_playlist.m3u /output/ --format mp3 --bitrate 320k --dont-resize
   
-  # Clone with preserved folder structure and resize album art to 1000x1000
-  python playlist_cloner.py my_playlist.m3u /output/ --preserve-structure --album-art-size 1000x1000 --album-art-format jpg
+  # Clone with flattened folder structure (all files in one folder)
+  python playlist_cloner.py my_playlist.m3u /output/ --flatten
   
   # Clone to FLAC (lossless) - good for archival
   python playlist_cloner.py my_playlist.m3u /backup/ --format flac
