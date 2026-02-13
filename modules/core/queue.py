@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """
 play and manage a song queue with shuffle, repeat, and more
+For database-powered queue, use db_queue.py instead
 """
 
 import sys
 import os
-import sqlite3
 import argparse
 import random
-import hashlib
 import time
 import threading
 from pathlib import Path
@@ -358,40 +357,6 @@ class QueueManager:
         print("Queue finished - no more songs to play")
         return (False, None)
 
-def connect_to_database(db_path):
-    """Connect to the SQLite database and return connection."""
-    if not os.path.exists(db_path):
-        print(f"Error: Database not found: {db_path}")
-        return None
-    try:
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except Exception as e:
-        print(f"Error connecting to database: {e}")
-        return None
-
-def get_songs_from_database(conn, filters=None):
-    """Get songs from database based on filters."""
-    cursor = conn.cursor()
-    query = "SELECT * FROM songs WHERE unavailable = 0"
-    params = []
-    
-    if filters:
-        if 'artist' in filters and filters['artist']:
-            query += " AND artist LIKE ?"
-            params.append(f"%{filters['artist']}%")
-        if 'album' in filters and filters['album']:
-            query += " AND album LIKE ?"
-            params.append(f"%{filters['album']}%")
-        if 'genre' in filters and filters['genre']:
-            query += " AND genre LIKE ?"
-            params.append(f"%{filters['genre']}%")
-    
-    query += " ORDER BY artist, album, disc, track"
-    cursor.execute(query, params)
-    return cursor.fetchall()
-
 def format_song_info(song):
     """Format song information for display with comprehensive metadata."""
     artist = song.get('artist') or "Unknown Artist"
@@ -428,72 +393,15 @@ def display_queue(queue, current_index=0):
         print(f"{marker}{i+1:3d}. {format_song_info(song)}")
     print()
 
-def add_missing_song_to_database(file_path, conn):
-    """Add missing song to database automatically during playback."""
-    if not conn:
-        return False
-    
-    try:
-        from . import database
-        
-        # Get metadata
-        meta = metadata.extract_metadata(file_path)
-        if not meta:
-            return False
-        
-        # Get directory
-        dir_path = str(Path(file_path).parent)
-        cursor = conn.cursor()
-        
-        # Add directory if not exists
-        dir_stat = os.stat(dir_path)
-        cursor.execute('INSERT OR IGNORE INTO directories (path, mtime) VALUES (?, ?)',
-                      (dir_path, int(dir_stat.st_mtime)))
-        
-        # Get directory ID
-        cursor.execute('SELECT id FROM directories WHERE path = ?', (dir_path,))
-        directory_id = cursor.fetchone()[0]
-        
-        # Generate IDs
-        stat = os.stat(file_path)
-        fingerprint = hashlib.md5(f"{file_path}:{stat.st_size}:{stat.st_mtime}".encode()).hexdigest()
-        file_url = f"file://{file_path}"
-        
-        # Insert song
-        cursor.execute('''
-            INSERT INTO songs (
-                title, album, artist, albumartist, track, disc, year, genre,
-                url, directory_id, basefilename, filetype, filesize, mtime, ctime,
-                length, bitrate, samplerate, bitdepth, compilation, art_embedded,
-                fingerprint, lastseen, source
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            meta['title'], meta['album'], meta['artist'], meta['albumartist'],
-            meta['track'], meta['disc'], meta['year'], meta['genre'],
-            file_url, directory_id, Path(file_path).name, Path(file_path).suffix[1:],
-            stat.st_size, int(stat.st_mtime), int(stat.st_ctime),
-            meta['length'], meta['bitrate'], meta['samplerate'], meta['bitdepth'],
-            meta['compilation'], meta['art_embedded'], fingerprint,
-            int(time.time()), 2
-        ))
-        
-        conn.commit()
-        print(f"  [Added to database: {meta['artist']} - {meta['title']}]")
-        return True
-    except Exception as e:
-        print(f"  [Failed to add to database: {e}]")
-        return False
-
-def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0, conn=None):
+def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0):
     """
     Play songs using QueueManager with AudioPlayer - non-blocking with command interface.
     
     Args:
-        songs: List of song dictionaries or database records
+        songs: List of song dictionaries from playlists
         repeat_mode: Repeat mode - "off", "track", or "queue"
         shuffle: Enable shuffle mode
         start_index: Index to start playback from
-        conn: Database connection for auto-adding missing songs
     """
     if not songs:
         print("Queue is empty. Nothing to play.")
@@ -529,9 +437,6 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
                 if not os.path.exists(file_path):
                     print(f"\nFile not found: {file_path}")
                     song['file_missing'] = True
-                    if conn:
-                        print("  [Attempting to auto-add from filesystem...]")
-                        add_missing_song_to_database(file_path, conn)
                     
                     if not queue_manager.next_track_skip_missing():
                         break
@@ -814,7 +719,7 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     thread.join(timeout=2.0)
     print("\nPlayback finished.")
 
-def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_index=0, conn=None):
+def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_index=0):
     """Play songs in the queue with various playback options."""
     # Determine repeat mode
     if repeat_track:
@@ -824,26 +729,21 @@ def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_ind
     else:
         repeat_mode = "off"
     
-    play_queue_with_manager(queue, repeat_mode, shuffle, start_index, conn)
+    play_queue_with_manager(queue, repeat_mode, shuffle, start_index)
 
-def interactive_mode(conn):
+def interactive_mode():
     """
     Interactive mode for queue management.
     
     Provides a command-line interface for managing audio queues with
-    commands for filtering, loading, and playing songs.
+    commands for loading and playing songs from playlists.
     
-    Args:
-        conn (sqlite3.Connection): Database connection object.
+    Note: For database-powered queue management, use db_queue.py instead.
     """
     queue = []
-    filters = {}
     
     print("\n=== Interactive Audio Queue Mode ===")
     print("Commands:")
-    print("  list - Show all songs in library")
-    print("  filter - Set filters (artist, album, genre)")
-    print("  load - Load songs based on current filters")
     print("  playlist - Load songs from M3U playlist file")
     print("  show - Show current queue")
     print("  play - Play current queue")
@@ -855,6 +755,8 @@ def interactive_mode(conn):
     print()
     print("Note: During playback, type commands directly (no need to pause).")
     print()
+    print("For database queries, filtering, and search, use db_queue.py instead.")
+    print()
     
     shuffle_mode = False
     repeat_mode = False
@@ -865,54 +767,13 @@ def interactive_mode(conn):
             
             if command in ['quit', 'q', 'exit']:
                 break
-            elif command == 'list':
-                if not conn:
-                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
-                    continue
-                songs = get_songs_from_database(conn)
-                if songs:
-                    print(f"\nFound {len(songs)} songs in library:")
-                    for i, song in enumerate(songs[:20]):  # Show first 20
-                        print(f"  {i+1:3d}. {format_song_info(song)}")
-                    if len(songs) > 20:
-                        print(f"  ... and {len(songs) - 20} more")
-                else:
-                    print("No songs found in library.")
-            elif command == 'filter':
-                if not conn:
-                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
-                    continue
-                print("Set filters (press Enter to skip):")
-                artist = input("Artist: ").strip()
-                album = input("Album: ").strip()
-                genre = input("Genre: ").strip()
-                
-                filters = {}
-                if artist:
-                    filters['artist'] = artist
-                if album:
-                    filters['album'] = album
-                if genre:
-                    filters['genre'] = genre
-                
-                print(f"Filters set: {filters}")
-            elif command == 'load':
-                if not conn:
-                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
-                    continue
-                songs = get_songs_from_database(conn, filters)
-                if songs:
-                    queue = list(songs)
-                    print(f"Loaded {len(queue)} songs into queue.")
-                else:
-                    print("No songs found matching current filters.")
             elif command == 'show':
                 display_queue(queue)
             elif command == 'play':
                 if queue:
-                    play_queue(queue, shuffle_mode, repeat_mode, False, 0, conn)
+                    play_queue(queue, shuffle_mode, repeat_mode, False, 0)
                 else:
-                    print("Queue is empty. Use 'load' to add songs first.")
+                    print("Queue is empty. Use 'playlist' to add songs first.")
             elif command == 'shuffle':
                 shuffle_mode = not shuffle_mode
                 print(f"Shuffle mode: {'ON' if shuffle_mode else 'OFF'}")
@@ -967,35 +828,28 @@ def main():
     """
     Main function for audio queue management command-line interface.
     
-    Provides a command-line interface for managing audio queues with
-    support for database queries, playlist loading, shuffle, repeat modes.
+    Provides a command-line interface for managing audio queues from
+    M3U playlist files with shuffle and repeat modes.
+    
+    For database-powered queue management, use db_queue.py instead.
     """
     parser = argparse.ArgumentParser(
-        description='Audio Queue Manager - Manage and play audio queues',
+        description='Audio Queue Manager - Manage and play audio queues from playlists',
         epilog='Examples:\n'
-               '  python queue.py --db music.db --artist "Pink Floyd" --shuffle\n'
                '  python queue.py --playlist myplaylist.m3u --repeat\n'
-               '  python queue.py --db music.db --album "Dark Side" --repeat-track',
+               '  python queue.py --playlist myplaylist.m3u --shuffle --repeat-track\n'
+               '  python queue.py --interactive',
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     
-    # Database options
-    parser.add_argument('--db', default='walrio_library.db', help='Path to database file')
-    parser.add_argument('--artist', help='Filter by artist')
-    parser.add_argument('--album', help='Filter by album')
-    parser.add_argument('--genre', help='Filter by genre')
-    
     # Playlist loading
-    parser.add_argument('--playlist', help='Load M3U playlist')
+    parser.add_argument('--playlist', help='Load M3U playlist file')
     
     # Playback options
     parser.add_argument('--shuffle', action='store_true', help='Enable shuffle mode')
     parser.add_argument('--repeat', action='store_true', help='Enable queue repeat')
     parser.add_argument('--repeat-track', action='store_true', help='Enable track repeat')
     parser.add_argument('--start', type=int, default=0, help='Start index (0-based)')
-    
-    # Display options
-    parser.add_argument('--list', action='store_true', help='List all songs in library and exit')
     
     # Interactive mode
     parser.add_argument('--interactive', action='store_true', help='Enter interactive mode')
@@ -1004,7 +858,6 @@ def main():
     
     # Load songs
     songs = []
-    conn = None
     
     if args.playlist:
         # Load from playlist
@@ -1014,53 +867,17 @@ def main():
             return 1
         print(f"Loaded {len(songs)} songs from playlist")
     elif args.interactive:
-        # Interactive mode can start without loading anything
-        # Try to connect to database if it exists, but don't fail if it doesn't
-        if os.path.exists(args.db):
-            conn = connect_to_database(args.db)
-        else:
-            print(f"Note: Database '{args.db}' not found. You can still load playlists.")
-            print("Database-dependent commands (list, filter, load) will be unavailable.\n")
+        # Interactive mode - load playlists interactively
+        interactive_mode()
+        return 0
     else:
-        # Non-interactive mode requires database
-        conn = connect_to_database(args.db)
-        if not conn:
-            return 1
-        
-        filters = {}
-        if args.artist:
-            filters['artist'] = args.artist
-        if args.album:
-            filters['album'] = args.album
-        if args.genre:
-            filters['genre'] = args.genre
-        
-        songs = get_songs_from_database(conn, filters)
-        if not songs:
-            print("No songs found matching criteria.")
-            if conn:
-                conn.close()
-            return 1
-        
-        print(f"Found {len(songs)} songs")
-        
-        # List mode - just show songs and exit
-        if args.list:
-            print(f"\nListing {len(songs)} songs:")
-            for i, song in enumerate(songs):
-                print(f"  {i+1:3d}. {format_song_info(song)}")
-            if conn:
-                conn.close()
-            return 0
+        # Non-interactive mode requires a playlist
+        print("Error: No playlist specified. Use --playlist or --interactive mode.")
+        print("For database queries, use db_queue.py instead.")
+        return 1
     
     # Start playback
-    if args.interactive:
-        interactive_mode(conn)
-    else:
-        play_queue(songs, args.shuffle, args.repeat, args.repeat_track, args.start, conn)
-    
-    if conn:
-        conn.close()
+    play_queue(songs, args.shuffle, args.repeat, args.repeat_track, args.start)
     
     return 0
 
