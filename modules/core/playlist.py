@@ -129,9 +129,14 @@ def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist
                 
                 # Write file path (relative or absolute)
                 if use_absolute_paths:
-                    f.write(f"{file_path}\n")
+                    # Convert to absolute path
+                    abs_path = os.path.abspath(file_path)
+                    f.write(f"{abs_path}\n")
                 else:
                     rel_path = get_relative_path(file_path, playlist_path)
+                    # Add ./ prefix for visual clarity if not already present
+                    if not rel_path.startswith('./') and not rel_path.startswith('../'):
+                        rel_path = f"./{rel_path}"
                     f.write(f"{rel_path}\n")
         
         print(f"Playlist created: {playlist_path} ({len(songs)} songs)")
@@ -179,11 +184,8 @@ def load_m3u_playlist(playlist_path):
                     
                     # Convert relative paths to absolute
                     if not os.path.isabs(file_path):
-                        # If path starts with ./ or ../, it's relative to CWD, not playlist dir
-                        if file_path.startswith('./') or file_path.startswith('../'):
-                            file_path = os.path.abspath(file_path)
-                        else:
-                            file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
+                        # Relative paths are relative to the playlist directory
+                        file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
                     
                     # Extract full metadata from the audio file
                     metadata_info = extract_metadata(file_path)
