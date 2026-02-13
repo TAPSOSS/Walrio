@@ -15,13 +15,13 @@ from enum import Enum
 
 # Handle imports for both package and standalone execution
 try:
-    from .player import play_audio
+    from .player import AudioPlayer
     from .playlist import load_m3u_playlist
     from . import metadata
 except ImportError:
     # Add parent directory to path for standalone execution
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from core.player import play_audio
+    from core.player import AudioPlayer
     from core.playlist import load_m3u_playlist
     from core import metadata
 
@@ -485,7 +485,7 @@ def add_missing_song_to_database(file_path, conn):
 
 def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index=0, conn=None):
     """
-    Play songs using QueueManager with dynamic repeat mode support and interactive controls.
+    Play songs using QueueManager with AudioPlayer for full playback control.
     
     Args:
         songs: List of song dictionaries or database records
@@ -504,124 +504,203 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     queue_manager.set_shuffle_mode(shuffle)
     queue_manager.current_index = start_index
     
+    # Create audio player instance
+    player = AudioPlayer(debug=False)
+    
     print(f"\n=== Playing {len(songs)} songs ===")
     print(f"Repeat mode: {repeat_mode}")
     print(f"Shuffle: {'ON' if shuffle else 'OFF'}")
+    print(f"Volume: {player.get_volume():.2f}")
     print("\nPress Ctrl+C to access playback controls")
-    print("Controls: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog\n")
+    print("Controls: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog, [v]olume, see[k]\n")
     
-    while queue_manager.has_songs():
-        song = queue_manager.current_song()
-        if not song:
-            break
-        
-        # Get file path
-        file_path = song.get('url', song.get('filepath', ''))
-        if file_path.startswith('file://'):
-            file_path = file_path[7:]
-        
-        # Check if file exists
-        if not os.path.exists(file_path):
-            print(f"\nFile not found: {file_path}")
-            song['file_missing'] = True
-            if conn:
-                print("  [Attempting to auto-add from filesystem...]")
-                add_missing_song_to_database(file_path, conn)
-            
-            if not queue_manager.next_track_skip_missing():
+    try:
+        while queue_manager.has_songs():
+            song = queue_manager.current_song()
+            if not song:
                 break
-            continue
-        
-        # Display song info
-        print(f"\n[{queue_manager.current_index + 1}/{len(songs)}] Now playing: {format_song_info(song)}")
-        print(f"File: {file_path}")
-        
-        try:
-            # Play the song
-            play_audio(file_path)
             
-            # Move to next track after playback completes
-            if not queue_manager.next_track_skip_missing():
-                break  # End of queue reached
-        
-        except KeyboardInterrupt:
-            # Interactive control menu
-            print("\n\nPlayback paused.")
-            print("Commands: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog, [c]urrent")
+            # Get file path
+            file_path = song.get('url', song.get('filepath', ''))
+            if file_path.startswith('file://'):
+                file_path = file_path[7:]
+            
+            # Check if file exists
+            if not os.path.exists(file_path):
+                print(f"\nFile not found: {file_path}")
+                song['file_missing'] = True
+                if conn:
+                    print("  [Attempting to auto-add from filesystem...]")
+                    add_missing_song_to_database(file_path, conn)
+                
+                if not queue_manager.next_track_skip_missing():
+                    break
+                continue
+            
+            # Display song info
+            print(f"\n[{queue_manager.current_index + 1}/{len(songs)}] Now playing: {format_song_info(song)}")
+            print(f"File: {file_path}")
             
             try:
-                choice = input("Choose action: ").strip().lower()
-                
-                if choice == 'q':
-                    print("Quitting playback...")
-                    break
-                elif choice == 'n':
+                # Load and play the song
+                if not player.load_file(file_path):
+                    print("Failed to load file.")
                     if not queue_manager.next_track_skip_missing():
-                        print("Reached end of queue.")
                         break
-                    print("Skipped to next track.")
-                elif choice == 'p':
-                    if queue_manager.previous_track():
-                        print("Went to previous track.")
-                    else:
-                        print("Already at beginning or in track repeat mode.")
-                elif choice == 's':
-                    # Toggle shuffle
-                    new_shuffle = not queue_manager.shuffle
-                    queue_manager.set_shuffle_mode(new_shuffle)
-                elif choice == 'i':
-                    # Instant shuffle - physically reorder queue
-                    if queue_manager.shuffle_queue():
-                        print("Queue has been instantly shuffled!")
-                elif choice == 'r':
-                    # Cycle through repeat modes: off → track → queue → off
-                    modes = [RepeatMode.OFF, RepeatMode.TRACK, RepeatMode.QUEUE]
-                    current_idx = modes.index(queue_manager.repeat_mode)
-                    next_mode = modes[(current_idx + 1) % len(modes)]
-                    queue_manager.set_repeat_mode(next_mode)
-                elif choice == 'b':
-                    # Show playback history/backlog
-                    if queue_manager.playback_history:
-                        print("\n=== Playback History (Backlog) ===")
-                        # Show last 20 songs from history
-                        recent_history = queue_manager.playback_history[-20:]
-                        for i, idx in enumerate(recent_history, 1):
-                            if 0 <= idx < len(queue_manager.songs):
-                                song = queue_manager.songs[idx]
-                                print(f"  {i:2d}. {format_song_info(song)}")
-                        if len(queue_manager.playback_history) > 20:
-                            print(f"\n  ... and {len(queue_manager.playback_history) - 20} more songs in history")
-                        print()
-                    else:
-                        print("No playback history yet.")
-                elif choice == 'c':
-                    # Show current song info
-                    current = queue_manager.current_song()
-                    if current:
-                        print("\n=== Current Song ===")
-                        print(f"Position: [{queue_manager.current_index + 1}/{len(queue_manager.songs)}]")
-                        print(f"Title: {current.get('title', 'Unknown')}")
-                        print(f"Artist: {current.get('artist', 'Unknown')}")
-                        print(f"Album: {current.get('album', 'Unknown')}")
-                        print(f"Duration: {current.get('length', 0)} seconds")
-                        file_path = current.get('url', current.get('filepath', ''))
-                        if file_path.startswith('file://'):
-                            file_path = file_path[7:]
-                        print(f"File: {file_path}")
-                        print()
-                    else:
-                        print("No song currently playing.")
-                else:
-                    print("Invalid choice. Resuming playback...")
+                    continue
+                
+                if not player.play():
+                    print("Failed to start playback.")
+                    if not queue_manager.next_track_skip_missing():
+                        break
+                    continue
+                
+                # Wait for playback to complete or user interrupt
+                while player.is_playing and not player.should_quit:
+                    time.sleep(0.1)
+                
+                # Check if we should continue
+                if player.should_quit:
+                    break
+                
+                # Move to next track after playback completes
+                if not queue_manager.next_track_skip_missing():
+                    break  # End of queue reached
             
             except KeyboardInterrupt:
-                print("\n\nQuitting playback...")
-                break
-        
-        except Exception as e:
-            print(f"Error during playback: {e}")
-            if not queue_manager.next_track_skip_missing():
-                break
+                # Interactive control menu
+                player.pause()
+                print("\n\nPlayback paused.")
+                print("Commands: [q]uit, [n]ext, [p]revious, [s]huffle, [i]nstant shuffle, [r]epeat, [b]acklog, [c]urrent, [v]olume, see[k], [resume]")
+                
+                try:
+                    choice = input("Choose action: ").strip().lower()
+                    
+                    if choice == 'q':
+                        print("Quitting playback...")
+                        player.should_quit = True
+                        break
+                    elif choice == 'n':
+                        player.stop()
+                        if not queue_manager.next_track_skip_missing():
+                            print("Reached end of queue.")
+                            break
+                        print("Skipped to next track.")
+                    elif choice == 'p':
+                        player.stop()
+                        if queue_manager.previous_track():
+                            print("Went to previous track.")
+                        else:
+                            print("Already at beginning or in track repeat mode.")
+                    elif choice == 's':
+                        # Toggle shuffle
+                        new_shuffle = not queue_manager.shuffle
+                        queue_manager.set_shuffle_mode(new_shuffle)
+                    elif choice == 'i':
+                        # Instant shuffle - physically reorder queue
+                        if queue_manager.shuffle_queue():
+                            print("Queue has been instantly shuffled!")
+                    elif choice == 'r':
+                        # Cycle through repeat modes: off → track → queue → off
+                        modes = [RepeatMode.OFF, RepeatMode.TRACK, RepeatMode.QUEUE]
+                        current_idx = modes.index(queue_manager.repeat_mode)
+                        next_mode = modes[(current_idx + 1) % len(modes)]
+                        queue_manager.set_repeat_mode(next_mode)
+                    elif choice == 'b':
+                        # Show playback history/backlog
+                        if queue_manager.playback_history:
+                            print("\n=== Playback History (Backlog) ===")
+                            # Show last 20 songs from history
+                            recent_history = queue_manager.playback_history[-20:]
+                            for i, idx in enumerate(recent_history, 1):
+                                if 0 <= idx < len(queue_manager.songs):
+                                    song = queue_manager.songs[idx]
+                                    print(f"  {i:2d}. {format_song_info(song)}")
+                            if len(queue_manager.playback_history) > 20:
+                                print(f"\n  ... and {len(queue_manager.playback_history) - 20} more songs in history")
+                            print()
+                        else:
+                            print("No playback history yet.")
+                    elif choice == 'c':
+                        # Show current song info
+                        current = queue_manager.current_song()
+                        if current:
+                            print("\n=== Current Song ===")
+                            print(f"Position: [{queue_manager.current_index + 1}/{len(queue_manager.songs)}]")
+                            print(f"Title: {current.get('title', 'Unknown')}")
+                            print(f"Artist: {current.get('artist', 'Unknown')}")
+                            print(f"Album: {current.get('album', 'Unknown')}")
+                            print(f"Duration: {current.get('length', 0)} seconds")
+                            file_path = current.get('url', current.get('filepath', ''))
+                            if file_path.startswith('file://'):
+                                file_path = file_path[7:]
+                            print(f"File: {file_path}")
+                            
+                            # Show playback position
+                            position = player.get_position()
+                            duration = player.duration
+                            if position >= 0 and duration > 0:
+                                progress = (position / duration) * 100
+                                print(f"Playback: {position:.1f}s / {duration:.1f}s ({progress:.1f}%)")
+                            print()
+                        else:
+                            print("No song currently playing.")
+                    elif choice == 'v':
+                        # Adjust volume
+                        try:
+                            vol_input = input("Enter volume (0.0 to 1.0, or +/- for adjustment): ").strip()
+                            if vol_input.startswith('+'):
+                                adjustment = float(vol_input[1:]) if len(vol_input) > 1 else 0.1
+                                new_vol = min(1.0, player.get_volume() + adjustment)
+                                player.set_volume(new_vol)
+                            elif vol_input.startswith('-'):
+                                adjustment = float(vol_input[1:]) if len(vol_input) > 1 else 0.1
+                                new_vol = max(0.0, player.get_volume() - adjustment)
+                                player.set_volume(new_vol)
+                            else:
+                                new_vol = float(vol_input)
+                                player.set_volume(new_vol)
+                        except ValueError:
+                            print("Invalid volume value.")
+                    elif choice == 'k':
+                        # Seek to position
+                        try:
+                            seek_input = input("Enter position in seconds (or +/- for relative): ").strip()
+                            if seek_input.startswith('+'):
+                                adjustment = float(seek_input[1:]) if len(seek_input) > 1 else 10
+                                current_pos = player.get_position()
+                                if current_pos >= 0:
+                                    player.seek(current_pos + adjustment)
+                            elif seek_input.startswith('-'):
+                                adjustment = float(seek_input[1:]) if len(seek_input) > 1 else 10
+                                current_pos = player.get_position()
+                                if current_pos >= 0:
+                                    player.seek(max(0, current_pos - adjustment))
+                            else:
+                                position = float(seek_input)
+                                player.seek(position)
+                        except ValueError:
+                            print("Invalid seek position.")
+                    elif choice == 'resume' or choice == '':
+                        print("Resuming playback...")
+                        player.play()
+                    else:
+                        print("Invalid choice. Resuming playback...")
+                        player.play()
+                
+                except KeyboardInterrupt:
+                    print("\n\nQuitting playback...")
+                    player.should_quit = True
+                    break
+            
+            except Exception as e:
+                print(f"Error during playback: {e}")
+                if not queue_manager.next_track_skip_missing():
+                    break
+    
+    finally:
+        # Clean up player
+        player.stop()
     
     print("\nPlayback finished.")
 
@@ -754,8 +833,11 @@ def interactive_mode(conn):
                 print("  [s]huffle - Toggle shuffle mode on/off")
                 print("  [i]nstant shuffle - Physically reorder the entire queue")
                 print("  [r]epeat - Cycle through repeat modes (off → track → queue)")
-                print("\nNote: Volume control and seeking require GStreamer integration.")
-                print("For more advanced controls, use the standalone player module.\n")
+                print("  [b]acklog - View playback history (last 20 songs)")
+                print("  [c]urrent - Display detailed info about current song")
+                print("  [v]olume - Adjust playback volume (0.0 to 1.0, or +/- for adjustment)")
+                print("  see[k] - Seek to position in seconds (or +/- for relative seeking)")
+                print("  [resume] or Enter - Resume playback after pausing\n")
             elif command == 'help':
                 print("Commands: list, filter, load, playlist, show, play, shuffle, repeat, clear, info, quit")
             else:
