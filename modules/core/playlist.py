@@ -179,7 +179,11 @@ def load_m3u_playlist(playlist_path):
                     
                     # Convert relative paths to absolute
                     if not os.path.isabs(file_path):
-                        file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
+                        # If path starts with ./ or ../, it's relative to CWD, not playlist dir
+                        if file_path.startswith('./') or file_path.startswith('../'):
+                            file_path = os.path.abspath(file_path)
+                        else:
+                            file_path = os.path.abspath(os.path.join(playlist_dir, file_path))
                     
                     # Extract full metadata from the audio file
                     metadata_info = extract_metadata(file_path)
