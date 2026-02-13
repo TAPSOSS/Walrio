@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-create and manage m3u playlists
+create and manage Extended M3U (EXTM3U) playlists
 """
 
 import sys
@@ -94,7 +94,7 @@ def get_relative_path(file_path, playlist_path):
         return file_path
 
 def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist_name="Playlist"):
-    """Create M3U playlist file from a list of songs."""
+    """Create Extended M3U (EXTM3U) playlist file with metadata from a list of songs."""
     try:
         # Ensure directory exists
         playlist_dir = Path(playlist_path).parent
@@ -146,7 +146,7 @@ def create_m3u_playlist(songs, playlist_path, use_absolute_paths=False, playlist
         return False
 
 def load_m3u_playlist(playlist_path):
-    """Load songs from M3U playlist file."""
+    """Load songs from M3U/Extended M3U playlist file."""
     if not os.path.exists(playlist_path):
         print(f"Error: Playlist not found: {playlist_path}")
         return []
@@ -333,7 +333,7 @@ def create_playlist_from_inputs(inputs, playlist_path, use_absolute_paths=False,
 def main():
     """Main function for playlist management command-line interface."""
     parser = argparse.ArgumentParser(
-        description='Playlist Manager - Create and manage M3U playlists',
+        description='Playlist Manager - Create and manage Extended M3U playlists (EXTM3U format)',
         epilog='Examples:\n'
                '  python playlist.py --name "My Playlist" --artist "Pink Floyd" --output playlists/\n'
                '  python playlist.py --name "Files" --inputs song1.mp3 /path/to/music/\n'
@@ -359,7 +359,7 @@ def main():
     parser.add_argument('--input-file', help='Text file containing list of files (one per line)')
     
     # Load existing playlist
-    parser.add_argument('--load', help='Load and display existing M3U playlist')
+    parser.add_argument('--load', help='Load and display existing M3U/Extended M3U playlist')
     
     args = parser.parse_args()
     
