@@ -642,6 +642,9 @@ def interactive_mode(conn):
             if command in ['quit', 'q', 'exit']:
                 break
             elif command == 'list':
+                if not conn:
+                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
+                    continue
                 songs = get_songs_from_database(conn)
                 if songs:
                     print(f"\nFound {len(songs)} songs in library:")
@@ -652,6 +655,9 @@ def interactive_mode(conn):
                 else:
                     print("No songs found in library.")
             elif command == 'filter':
+                if not conn:
+                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
+                    continue
                 print("Set filters (press Enter to skip):")
                 artist = input("Artist: ").strip()
                 album = input("Album: ").strip()
@@ -667,6 +673,9 @@ def interactive_mode(conn):
                 
                 print(f"Filters set: {filters}")
             elif command == 'load':
+                if not conn:
+                    print("Error: No database connected. Use 'playlist' to load an M3U file.")
+                    continue
                 songs = get_songs_from_database(conn, filters)
                 if songs:
                     queue = list(songs)
@@ -762,8 +771,16 @@ def main():
             print(f"Failed to load playlist: {args.playlist}")
             return 1
         print(f"Loaded {len(songs)} songs from playlist")
+    elif args.interactive:
+        # Interactive mode can start without loading anything
+        # Try to connect to database if it exists, but don't fail if it doesn't
+        if os.path.exists(args.db):
+            conn = connect_to_database(args.db)
+        else:
+            print(f"Note: Database '{args.db}' not found. You can still load playlists.")
+            print("Database-dependent commands (list, filter, load) will be unavailable.\n")
     else:
-        # Load from database
+        # Non-interactive mode requires database
         conn = connect_to_database(args.db)
         if not conn:
             return 1
