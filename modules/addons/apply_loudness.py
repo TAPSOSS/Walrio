@@ -61,7 +61,15 @@ class LoudnessApplicator:
             raise RuntimeError("ffmpeg not found. Install FFmpeg.")
     
     def is_supported_file(self, filepath: str) -> bool:
-        """Check if file is supported"""
+        """
+        Check if file is supported for loudness processing.
+        
+        Args:
+            filepath: Path to the audio file.
+            
+        Returns:
+            True if file format is supported, False otherwise.
+        """
         return Path(filepath).suffix.lower() in SUPPORTED_EXTENSIONS
     
     def read_replaygain_from_tags(self, filepath: str, target_lufs: int = -18) -> Optional[float]:

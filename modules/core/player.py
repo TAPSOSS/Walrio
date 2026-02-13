@@ -27,6 +27,12 @@ class AudioPlayer:
     """GStreamer-based audio player with real-time control."""
     
     def __init__(self, debug=False):
+        """
+        Initialize AudioPlayer with GStreamer playback engine.
+        
+        Args:
+            debug: Enable debug logging (default: False).
+        """
         _init_gstreamer()
         self.debug = debug
         self.pipeline = None

@@ -355,6 +355,7 @@ def process_directory(directory: Path,
 
 
 def main():
+    """Main entry point for album art resizer - resize embedded album art in audio files."""
     parser = argparse.ArgumentParser(
         description='Resize album art in audio files',
         formatter_class=argparse.RawDescriptionHelpFormatter,

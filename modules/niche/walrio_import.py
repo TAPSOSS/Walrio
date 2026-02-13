@@ -177,6 +177,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
 
 
 def main():
+    """Main entry point for Walrio Import tool - execute Walrio module pipelines."""
     parser = argparse.ArgumentParser(
         description='Walrio Import Pipeline - Complete audio library import processing',
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from core.player import AudioPlayer
 
-# Enum for repeat modes
 class RepeatMode(Enum):
+    """Repeat modes for audio playback."""
     OFF = 0
     TRACK = 1
     QUEUE = 2
@@ -148,19 +148,34 @@ class DatabaseQueue:
         return songs
     
     def get_artists(self) -> List[str]:
-        """Get all unique artists from database."""
+        """
+        Get all unique artists from database.
+        
+        Returns:
+            List of unique artist names sorted alphabetically.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT DISTINCT artist FROM songs WHERE artist != '' ORDER BY artist")
         return [row[0] for row in cursor.fetchall()]
     
     def get_albums(self) -> List[str]:
-        """Get all unique albums from database."""
+        """
+        Get all unique albums from database.
+        
+        Returns:
+            List of unique album names sorted alphabetically.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT DISTINCT album FROM songs WHERE album != '' ORDER BY album")
         return [row[0] for row in cursor.fetchall()]
     
     def get_genres(self) -> List[str]:
-        """Get all unique genres from database."""
+        """
+        Get all unique genres from database.
+        
+        Returns:
+            List of unique genre names sorted alphabetically.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT DISTINCT genre FROM songs WHERE genre != '' ORDER BY genre")
         return [row[0] for row in cursor.fetchall()]

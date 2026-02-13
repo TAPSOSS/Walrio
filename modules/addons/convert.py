@@ -55,7 +55,7 @@ class AudioConverter:
         self._check_ffmpeg()
     
     def print_conversion_settings(self):
-        """Print conversion parameters being used"""
+        """Print conversion parameters being used for the conversion process."""
         print("\n" + "=" * 60)
         print(f"Conversion Settings:")
         print(f"  Target Format: {self.output_format.upper()}")
@@ -105,7 +105,15 @@ class AudioConverter:
             raise RuntimeError("FFmpeg not found. Install with: apt install ffmpeg")
     
     def prompt_overwrite(self, filepath: Path) -> bool:
-        """Prompt user for overwrite decision"""
+        """
+        Prompt user for overwrite decision when file exists.
+        
+        Args:
+            filepath: Path to the file that would be overwritten.
+            
+        Returns:
+            True if file should be overwritten, False to skip.
+        """
         if self.overwrite_all:
             return True
         if self.skip_all:

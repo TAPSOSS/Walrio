@@ -29,7 +29,12 @@ except ImportError:
 DEBUG_MODE = False
 
 def debug_log(message):
-    """Print debug message only if DEBUG_MODE is enabled."""
+    """
+    Print debug message only if DEBUG_MODE is enabled.
+    
+    Args:
+        message: Debug message to print.
+    """
     if DEBUG_MODE:
         print(f"[DEBUG] {message}")
 
@@ -358,7 +363,15 @@ class QueueManager:
         return (False, None)
 
 def format_song_info(song):
-    """Format song information for display with comprehensive metadata."""
+    """
+    Format song information for display with comprehensive metadata.
+    
+    Args:
+        song: Dictionary containing song metadata.
+        
+    Returns:
+        Formatted string with song information.
+    """
     artist = song.get('artist') or "Unknown Artist"
     albumartist = song.get('albumartist') or artist
     title = song.get('title') or "Unknown Title"
@@ -382,7 +395,13 @@ def format_song_info(song):
     return f"{track_str}{artist} - {title} ({albumartist} - {album}{year_str}){duration}"
 
 def display_queue(queue, current_index=0):
-    """Display the current queue with highlighting for current song."""
+    """
+    Display the current queue with highlighting for current song.
+    
+    Args:
+        queue: List of song dictionaries to display.
+        current_index: Index of currently playing song (default: 0).
+    """
     if not queue:
         print("Queue is empty.")
         return
@@ -720,7 +739,16 @@ def play_queue_with_manager(songs, repeat_mode="off", shuffle=False, start_index
     print("\nPlayback finished.")
 
 def play_queue(queue, shuffle=False, repeat=False, repeat_track=False, start_index=0):
-    """Play songs in the queue with various playback options."""
+    """
+    Play songs in the queue with various playback options.
+    
+    Args:
+        queue: List of song dictionaries to play.
+        shuffle: Enable shuffle mode (default: False).
+        repeat: Enable queue repeat (default: False).
+        repeat_track: Enable track repeat (default: False).
+        start_index: Index to start playback from (default: 0).
+    """
     # Determine repeat mode
     if repeat_track:
         repeat_mode = "track"

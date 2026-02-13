@@ -53,7 +53,15 @@ class MetadataEditor:
         self.error_count = 0
     
     def is_supported_format(self, filepath: str) -> bool:
-        """Check if the file format is supported."""
+        """
+        Check if the file format is supported.
+        
+        Args:
+            filepath: Path to the file to check.
+            
+        Returns:
+            True if format is supported, False otherwise.
+        """
         return Path(filepath).suffix.lower() in self.supported_formats
     
     def get_metadata(self, filepath: str) -> Dict[str, Any]:
@@ -603,7 +611,11 @@ class MetadataEditor:
         """
         Extract metadata from an audio file in database format.
         
-        Returns metadata with all fields needed for database storage.
+        Args:
+            filepath: Path to the audio file.
+            
+        Returns:
+            Dictionary with all metadata fields for database storage, or None if extraction fails.
         """
         return self.get_metadata(filepath)
     
@@ -611,7 +623,11 @@ class MetadataEditor:
         """
         Extract metadata from an audio file in playlist format.
         
-        Returns simplified metadata for playlist display.
+        Args:
+            filepath: Path to the audio file.
+            
+        Returns:
+            Dictionary with simplified metadata for playlist display, or None if extraction fails.
         """
         metadata = self.get_metadata(filepath)
         if not metadata:

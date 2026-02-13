@@ -440,6 +440,7 @@ class ReplayGainAnalyzer:
 
 
 def main():
+    """Main entry point for ReplayGain analyzer - analyze and tag audio files."""
     parser = argparse.ArgumentParser(
         description='Analyze and apply ReplayGain tags to audio files'
     )
