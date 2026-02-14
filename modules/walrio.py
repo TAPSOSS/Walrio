@@ -43,7 +43,11 @@ def discover_modules():
     return modules
 
 def extract_module_description(file_path):
-    """Extract description from a Python module's docstring or header comments."""
+    """Extract description from a Python module's docstring or header comments.
+    
+    Args:
+        file_path: Path to the Python module file.
+    """
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
@@ -115,12 +119,21 @@ def get_all_modules():
     return all_modules
 
 def get_module_path(module_name):
-    """Get the path to a module by its name."""
+    """Get the path to a module by its name.
+    
+    Args:
+        module_name: Name of the module to find.
+    """
     all_modules = get_all_modules()
     return all_modules.get(module_name)
 
 def run_module(module_name, args):
-    """Run a specific module with the given arguments."""
+    """Run a specific module with the given arguments.
+    
+    Args:
+        module_name: Name of the module to run.
+        args: Arguments to pass to the module.
+    """
     module_path = get_module_path(module_name)
     
     if not module_path:

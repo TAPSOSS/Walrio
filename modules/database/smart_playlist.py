@@ -163,7 +163,11 @@ class SmartPlaylistManager:
         self.conn.commit()
     
     def get_playlist(self, playlist_id: int) -> Optional[Dict]:
-        """Get smart playlist definition by ID."""
+        """Get smart playlist definition by ID.
+        
+        Returns:
+            Optional[Dict]: Dictionary containing playlist data, or None if not found.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM smart_playlists WHERE id = ?", (playlist_id,))
         row = cursor.fetchone()
@@ -182,7 +186,11 @@ class SmartPlaylistManager:
         return None
     
     def get_playlist_by_name(self, name: str) -> Optional[Dict]:
-        """Get smart playlist definition by name."""
+        """Get smart playlist definition by name.
+        
+        Returns:
+            Optional[Dict]: Dictionary containing playlist data, or None if not found.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM smart_playlists WHERE name = ?", (name,))
         row = cursor.fetchone()
@@ -201,7 +209,11 @@ class SmartPlaylistManager:
         return None
     
     def list_playlists(self) -> List[Dict]:
-        """List all smart playlists."""
+        """List all smart playlists.
+        
+        Returns:
+            List[Dict]: List of dictionaries containing playlist data.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM smart_playlists ORDER BY name")
         
