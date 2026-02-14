@@ -2,7 +2,6 @@
 """
 apply gain directly to filebased on replaygain tag or passed value
 """
-
 import os
 import sys
 import argparse
@@ -61,7 +60,15 @@ class LoudnessApplicator:
             raise RuntimeError("ffmpeg not found. Install FFmpeg.")
     
     def is_supported_file(self, filepath: str) -> bool:
-        """Check if file is supported"""
+        """
+        Check if file is supported for loudness processing.
+        
+        Args:
+            filepath: Path to the audio file.
+            
+        Returns:
+            True if file format is supported, False otherwise.
+        """
         return Path(filepath).suffix.lower() in SUPPORTED_EXTENSIONS
     
     def read_replaygain_from_tags(self, filepath: str, target_lufs: int = -18) -> Optional[float]:
@@ -214,7 +221,15 @@ class LoudnessApplicator:
             return None
     
     def get_audio_properties(self, filepath: str) -> Dict[str, Any]:
-        """Get audio properties using metadata module"""
+        """
+        Get audio properties using metadata module.
+        
+        Args:
+            filepath: Path to the audio file.
+            
+        Returns:
+            Dictionary with audio properties (bits_per_sample, sample_rate, channels).
+        """
         try:
             handler = metadata.MetadataEditor()
             file_metadata = handler.get_metadata(filepath)
@@ -239,7 +254,17 @@ class LoudnessApplicator:
     
     def print_settings(self, gain_db: Optional[float], use_replaygain: bool, target_lufs: int, 
                       output_dir: Optional[str], create_backup: bool, rescan_lufs: Optional[int] = None):
-        """Print loudness application settings"""
+        """
+        Print loudness application settings.
+        
+        Args:
+            gain_db: Fixed gain in dB to apply.
+            use_replaygain: Whether to use ReplayGain values.
+            target_lufs: Target LUFS for ReplayGain.
+            output_dir: Output directory path.
+            create_backup: Whether to create backups.
+            rescan_lufs: LUFS value for rescanning.
+        """
         print("\n" + "=" * 60)
         print(f"Loudness Application Settings:")
         if use_replaygain:
@@ -432,7 +457,7 @@ class LoudnessApplicator:
                     logger.error(f"FFmpeg failed: {stderr}")
                     return False
                 
-                print(f"  ✓ Gain applied successfully")
+                print(f"  [OK] Gain applied successfully")
                 
                 # Handle Opus album art
                 if ext == ".opus":
@@ -444,7 +469,7 @@ class LoudnessApplicator:
                 shutil.move(temp_path, str(out_file))
                 
                 self.processed_count += 1
-                print(f"  ✓ Complete: Applied {gain_db:+.2f} dB to {os.path.basename(filepath)}\n")
+                print(f"  [OK] Complete: Applied {gain_db:+.2f} dB to {os.path.basename(filepath)}\n")
                 logger.debug(f"Successfully processed {os.path.basename(filepath)}")
                 
                 return True
@@ -466,18 +491,19 @@ class LoudnessApplicator:
                      output_dir: Optional[str] = None, show_settings: bool = True,
                      rescan_lufs: Optional[int] = None) -> Tuple[int, int]:
         """
-        Process multiple files
+        Process multiple files.
         
         Args:
-            file_paths: List of file paths
-            gain_db: Fixed gain in dB
-            use_replaygain: Use ReplayGain values
-            target_lufs: Target LUFS for ReplayGain
-            output_dir: Output directory
-            show_settings: Show settings display
+            file_paths: List of file paths.
+            gain_db: Fixed gain in dB.
+            use_replaygain: Use ReplayGain values.
+            target_lufs: Target LUFS for ReplayGain.
+            output_dir: Output directory.
+            show_settings: Show settings display.
+            rescan_lufs: LUFS value for rescanning.
             
         Returns:
-            (successful_count, total_count)
+            Tuple of (successful_count, total_count).
         """
         supported_files = [f for f in file_paths if self.is_supported_file(f)]
         unsupported_count = len(file_paths) - len(supported_files)
@@ -518,7 +544,21 @@ class LoudnessApplicator:
                          gain_db: Optional[float] = None, use_replaygain: bool = False,
                          target_lufs: int = -18, output_dir: Optional[str] = None,
                          rescan_lufs: Optional[int] = None) -> Tuple[int, int]:
-        """Process all files in directory"""
+        """
+        Process all files in directory.
+        
+        Args:
+            directory: Directory path.
+            recursive: Process subdirectories.
+            gain_db: Fixed gain in dB.
+            use_replaygain: Use ReplayGain values.
+            target_lufs: Target LUFS for ReplayGain.
+            output_dir: Output directory.
+            rescan_lufs: LUFS value for rescanning.
+            
+        Returns:
+            Tuple of (successful_count, total_count).
+        """
         if not os.path.isdir(directory):
             logger.error(f"Directory does not exist: {directory}")
             return (0, 0)
@@ -541,6 +581,7 @@ class LoudnessApplicator:
 
 
 def main():
+    """Main entry point for loudness application tool."""
     parser = argparse.ArgumentParser(
         description='Apply Loudness Tool - Apply gain adjustments to audio files using FFmpeg',
         formatter_class=argparse.RawDescriptionHelpFormatter,

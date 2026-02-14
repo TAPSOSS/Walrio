@@ -2,7 +2,6 @@
 """
 detect and fix playlist case conflict (uppercase/lowercase filename variations)
 """
-
 import os
 import sys
 import argparse

@@ -2,7 +2,6 @@
 """
 play your audio files
 """
-
 import sys
 import os
 import json
@@ -27,6 +26,12 @@ class AudioPlayer:
     """GStreamer-based audio player with real-time control."""
     
     def __init__(self, debug=False):
+        """
+        Initialize AudioPlayer with GStreamer playback engine.
+        
+        Args:
+            debug: Enable debug logging (default: False).
+        """
         _init_gstreamer()
         self.debug = debug
         self.pipeline = None
@@ -616,7 +621,16 @@ class AudioPlayer:
 
 
 def play_audio(filepath, debug=False):
-    """Simple playback function for command-line compatibility."""
+    """
+    Simple playback function for command-line compatibility.
+    
+    Args:
+        filepath: Path to the audio file to play.
+        debug: Enable debug logging.
+        
+    Returns:
+        True if playback completed successfully, False otherwise.
+    """
     try:
         player = AudioPlayer(debug=debug)
         
@@ -641,7 +655,15 @@ def play_audio(filepath, debug=False):
 
 
 def send_daemon_command(command):
-    """Send a command to a running daemon instance."""
+    """
+    Send a command to a running daemon instance.
+    
+    Args:
+        command: Command string to send to the daemon.
+        
+    Returns:
+        True if command was sent successfully, False otherwise.
+    """
     temp_dir = tempfile.gettempdir()
     socket_files = [
         (os.path.join(temp_dir, f), os.path.getmtime(os.path.join(temp_dir, f)))

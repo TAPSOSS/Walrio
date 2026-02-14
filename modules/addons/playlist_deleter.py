@@ -2,7 +2,6 @@
 """
 delete all files found in a given playlist, useful for mass deletion
 """
-
 import os
 import sys
 import argparse
@@ -213,14 +212,14 @@ class PlaylistDeleter:
             else:
                 try:
                     os.remove(file_path)
-                    logger.info(f"  ✓ Deleted: {file_path}")
+                    logger.info(f"  [OK] Deleted: {file_path}")
                     self.deleted_files += 1
                     
                     # Delete empty parent directories if requested
                     self._delete_empty_parent_dirs(file_path)
                     
                 except Exception as e:
-                    logger.error(f"  ✗ Failed to delete: {str(e)}")
+                    logger.error(f"  [ERROR] Failed to delete: {str(e)}")
                     self.error_files += 1
         
         logger.info("\n" + "=" * 80)
@@ -240,9 +239,9 @@ class PlaylistDeleter:
             else:
                 try:
                     os.remove(self.playlist_path)
-                    logger.info(f"✓ Deleted playlist file: {self.playlist_path}")
+                    logger.info(f"[OK] Deleted playlist file: {self.playlist_path}")
                 except Exception as e:
-                    logger.error(f"✗ Failed to delete playlist file: {str(e)}")
+                    logger.error(f"[ERROR] Failed to delete playlist file: {str(e)}")
                     self.error_files += 1
         
         logger.info("=" * 80)

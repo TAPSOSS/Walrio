@@ -2,7 +2,6 @@
 """
 extract, resize, and embed album art into audio files
 """
-
 import argparse
 import logging
 import os
@@ -149,7 +148,16 @@ def embed_album_art_ffmpeg(audio_file: Path, image_file: Path) -> bool:
 
 
 def print_settings(size: str, quality: int, format: str, maintain_aspect: bool, backup: bool):
-    """Print resize settings"""
+    """
+    Print resize settings.
+    
+    Args:
+        size: Target size for album art.
+        quality: Quality setting (1-100).
+        format: Output format for resized images.
+        maintain_aspect: Maintain aspect ratio.
+        backup: Create backups.
+    """
     print("\n" + "=" * 60)
     print(f"Album Art Resize Settings:")
     print(f"  Target Size: {size}")
@@ -230,7 +238,7 @@ def resize_album_art(audio_file: Path,
             print(f"  → Extracting album art...")
             if not extract_album_art(audio_file, temp_extracted):
                 return False
-            print(f"  ✓ Extraction complete")
+            print(f"  [OK] Extraction complete")
             
             # Step 2: Resize the extracted image
             print(f"  → Resizing to {size}...")
@@ -263,14 +271,14 @@ def resize_album_art(audio_file: Path,
             if not success:
                 logger.error("Failed to resize album art")
                 return False
-            print(f"  ✓ Resize complete")
+            print(f"  [OK] Resize complete")
             
             # Step 3: Embed the resized image
             print(f"  → Embedding resized album art...")
             success = embed_album_art(audio_file, temp_resized)
             
             if success:
-                print(f"  ✓ Successfully resized album art in {audio_file.name}\n")
+                print(f"  [OK] Successfully resized album art in {audio_file.name}\n")
                 return True
             else:
                 logger.error(f"Failed to embed resized album art")
@@ -355,6 +363,7 @@ def process_directory(directory: Path,
 
 
 def main():
+    """Main entry point for album art resizer - resize embedded album art in audio files."""
     parser = argparse.ArgumentParser(
         description='Resize album art in audio files',
         formatter_class=argparse.RawDescriptionHelpFormatter,

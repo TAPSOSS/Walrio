@@ -2,7 +2,6 @@
 """
 relocate audio files into organized folders based on their metadata
 """
-
 import argparse
 import json
 import logging
@@ -418,6 +417,7 @@ class FileRelocater:
 
 
 def main():
+    """CLI entry point for the file relocater tool."""
     parser = argparse.ArgumentParser(
         description='Organize audio library into folder structures based on metadata'
     )

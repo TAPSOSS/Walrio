@@ -2,7 +2,6 @@
 """
 analyze and tag files with standard replay gain values for volume normalizaiton
 """
-
 import argparse
 import json
 import logging
@@ -191,7 +190,7 @@ class ReplayGainAnalyzer:
             logger.debug(f"Analyzed {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
             
             # Display results
-            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            print(f"  [OK] Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
             
             return analysis_result
             
@@ -313,8 +312,8 @@ class ReplayGainAnalyzer:
             logger.info(f"Tagged {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
             
             # Display results
-            print(f"  ✓ Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
-            print(f"  ✓ ReplayGain tags written")
+            print(f"  [OK] Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            print(f"  [OK] ReplayGain tags written")
             
             return analysis_result
             
@@ -366,7 +365,7 @@ class ReplayGainAnalyzer:
                 self.error_count += 1
                 return False
             
-            print(f"  ✓ ReplayGain tags deleted")
+            print(f"  [OK] ReplayGain tags deleted")
             return True
             
         except Exception as e:
@@ -440,6 +439,7 @@ class ReplayGainAnalyzer:
 
 
 def main():
+    """Main entry point for ReplayGain analyzer - analyze and tag audio files."""
     parser = argparse.ArgumentParser(
         description='Analyze and apply ReplayGain tags to audio files'
     )

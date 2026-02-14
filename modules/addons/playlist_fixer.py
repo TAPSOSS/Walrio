@@ -2,7 +2,6 @@
 """
 attempts to fix playlists that are missing files/can't load specific files
 """
-
 import os
 import sys
 import argparse

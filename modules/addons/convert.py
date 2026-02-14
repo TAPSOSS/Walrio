@@ -2,7 +2,6 @@
 """
 convert audio files between various formats with format-specific options
 """
-
 import argparse
 from pathlib import Path
 import subprocess
@@ -55,7 +54,7 @@ class AudioConverter:
         self._check_ffmpeg()
     
     def print_conversion_settings(self):
-        """Print conversion parameters being used"""
+        """Print conversion parameters being used for the conversion process."""
         print("\n" + "=" * 60)
         print(f"Conversion Settings:")
         print(f"  Target Format: {self.output_format.upper()}")
@@ -105,7 +104,15 @@ class AudioConverter:
             raise RuntimeError("FFmpeg not found. Install with: apt install ffmpeg")
     
     def prompt_overwrite(self, filepath: Path) -> bool:
-        """Prompt user for overwrite decision"""
+        """
+        Prompt user for overwrite decision when file exists.
+        
+        Args:
+            filepath: Path to the file that would be overwritten.
+            
+        Returns:
+            True if file should be overwritten, False to skip.
+        """
         if self.overwrite_all:
             return True
         if self.skip_all:
@@ -248,7 +255,7 @@ class AudioConverter:
                 check=True
             )
             
-            print(f"  ✓ Success: {output_path.name}")
+            print(f"  [OK] Success: {output_path.name}")
             
             # Delete original if requested
             if self.delete_original and output_path.exists() and input_path != output_path:
@@ -382,6 +389,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
 
 
 def main():
+    """Main entry point for audio conversion tool."""
     parser = argparse.ArgumentParser(
         description='Convert audio files between formats using FFmpeg'
     )

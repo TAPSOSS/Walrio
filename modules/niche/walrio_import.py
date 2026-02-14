@@ -2,7 +2,6 @@
 """
 'import' script which converts to standard filetype, normalizes file loudness, normalizes album art, and renames files. combination of multiple other scripts runnign one after another to normalize a music library.
 """
-
 import sys
 import argparse
 import subprocess
@@ -177,6 +176,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
 
 
 def main():
+    """Main entry point for Walrio Import tool - execute Walrio module pipelines."""
     parser = argparse.ArgumentParser(
         description='Walrio Import Pipeline - Complete audio library import processing',
         formatter_class=argparse.RawDescriptionHelpFormatter,

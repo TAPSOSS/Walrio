@@ -65,6 +65,10 @@ Files that are non-essential for playing music but are still very nice to have/r
 
 The core set of modules that are absolutely essential to playing your music files from your media library. Often required for addons/niche modules to function.
 
+#### Database
+
+Modules that require a SQLite database (walrio_library.db/database.py from the core section) to function. These provide advanced library management features like playback statistics, smart playlists, and database-powered queues. The database must be created first using the database module.
+
 #### Niche
 
 Very specific workflow related files or extremely niche functionality. Generally files combining multiple different core and addon modules together into a singular unified workflow or something to connect your music to external programs/hardware.
