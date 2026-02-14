@@ -7,6 +7,8 @@ import sys
 import argparse
 import sqlite3
 import random
+import time
+import threading
 from enum import Enum
 from typing import List, Dict, Optional, Tuple
 
@@ -14,6 +16,7 @@ from typing import List, Dict, Optional, Tuple
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from core.player import AudioPlayer
+from core import database
 
 class RepeatMode(Enum):
     """Repeat modes for audio playback."""
@@ -260,6 +263,246 @@ class DatabaseQueue:
         
         if end < len(self.queue):
             print(f"  ... and {len(self.queue) - end} more songs")
+    
+    def play_queue(self):
+        """
+        Play current queue with playback statistics tracking.
+        Tracks playcount, skipcount, and last_played for database songs.
+        """
+        if not self.queue:
+            print("Queue is empty. Load songs first.")
+            return
+        
+        # Create audio player
+        player = AudioPlayer(debug=False)
+        
+        # Playback control flags
+        playback_active = {'running': True, 'skip_requested': False, 'previous_requested': False}
+        playback_lock = threading.Lock()
+        
+        # Track song start time to detect skips
+        song_start_time = None
+        last_song_id = None
+        
+        def playback_thread():
+            """Background thread that handles actual playback."""
+            nonlocal song_start_time, last_song_id
+            
+            try:
+                while playback_active['running'] and self.queue:
+                    if self.current_index >= len(self.queue):
+                        break
+                    
+                    song = self.queue[self.current_index]
+                    song_id = song.get('id')
+                    
+                    # Get file path
+                    file_path = song.get('url', '')
+                    if file_path.startswith('file://'):
+                        file_path = file_path[7:]
+                    
+                    # Check if file exists
+                    if not os.path.exists(file_path):
+                        print(f"\nFile not found: {file_path}")
+                        self.current_index += 1
+                        continue
+                    
+                    # Display song info
+                    mins, secs = divmod(int(song.get('length', 0)), 60)
+                    title = song.get('title', 'Unknown')
+                    artist = song.get('artist', 'Unknown')
+                    album = song.get('album', 'Unknown')
+                    print(f"\n[{self.current_index + 1}/{len(self.queue)}] Now playing: {artist} - {title} ({album}) [{mins}:{secs:02d}]")
+                    print(f"File: {file_path}")
+                    
+                    # Load and play the song
+                    if not player.load_file(file_path):
+                        self.current_index += 1
+                        continue
+                    
+                    if not player.play():
+                        self.current_index += 1
+                        continue
+                    
+                    # Track song start
+                    song_start_time = time.time()
+                    last_song_id = song_id
+                    
+                    print("queue/play> ", end="", flush=True)
+                    
+                    # Track if we manually changed tracks
+                    manual_skip = False
+                    
+                    # Wait for playback to complete or command
+                    while player.is_playing and playback_active['running']:
+                        with playback_lock:
+                            if playback_active['skip_requested']:
+                                playback_active['skip_requested'] = False
+                                manual_skip = True
+                                player.stop()
+                                
+                                # Update skipcount if song was skipped early
+                                if song_id and song_start_time:
+                                    elapsed = time.time() - song_start_time
+                                    song_length = song.get('length', 0)
+                                    # Count as skip if less than 80% played
+                                    if song_length > 0 and elapsed < song_length * 0.8:
+                                        database.update_skipcount(self.conn, song_id)
+                                
+                                self.current_index += 1
+                                break
+                            
+                            if playback_active['previous_requested']:
+                                playback_active['previous_requested'] = False
+                                manual_skip = True
+                                player.stop()
+                                
+                                # Update skipcount for current song
+                                if song_id and song_start_time:
+                                    elapsed = time.time() - song_start_time
+                                    song_length = song.get('length', 0)
+                                    if song_length > 0 and elapsed < song_length * 0.8:
+                                        database.update_skipcount(self.conn, song_id)
+                                
+                                # Go to previous song
+                                if self.playback_history:
+                                    self.forward_history.append(self.current_index)
+                                    self.current_index = self.playback_history.pop()
+                                else:
+                                    print("Already at beginning of playback history.")
+                                    manual_skip = False
+                                break
+                        time.sleep(0.1)
+                    
+                    if not playback_active['running']:
+                        player.stop()
+                        break
+                    
+                    # Song finished naturally - update playcount
+                    if not manual_skip and song_id:
+                        database.update_playcount(self.conn, song_id)
+                    
+                    # Move to next track after natural completion
+                    if not manual_skip:
+                        self.playback_history.append(self.current_index)
+                        
+                        # Handle repeat modes
+                        if self.repeat_mode == RepeatMode.TRACK:
+                            pass  # Stay on same track
+                        elif self.repeat_mode == RepeatMode.QUEUE:
+                            self.current_index = (self.current_index + 1) % len(self.queue)
+                        else:
+                            self.current_index += 1
+                            if self.current_index >= len(self.queue):
+                                break
+            
+            finally:
+                player.stop()
+                playback_active['running'] = False
+        
+        # Start playback thread
+        thread = threading.Thread(target=playback_thread, daemon=True)
+        thread.start()
+        
+        # Print initial status
+        print(f"\n=== Playing {len(self.queue)} songs ===")
+        print(f"Repeat mode: {self.repeat_mode.name}")
+        print(f"Shuffle: {'ON' if self.shuffle else 'OFF'}")
+        print(f"Volume: {player.get_volume():.2f}")
+        print("\nPlayback running in background. Type commands below:")
+        print("Commands: next, previous, pause, resume, stop, current, show, help")
+        
+        # Command loop
+        while playback_active['running'] and thread.is_alive():
+            try:
+                command = input("queue/play> ").strip().lower()
+                
+                if not command:
+                    continue
+                
+                if command in ['quit', 'q', 'stop']:
+                    playback_active['running'] = False
+                    player.should_quit = True
+                    print("Stopping playback...")
+                    break
+                
+                elif command in ['next', 'n', 'skip']:
+                    with playback_lock:
+                        playback_active['skip_requested'] = True
+                    print("Skipping to next track...")
+                
+                elif command in ['previous', 'p', 'prev']:
+                    with playback_lock:
+                        playback_active['previous_requested'] = True
+                
+                elif command == 'pause':
+                    player.pause()
+                    print("Paused")
+                
+                elif command == 'resume':
+                    player.resume()
+                    print("Resumed")
+                
+                elif command in ['current', 'c']:
+                    if self.current_index < len(self.queue):
+                        song = self.queue[self.current_index]
+                        position = player.get_position()
+                        duration = player.get_duration()
+                        
+                        mins, secs = divmod(int(song.get('length', 0)), 60)
+                        title = song.get('title', 'Unknown')
+                        artist = song.get('artist', 'Unknown')
+                        album = song.get('album', 'Unknown')
+                        print(f"\nCurrent: {artist} - {title} ({album}) [{mins}:{secs:02d}]")
+                        
+                        if position >= 0 and duration > 0:
+                            pos_mins, pos_secs = divmod(int(position), 60)
+                            dur_mins, dur_secs = divmod(int(duration), 60)
+                            print(f"Position: {pos_mins}:{pos_secs:02d} / {dur_mins}:{dur_secs:02d}")
+                
+                elif command in ['show', 'queue']:
+                    self.show_queue()
+                
+                elif command.startswith('volume '):
+                    try:
+                        vol_str = command.split()[1]
+                        if vol_str.startswith('+') or vol_str.startswith('-'):
+                            current_vol = player.get_volume()
+                            volume = current_vol + float(vol_str)
+                        else:
+                            volume = float(vol_str)
+                        
+                        volume = max(0.0, min(1.0, volume))
+                        player.set_volume(volume)
+                        print(f"Volume: {volume:.2f}")
+                    except (ValueError, IndexError):
+                        print("Usage: volume <0.0-1.0> or volume +0.1 or volume -0.1")
+                
+                elif command == 'help':
+                    print("\nPlayback Commands:")
+                    print("  next/n - Skip to next track")
+                    print("  previous/p - Go to previous track")
+                    print("  pause - Pause playback")
+                    print("  resume - Resume playback")
+                    print("  stop/quit - Stop playback and return")
+                    print("  current/c - Show current song info")
+                    print("  show - Show queue around current position")
+                    print("  volume <0.0-1.0> - Set volume (or +0.1, -0.1)")
+                    print("  help - Show this help")
+                
+                else:
+                    print(f"Unknown command: {command}")
+            
+            except KeyboardInterrupt:
+                playback_active['running'] = False
+                player.should_quit = True
+                print("\nStopping playback...")
+                break
+            except Exception as e:
+                print(f"Error: {e}")
+        
+        thread.join(timeout=2)
+        print("Playback finished.")
 
 
 def interactive_mode(db_path: str = 'walrio_library.db'):
@@ -300,6 +543,7 @@ def interactive_mode(db_path: str = 'walrio_library.db'):
     print("  show - Show current queue")
     print("  play - Play current queue")
     print("  shuffle - Toggle shuffle mode")
+    print("  repeat - Cycle repeat modes (off → track → queue)")
     print("  quit - Exit")
     
     while True:
@@ -359,15 +603,22 @@ def interactive_mode(db_path: str = 'walrio_library.db'):
                 queue_mgr.shuffle = not queue_mgr.shuffle
                 print(f"Shuffle: {'ON' if queue_mgr.shuffle else 'OFF'}")
             
+            elif command == 'repeat':
+                # Cycle through repeat modes: OFF -> TRACK -> QUEUE -> OFF
+                if queue_mgr.repeat_mode == RepeatMode.OFF:
+                    queue_mgr.repeat_mode = RepeatMode.TRACK
+                elif queue_mgr.repeat_mode == RepeatMode.TRACK:
+                    queue_mgr.repeat_mode = RepeatMode.QUEUE
+                else:
+                    queue_mgr.repeat_mode = RepeatMode.OFF
+                print(f"Repeat mode: {queue_mgr.repeat_mode.name}")
+            
             elif command == 'play':
                 if not queue_mgr.queue:
                     print("Queue is empty. Load songs first.")
                     continue
                 
-                print(f"\n=== Playing {len(queue_mgr.queue)} songs ===")
-                print("Shuffle:", 'ON' if queue_mgr.shuffle else 'OFF')
-                print("(Playback controls coming soon)")
-                # TODO: Integrate with AudioPlayer like queue.py does
+                queue_mgr.play_queue()
             
             else:
                 print(f"Unknown command: {command}")

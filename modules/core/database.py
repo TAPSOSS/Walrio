@@ -176,6 +176,115 @@ def extract_metadata(filepath):
         print(f"Error extracting metadata from {filepath}: {e}")
         return None
 
+def update_playcount(conn, song_id):
+    """
+    Increment playcount and update last played timestamp for a song.
+    
+    Args:
+        conn: SQLite database connection.
+        song_id (int): ID of the song in the database.
+        
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        cursor = conn.cursor()
+        current_time = int(time.time())
+        cursor.execute('''
+            UPDATE songs 
+            SET playcount = playcount + 1,
+                lastplayed = ?
+            WHERE id = ?
+        ''', (current_time, song_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating playcount: {e}")
+        return False
+
+def update_skipcount(conn, song_id):
+    """
+    Increment skip count for a song that was skipped before finishing.
+    
+    Args:
+        conn: SQLite database connection.
+        song_id (int): ID of the song in the database.
+        
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE songs 
+            SET skipcount = skipcount + 1
+            WHERE id = ?
+        ''', (song_id,))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating skipcount: {e}")
+        return False
+
+def get_playback_stats(conn, song_id):
+    """
+    Retrieve playback statistics for a song.
+    
+    Args:
+        conn: SQLite database connection.
+        song_id (int): ID of the song in the database.
+        
+    Returns:
+        dict or None: Dictionary with 'playcount', 'skipcount', 'lastplayed', or None if not found.
+    """
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT playcount, skipcount, lastplayed
+            FROM songs
+            WHERE id = ?
+        ''', (song_id,))
+        row = cursor.fetchone()
+        if row:
+            return {
+                'playcount': row[0],
+                'skipcount': row[1],
+                'lastplayed': row[2]
+            }
+        return None
+    except Exception as e:
+        print(f"Error retrieving playback stats: {e}")
+        return None
+
+def update_rating(conn, song_id, rating):
+    """
+    Update the rating for a song (0.0 to 5.0).
+    
+    Args:
+        conn: SQLite database connection.
+        song_id (int): ID of the song in the database.
+        rating (float): Rating value (0.0 to 5.0).
+        
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        if not 0.0 <= rating <= 5.0:
+            print(f"Invalid rating: {rating}. Must be between 0.0 and 5.0")
+            return False
+        
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE songs 
+            SET rating = ?
+            WHERE id = ?
+        ''', (rating, song_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating rating: {e}")
+        return False
+
 def scan_directory(directory_path, conn):
     """
     Scan directory for audio files and add to database.
