@@ -31,12 +31,13 @@ class DatabaseQueue:
     Assumes walrio_library.db exists and is properly configured.
     """
     
-    def __init__(self, db_path: str = 'walrio_library.db'):
+    def __init__(self, db_path: str = 'walrio_library.db', track_stats: bool = True):
         """
         Initialize database queue.
         
         Args:
             db_path: Path to the SQLite database file
+            track_stats: Enable playcount/skipcount tracking (default: True)
             
         Raises:
             FileNotFoundError: If database doesn't exist
@@ -55,6 +56,7 @@ class DatabaseQueue:
         
         self.shuffle = False
         self.repeat_mode = RepeatMode.OFF
+        self.track_stats = track_stats
         
         # Filters
         self.filters = {
@@ -342,7 +344,7 @@ class DatabaseQueue:
                                 player.stop()
                                 
                                 # Update skipcount if song was skipped early
-                                if song_id and song_start_time:
+                                if self.track_stats and song_id and song_start_time:
                                     elapsed = time.time() - song_start_time
                                     song_length = song.get('length', 0)
                                     # Count as skip if less than 80% played
@@ -358,7 +360,7 @@ class DatabaseQueue:
                                 player.stop()
                                 
                                 # Update skipcount for current song
-                                if song_id and song_start_time:
+                                if self.track_stats and song_id and song_start_time:
                                     elapsed = time.time() - song_start_time
                                     song_length = song.get('length', 0)
                                     if song_length > 0 and elapsed < song_length * 0.8:
@@ -379,7 +381,7 @@ class DatabaseQueue:
                         break
                     
                     # Song finished naturally - update playcount
-                    if not manual_skip and song_id:
+                    if self.track_stats and not manual_skip and song_id:
                         database.update_playcount(self.conn, song_id)
                     
                     # Move to next track after natural completion
@@ -505,15 +507,16 @@ class DatabaseQueue:
         print("Playback finished.")
 
 
-def interactive_mode(db_path: str = 'walrio_library.db'):
+def interactive_mode(db_path: str = 'walrio_library.db', track_stats: bool = True):
     """
     Run interactive queue mode with database.
     
     Args:
         db_path: Path to database file
+        track_stats: Enable playcount/skipcount tracking
     """
     try:
-        queue_mgr = DatabaseQueue(db_path)
+        queue_mgr = DatabaseQueue(db_path, track_stats=track_stats)
     except FileNotFoundError as e:
         print(f"Error: {e}")
         print("\nTo create a database:")
@@ -533,6 +536,7 @@ def interactive_mode(db_path: str = 'walrio_library.db'):
     total_albums = cursor.fetchone()[0]
     
     print(f"Library: {total_songs} songs, {total_artists} artists, {total_albums} albums")
+    print(f"Stats tracking: {'ON' if queue_mgr.track_stats else 'OFF'}")
     print("\nCommands:")
     print("  all - Load all songs")
     print("  random [N] - Load N random songs (default 50)")
@@ -544,6 +548,7 @@ def interactive_mode(db_path: str = 'walrio_library.db'):
     print("  play - Play current queue")
     print("  shuffle - Toggle shuffle mode")
     print("  repeat - Cycle repeat modes (off → track → queue)")
+    print("  stats - Toggle playcount tracking")
     print("  quit - Exit")
     
     while True:
@@ -613,6 +618,10 @@ def interactive_mode(db_path: str = 'walrio_library.db'):
                     queue_mgr.repeat_mode = RepeatMode.OFF
                 print(f"Repeat mode: {queue_mgr.repeat_mode.name}")
             
+            elif command == 'stats':
+                queue_mgr.track_stats = not queue_mgr.track_stats
+                print(f"Stats tracking: {'ON' if queue_mgr.track_stats else 'OFF'}")
+            
             elif command == 'play':
                 if not queue_mgr.queue:
                     print("Queue is empty. Load songs first.")
@@ -652,10 +661,16 @@ def main():
         help='Run in interactive mode'
     )
     
+    parser.add_argument(
+        '--no-stats',
+        action='store_true',
+        help='Disable playcount/skipcount tracking'
+    )
+    
     args = parser.parse_args()
     
     if args.interactive:
-        return interactive_mode(args.db_path)
+        return interactive_mode(args.db_path, track_stats=not args.no_stats)
     else:
         parser.print_help()
         return 1
