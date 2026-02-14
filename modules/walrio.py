@@ -5,7 +5,8 @@ import subprocess
 from pathlib import Path
 
 # Module categories
-CORE_MODULES = ['database', 'metadata', 'player', 'playlist', 'queue']
+CORE_MODULES = ['metadata', 'player', 'playlist', 'queue']
+DATABASE_MODULES = ['database', 'song_queue', 'smart_playlist']
 ADDON_MODULES = [
     'apply_loudness', 'convert', 'file_relocater', 'image_converter',
     'playlist_case_conflicts', 'playlist_cleaner', 'playlist_cloner',
@@ -16,16 +17,17 @@ ADDON_MODULES = [
 NICHE_MODULES = ['walrio_import']
 
 def discover_modules():
-    """Dynamically discover all modules in the addons, niche, and core directories."""
+    """Dynamically discover all modules in the core, database, addons, and niche directories."""
     modules_dir = Path(__file__).parent
     modules = {
         'core': {},
+        'database': {},
         'addons': {},
         'niche': {}
     }
     
     # Scan each directory for Python files
-    for category in ['core', 'addons', 'niche']:
+    for category in ['core', 'database', 'addons', 'niche']:
         category_dir = modules_dir / category
         if category_dir.exists():
             for py_file in category_dir.glob('*.py'):
@@ -97,6 +99,13 @@ def get_all_modules():
         'playlistupdate': 'playlist_updater',
         'playlistupdater': 'playlist_updater',
         'walrioimport': 'walrio_import',
+        # Database module aliases (old names)
+        'db_queue': 'song_queue',
+        'dbqueue': 'song_queue',
+        'db_playlist': 'smart_playlist',
+        'dbplaylist': 'smart_playlist',
+        'smartplaylist': 'smart_playlist',
+        'songqueue': 'song_queue',
     }
     
     for alias, actual_name in module_aliases.items():
@@ -135,15 +144,20 @@ def print_help():
     print("Usage: walrio <module> [options]")
     print()
     print("Core Modules:")
-    print("  database     - Scan music directories and build SQLite database")
     print("  metadata     - Edit audio file metadata tags")
     print("  player       - Play audio files with GStreamer")
     print("  playlist     - Create and manage M3U playlists")
     print("  queue        - Manage playback queues")
     print()
+    print("Database Modules (require walrio_library.db):")
+    print("  database     - Scan music directories and build SQLite database")
+    print("  song_queue   - Database-powered playback queue with statistics")
+    print("  smart_playlist - Create dynamic playlists based on rules/queries")
+    print()
     print("Examples:")
     print("  walrio database /path/to/music --db-path library.db")
-    print("  walrio playlist --name 'Rock' --artist 'Queen' -o playlists/")
+    print("  walrio song_queue --interactive")
+    print("  walrio smart_playlist --interactive")
     print("  walrio player song.mp3")
     print("  walrio metadata song.mp3 --show")
     print()
@@ -164,6 +178,13 @@ def print_help_more():
     print("-" * 70)
     for name in sorted(modules['core'].keys()):
         desc = extract_module_description(modules['core'][name])
+        print(f"  {name:20} - {desc}")
+    print()
+    
+    print("DATABASE MODULES (they ALL require a database file created from database.py in core modules):")
+    print("-" * 70)z
+    for name in sorted(modules['database'].keys()):
+        desc = extract_module_description(modules['database'][name])
         print(f"  {name:20} - {desc}")
     print()
     
