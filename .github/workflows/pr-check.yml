@@ -299,8 +299,18 @@ jobs:
                         continue;
                       }
                       
-                      // Look for docstring on next non-empty line
+                      // For functions, skip over multi-line signature
                       let j = i + 1;
+                      if (funcMatch) {
+                        // Track parentheses to find end of signature
+                        let parenCount = (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+                        while (parenCount > 0 && j < lines.length) {
+                          parenCount += (lines[j].match(/\(/g) || []).length - (lines[j].match(/\)/g) || []).length;
+                          j++;
+                        }
+                      }
+                      
+                      // Now look for docstring on next non-empty line after signature
                       while (j < lines.length && lines[j].trim() === '') {
                         j++;
                       }
