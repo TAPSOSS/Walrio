@@ -195,7 +195,7 @@ def print_help_more():
     print()
     
     print("DATABASE MODULES (they ALL require a database file created from database.py in core modules):")
-    print("-" * 70)z
+    print("-" * 70)
     for name in sorted(modules['database'].keys()):
         desc = extract_module_description(modules['database'][name])
         print(f"  {name:20} - {desc}")
