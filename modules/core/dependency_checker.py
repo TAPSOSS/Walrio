@@ -147,7 +147,7 @@ class DependencyChecker:
         
         for dep_name, (is_available, info) in sorted(results.items()):
             dep_info = self.DEPENDENCIES[dep_name]
-            status = "✓" if is_available else "✗"
+            status = "[OK]" if is_available else "[X]"
             
             if is_available:
                 available.append(dep_name)
@@ -177,7 +177,7 @@ class DependencyChecker:
             print()
             return 1
         else:
-            print("\n✓ All dependencies are installed!")
+            print("\n[OK] All dependencies are installed!")
             return 0
     
     def get_install_instructions(self, dep_name: str, platform: str = None) -> str:
@@ -244,10 +244,10 @@ def main():
         
         is_available, info = checker.check_dependency(dep_name)
         if is_available:
-            print(f"✓ {dep_name} is available: {info}")
+            print(f"[OK] {dep_name} is available: {info}")
             return 0
         else:
-            print(f"✗ {dep_name} is not available: {info}")
+            print(f"[X] {dep_name} is not available: {info}")
             if args.verbose:
                 print()
                 print(checker.get_install_instructions(dep_name))
