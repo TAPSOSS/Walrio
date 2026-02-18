@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "walrio"
+version = "1.0.0"
+description = "Modular audio library management system for playing, managing, and editing music files"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "BSD-3-Clause"}
+authors = [
+    {name = "TapsOSS"}
+]
+maintainers = [
+    {name = "TapsOSS"}
+]
+keywords = ["music", "audio", "playlist", "metadata", "player", "library", "management"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Sound/Audio",
+    "Topic :: Multimedia :: Sound/Audio :: Players",
+    "Operating System :: OS Independent",
+]
+
+# Core dependencies from requirements.txt
+dependencies = [
+    "mutagen>=1.45.0",
+    "PySide6>=6.0.0",
+    "Pillow>=8.0.0",
+]
+
+[project.optional-dependencies]
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",
+    "black>=22.0.0",
+    "flake8>=4.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/TAPSOSS/Walrio"
+Repository = "https://github.com/TAPSOSS/Walrio"
+"Bug Tracker" = "https://github.com/TAPSOSS/Walrio/issues"
+
+[project.scripts]
+# Create 'walrio' command that runs modules/walrio.py main()
+walrio = "modules.walrio:main"
+
+[tool.setuptools]
+# Include all Python packages
+packages = ["modules", "modules.core", "modules.addons", "modules.database", "modules.niche"]
+
+[tool.setuptools.package-data]
+# Include licenses and other non-Python files
+"*" = ["LICENSE", "*.md"]
+"licenses" = ["**/*"]
