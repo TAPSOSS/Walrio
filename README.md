@@ -16,24 +16,86 @@ All current contributors are listed both in the sidebar and (optionally) in the 
 
 Check out the [LICENSE file](LICENSE) to see what LICENSE this project uses and how you're allowed to use it. General rule of thumb is attribution (crediting) is required at a minimum.
 
-## Built Instructions (For Devs)
+## Installation
 
-1. Install [Python](https://python.org).
-2. Install non-python libraries (listed in third-party credits below).
-   On fedora this can be done with the following command:
+### Quick Install (pip)
 
+```bash
+pip install walrio
+```
+
+**⚠️ Important:** Walrio requires system dependencies that pip cannot install:
+- FFmpeg
+- GStreamer
+- ImageMagick
+- rsgain
+
+After installing via pip, check for missing dependencies:
+
+```bash
+walrio dependency_checker --verbose
+```
+
+Then install any missing system packages (see [System Requirements](#system-requirements) below).
+
+### System Requirements
+
+Walrio requires the following non-Python tools to be installed on your system:
+
+- **FFmpeg** - Audio/video conversion and processing
+- **GStreamer** - Audio playback engine
+- **ImageMagick** - Image processing for album art
+- **rsgain** - ReplayGain 2.0 loudness scanner
+
+**Installation by platform:**
+
+**Fedora:**
+```bash
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly ffmpeg imagemagick
+# rsgain: See https://github.com/complexlogic/rsgain
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg imagemagick
+yay -S rsgain  # or use another AUR helper
+```
+
+**macOS:**
+```bash
+brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg imagemagick rsgain
+```
+
+## Development Setup
+
+1. Clone the repository
    ```bash
-   sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
+   git clone https://github.com/TAPSOSS/Walrio.git
+   cd Walrio
    ```
 
-3. Install Python dependencies
+2. Install system dependencies (see [System Requirements](#system-requirements) above)
 
+3. Install in editable mode with dev dependencies
    ```bash
-   pip install -r requirements.txt
+   pip install -e .[dev]
    ```
 
-4. Use any command through walrio.py by running it as a python script/file.
-   Try either `python walrio.py --help` or `python3 walrio.py --help` depending on your operating system to see what modules you can use and then further flag and whatnot from there to see what each individual module can do (`python walrio.py player --help` for example).
+4. Verify dependencies
+   ```bash
+   walrio dependency_checker --verbose
+   ```
+
+5. Run Walrio
+   ```bash
+   walrio --help
+   walrio player song.mp3
+   ```
 
 ## Third-Party Credits
 

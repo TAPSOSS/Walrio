@@ -4,6 +4,12 @@
 # ignore Python cache directories
 __pycache__/
 
+# ignore Python packaging/build artifacts
+*.egg-info/
+.eggs/
+*.pyc
+*.pyo
+
 # ignore test files in test directory
 test/
 

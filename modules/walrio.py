@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 
 # Module categories
-CORE_MODULES = ['metadata', 'player', 'playlist', 'queue']
-DATABASE_MODULES = ['database', 'song_queue', 'smart_playlist']
+CORE_MODULES = ['database', 'dependency_checker', 'metadata', 'player', 'playlist', 'queue']
+DATABASE_MODULES = ['song_queue', 'smart_playlist']
 ADDON_MODULES = [
     'apply_loudness', 'convert', 'file_relocater', 'image_converter',
     'playlist_case_conflicts', 'playlist_cleaner', 'playlist_cloner',
@@ -157,17 +157,19 @@ def print_help():
     print("Usage: walrio <module> [options]")
     print()
     print("Core Modules:")
-    print("  metadata     - Edit audio file metadata tags")
-    print("  player       - Play audio files with GStreamer")
-    print("  playlist     - Create and manage M3U playlists")
-    print("  queue        - Manage playback queues")
+    print("  database           - Scan music directories and build SQLite database")
+    print("  dependency_checker - Check for required system dependencies")
+    print("  metadata           - Edit audio file metadata tags")
+    print("  player             - Play audio files with GStreamer")
+    print("  playlist           - Create and manage M3U playlists")
+    print("  queue              - Manage playback queues")
     print()
     print("Database Modules (require walrio_library.db):")
-    print("  database     - Scan music directories and build SQLite database")
     print("  song_queue   - Database-powered playback queue with statistics")
     print("  smart_playlist - Create dynamic playlists based on rules/queries")
     print()
     print("Examples:")
+    print("  walrio dependency_checker --verbose")
     print("  walrio database /path/to/music --db-path library.db")
     print("  walrio song_queue --interactive")
     print("  walrio smart_playlist --interactive")
