@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "walrio"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Modular audio library management system for playing, managing, and editing music files (requires FFmpeg, GStreamer, ImageMagick, rsgain)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -56,11 +56,16 @@ Repository = "https://github.com/TAPSOSS/Walrio"
 # Create 'walrio' command that runs modules/walrio.py main()
 walrio = "modules.walrio:main"
 
-[tool.setuptools]
-# Include all Python packages
-packages = ["modules", "modules.core", "modules.addons", "modules.database", "modules.niche"]
+[tool.setuptools.packages.find]
+# Automatically discover all packages starting with 'modules'
+where = ["."]
+include = ["modules*"]
 
 [tool.setuptools.package-data]
 # Include licenses and other non-Python files
 "*" = ["LICENSE", "*.md"]
 "licenses" = ["**/*"]
+
+[tool.setuptools_scm]
+# Auto-generate version from git tags
+# Tag format: v1.0.0 -> version: 1.0.0
