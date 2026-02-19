@@ -3,6 +3,11 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+try:
+    from importlib.metadata import version as pkg_version, PackageNotFoundError
+except ImportError:
+    pkg_version = None
+    PackageNotFoundError = None
 
 def discover_modules():
     """Dynamically discover all modules in the core, database, addons, and niche directories."""
@@ -167,6 +172,7 @@ def print_help():
     print("Options:")
     print("  --help-more  Show all available modules with descriptions")
     print("  --version    Show version information")
+    print("  --credit     Show authors and contributors")
     print()
 
 def print_help_more():
@@ -208,19 +214,39 @@ def print_help_more():
     print()
 
 def print_version():
-    """Print version information."""
-    print("Walrio v2.0 (Remade Edition)")
+    """Print version information from package metadata if available."""
+    v = None
+    if pkg_version is not None:
+        try:
+            v = pkg_version("walrio")
+        except Exception:
+            pass
+    if v:
+        print(f"Walrio v{v}")
+    else:
+        print("Walrio (version unknown)")
     print("Audio Library Management System")
     print()
+
+def print_credits():
+    """Print authors and contributors from AUTHORS file."""
+    authors_path = Path(__file__).parent.parent / "AUTHORS"
+    if authors_path.exists():
+        print("Walrio Authors and Contributors:")
+        print("-" * 40)
+        with open(authors_path, "r") as f:
+            print(f.read())
+    else:
+        print("AUTHORS file not found.")
 
 def main():
     """Main entry point for the unified Walrio interface."""
     if len(sys.argv) < 2:
         print_help()
         return 0
-    
+
     command = sys.argv[1]
-    
+
     # Handle special commands
     if command in ['--help', '-h', 'help']:
         print_help()
@@ -231,7 +257,10 @@ def main():
     elif command in ['--version', '-v']:
         print_version()
         return 0
-    
+    elif command in ['--credit', '--credits']:
+        print_credits()
+        return 0
+
     # Run module
     module_args = sys.argv[2:] if len(sys.argv) > 2 else []
     return run_module(command, module_args)
