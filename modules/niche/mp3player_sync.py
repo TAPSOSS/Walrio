@@ -99,7 +99,7 @@ Examples:
         help='Playlist directory(ies) or file(s) to sync. Last argument is the output directory (MP3 player location).'
     )
     parser.add_argument(
-        '--playlist-files',
+        '-pf', '--playlist-files',
         action='store_true',
         help='Treat inputs as individual playlist files instead of directories'
     )
