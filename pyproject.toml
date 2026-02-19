@@ -56,9 +56,10 @@ Repository = "https://github.com/TAPSOSS/Walrio"
 # Create 'walrio' command that runs modules/walrio.py main()
 walrio = "modules.walrio:main"
 
-[tool.setuptools]
-# Include all Python packages
-packages = ["modules", "modules.core", "modules.addons", "modules.database", "modules.niche"]
+[tool.setuptools.packages.find]
+# Automatically discover all packages starting with 'modules'
+where = ["."]
+include = ["modules*"]
 
 [tool.setuptools.package-data]
 # Include licenses and other non-Python files
