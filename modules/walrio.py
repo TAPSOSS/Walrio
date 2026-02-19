@@ -4,18 +4,6 @@ import sys
 import subprocess
 from pathlib import Path
 
-# Module categories
-CORE_MODULES = ['database', 'dependency_checker', 'metadata', 'player', 'playlist', 'queue']
-DATABASE_MODULES = ['song_queue', 'smart_playlist']
-ADDON_MODULES = [
-    'apply_loudness', 'convert', 'file_relocater', 'image_converter',
-    'playlist_case_conflicts', 'playlist_cleaner', 'playlist_cloner',
-    'playlist_deleter', 'playlist_fixer', 'playlist_mover',
-    'playlist_overlap', 'playlist_updater', 'rename', 'replay_gain',
-    'resize_album_art'
-]
-NICHE_MODULES = ['aacplayer_sync', 'flacplayer_sync', 'mp3player_sync', 'opusplayer_sync', 'walrio_import']
-
 def discover_modules():
     """Dynamically discover all modules in the core, database, addons, and niche directories."""
     modules_dir = Path(__file__).parent
