@@ -257,7 +257,7 @@ def main():
     elif command in ['--version', '-v']:
         print_version()
         return 0
-    elif command in ['--credit', '--credits']:
+    elif command in ['--credit', '--credits', '--author', '--authors']:
         print_credits()
         return 0
 
