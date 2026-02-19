@@ -38,6 +38,8 @@ walrio dependency_checker --verbose
 
 Then install any missing system packages (see [System Requirements](#system-requirements) below).
 
+If you have all the needed dependencies, you can get started using walrio with the help command (`walrio --help`).
+
 ### System Requirements
 
 Walrio requires the following non-Python tools to be installed on your system:
