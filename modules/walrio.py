@@ -14,7 +14,7 @@ ADDON_MODULES = [
     'playlist_overlap', 'playlist_updater', 'rename', 'replay_gain',
     'resize_album_art'
 ]
-NICHE_MODULES = ['walrio_import']
+NICHE_MODULES = ['aacplayer_sync', 'flacplayer_sync', 'mp3player_sync', 'opusplayer_sync', 'walrio_import']
 
 def discover_modules():
     """Dynamically discover all modules in the core, database, addons, and niche directories."""
