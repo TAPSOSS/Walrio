@@ -247,12 +247,20 @@ class AudioConverter:
                 # Unless force_reconvert is set, validate specs
                 if not self.force_reconvert:
                     if self._matches_target_specs(input_path):
-                        print(f"Skipping {input_path.name} (already in target format with correct specs)")
+                        # Print with file counter
+                        if current_file and total_files:
+                            print(f"File {current_file}/{total_files}: Skipping {input_path.name} (already in target format with correct specs)")
+                        else:
+                            print(f"Skipping {input_path.name} (already in target format with correct specs)")
                         return input_path
                     else:
                         # Need to reconvert to temp file then rename
                         specs = self._get_audio_specs(input_path)
-                        print(f"File {input_path.name} needs reconversion:")
+                        # Print with file counter
+                        if current_file and total_files:
+                            print(f"File {current_file}/{total_files}: {input_path.name} needs reconversion:")
+                        else:
+                            print(f"{input_path.name} needs reconversion:")
                         print(f"  Current: {specs['sample_rate']}Hz, {specs['bit_depth']}-bit")
                         if self.sample_rate:
                             print(f"  Target:  {self.sample_rate}Hz", end='')
@@ -265,18 +273,18 @@ class AudioConverter:
         # Check if output exists and prompt if needed
         if output_path.exists() and not force_overwrite:
             if not self.prompt_overwrite(output_path):
-                print(f"Skipped: {input_path.name}")
+                if current_file and total_files:
+                    print(f"File {current_file}/{total_files}: Skipped: {input_path.name}")
+                else:
+                    print(f"Skipped: {input_path.name}")
                 return None
         
         # Build FFmpeg command
         format_config = self.FORMATS[self.output_format]
         cmd = ['ffmpeg', '-i', str(input_path)]
         
-        # Display progress before conversion
-        if current_file and total_files:
-            print(f"\nFile {current_file}/{total_files}: Converting {input_path.name} -> {output_path.name}")
-        else:
-            print(f"\nConverting: {input_path.name} -> {output_path.name}")
+        # Display conversion progress (file counter already shown above if needed)
+        print(f"Converting {input_path.name} -> {output_path.name}")
         
         # Overwrite flag
         if force_overwrite or self.overwrite_all:
@@ -428,7 +436,7 @@ class AudioConverter:
                 
                 # Skip if exists and skip_existing is True
                 if skip_existing and output_path.exists():
-                    print(f"Skipped (exists): {file_path.name}")
+                    print(f"File {idx}/{len(files)}: Skipped (exists): {file_path.name}")
                     stats['skipped'] += 1
                     continue
                 
@@ -440,7 +448,7 @@ class AudioConverter:
                     stats['skipped'] += 1
                 
             except Exception as e:
-                print(f"Error converting {file_path.name}: {e}", file=sys.stderr)
+                print(f"File {idx}/{len(files)}: Error converting {file_path.name}: {e}", file=sys.stderr)
                 stats['errors'] += 1
         
         return stats
