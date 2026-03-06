@@ -189,7 +189,7 @@ class AudioConverter:
         
         # Sample rate
         if self.sample_rate:
-            cmd.extend(['-ar', self.sample_rate])
+            cmd.extend(['-ar', str(self.sample_rate)])
         
         # Bit depth for lossless formats
         if self.bit_depth and self.output_format in ('flac', 'wav'):
