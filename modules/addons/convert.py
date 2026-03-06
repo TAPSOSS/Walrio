@@ -234,9 +234,11 @@ class AudioConverter:
         if not input_path.exists():
             raise FileNotFoundError(f"Input file not found: {input_path}")
         
+        # Get format config
+        format_config = self.FORMATS[self.output_format]
+        
         # Determine output path
         if output_path is None:
-            format_config = self.FORMATS[self.output_format]
             output_path = input_path.with_suffix(format_config['ext'])
         
         # Check if already in target format with correct specs
