@@ -155,8 +155,8 @@ class AudioConverter:
                 'codec_name': specs.get('codec_name', '')
             }
         except Exception as e:
-            print(f"  Warning: Could not read audio specs: {e}")
-            return {'sample_rate': 0, 'bit_depth': None, 'codec_name': ''}
+            # File is likely corrupted or unreadable
+            return {'sample_rate': 0, 'bit_depth': None, 'codec_name': '', 'error': str(e)}
     
     def _matches_target_specs(self, filepath: Path) -> bool:
         """
@@ -256,6 +256,16 @@ class AudioConverter:
                     else:
                         # Need to reconvert to temp file then rename
                         specs = self._get_audio_specs(input_path)
+                        
+                        # Check if file is corrupted/unreadable
+                        if specs['sample_rate'] == 0 or specs['bit_depth'] is None:
+                            if current_file and total_files:
+                                print(f"File {current_file}/{total_files}: ERROR - {input_path.name} is corrupted or unreadable")
+                            else:
+                                print(f"ERROR - {input_path.name} is corrupted or unreadable")
+                            print(f"  File cannot be read by ffprobe. Skipping.")
+                            return None
+                        
                         # Print with file counter
                         if current_file and total_files:
                             print(f"File {current_file}/{total_files}: {input_path.name} needs reconversion:")
@@ -382,7 +392,19 @@ class AudioConverter:
             return output_path
             
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Conversion failed: {e.stderr}")
+            # Extract only the actual error message from stderr, not the entire FFmpeg banner
+            stderr = e.stderr
+            error_lines = []
+            for line in stderr.split('\n'):
+                # Skip FFmpeg banner/config lines
+                if any(skip in line for skip in ['ffmpeg version', 'built with', 'configuration:', 'lib', '  --']):
+                    continue
+                # Capture actual error lines
+                if line.strip() and (line.startswith('[') or 'error' in line.lower() or 'Error' in line):
+                    error_lines.append(line.strip())
+            
+            error_msg = '\n  '.join(error_lines[-5:]) if error_lines else 'Unknown conversion error'
+            raise RuntimeError(f"Conversion failed:\n  {error_msg}")
     
     def convert_directory(self, input_dir: Path, output_dir: Path = None,
                          recursive: bool = True, force_overwrite: bool = False, skip_existing: bool = False) -> dict:
