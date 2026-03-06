@@ -424,12 +424,6 @@ class AudioConverter:
                 )
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 
-                # Skip if already target format and same location
-                if file_path.suffix.lower() == self.FORMATS[self.output_format]['ext']:
-                    if output_dir == input_dir:
-                        stats['skipped'] += 1
-                        continue
-                
                 # Skip if exists and skip_existing is True
                 if skip_existing and output_path.exists():
                     print(f"Skipped (exists): {file_path.name}")
