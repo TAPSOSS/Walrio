@@ -57,7 +57,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False):
     """
     Run complete import pipeline
     
@@ -73,6 +73,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         dry_run: Show commands without executing
         playlist_dir: Directory containing playlists to update after rename
         delete_originals: Delete original files after conversion
+        force_reconvert: Force reconvert all files regardless of current specs
         
     Returns:
         True if all stages succeeded
@@ -142,6 +143,10 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     # Add delete-originals to convert if requested
     if delete_originals:
         stages[0]['args'].append('--delete-original')
+    
+    # Add force-reconvert to convert if requested
+    if force_reconvert:
+        stages[0]['args'].append('--force-reconvert')
     
     # Add playlist updating to rename if specified
     if playlist_dir:
@@ -213,6 +218,9 @@ Examples:
     parser.add_argument('--delete-originals', '--do', action='store_true',
                        dest='delete_originals',
                        help='Delete original files after conversion (use with caution!)')
+    parser.add_argument('--force-reconvert', '--fr', action='store_true',
+                       dest='force_reconvert',
+                       help='Force reconvert all files regardless of current specs')
     
     args = parser.parse_args()
     
@@ -236,7 +244,8 @@ Examples:
             args.recursive, 
             args.dry_run,
             args.playlist_dir,
-            args.delete_originals
+            args.delete_originals,
+            args.force_reconvert
         )
         return 0 if success else 1
     

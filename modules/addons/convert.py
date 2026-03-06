@@ -28,7 +28,8 @@ class AudioConverter:
     
     def __init__(self, output_format: str, preserve_metadata: bool = True,
                  bitrate: str = None, bit_depth: str = None, sample_rate: str = None,
-                 delete_original: bool = False, encoding_mode: str = None):
+                 delete_original: bool = False, encoding_mode: str = None,
+                 force_reconvert: bool = False):
         """
         Args:
             output_format: Target format (mp3, flac, etc.)
@@ -38,6 +39,7 @@ class AudioConverter:
             sample_rate: Sample rate ('44100', '48000', '96000', '192000')
             delete_original: Delete original file after conversion
             encoding_mode: Encoding mode for lossy formats ('vbr', 'cbr', 'abr')
+            force_reconvert: Force reconvert all files regardless of specs
         """
         if output_format not in self.FORMATS:
             raise ValueError(f"Unsupported format: {output_format}")
@@ -49,6 +51,7 @@ class AudioConverter:
         self.sample_rate = sample_rate
         self.delete_original = delete_original
         self.encoding_mode = encoding_mode
+        self.force_reconvert = force_reconvert
         self.overwrite_all = False
         self.skip_all = False
         self._check_ffmpeg()
@@ -100,8 +103,86 @@ class AudioConverter:
         """Check if FFmpeg is available"""
         try:
             subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            subprocess.run(['ffprobe', '-version'], capture_output=True, check=True)
         except (subprocess.CalledProcessError, FileNotFoundError):
-            raise RuntimeError("FFmpeg not found. Install with: apt install ffmpeg")
+            raise RuntimeError("FFmpeg/FFprobe not found. Install with: apt install ffmpeg")
+    
+    def _get_audio_specs(self, filepath: Path) -> dict:
+        """
+        Get audio specifications using ffprobe
+        
+        Args:
+            filepath: Path to audio file
+            
+        Returns:
+            Dictionary with 'sample_rate', 'bit_depth', 'codec_name'
+        """
+        try:
+            cmd = [
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'a:0',
+                '-show_entries', 'stream=codec_name,sample_rate,bits_per_raw_sample,sample_fmt',
+                '-of', 'default=noprint_wrappers=1',
+                str(filepath)
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            
+            specs = {}
+            for line in result.stdout.strip().split('\n'):
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    specs[key] = value
+            
+            # Extract sample rate
+            sample_rate = int(specs.get('sample_rate', 0))
+            
+            # Extract bit depth - try bits_per_raw_sample first, then infer from sample_fmt
+            bit_depth = specs.get('bits_per_raw_sample', 'N/A')
+            if bit_depth == 'N/A' or bit_depth == '':
+                sample_fmt = specs.get('sample_fmt', '')
+                if 's16' in sample_fmt:
+                    bit_depth = 16
+                elif 's32' in sample_fmt:
+                    bit_depth = 32
+                elif 's24' in sample_fmt:
+                    bit_depth = 24
+            else:
+                bit_depth = int(bit_depth) if bit_depth.isdigit() else None
+            
+            return {
+                'sample_rate': sample_rate,
+                'bit_depth': bit_depth,
+                'codec_name': specs.get('codec_name', '')
+            }
+        except Exception as e:
+            print(f"  Warning: Could not read audio specs: {e}")
+            return {'sample_rate': 0, 'bit_depth': None, 'codec_name': ''}
+    
+    def _matches_target_specs(self, filepath: Path) -> bool:
+        """
+        Check if file matches target specifications
+        
+        Args:
+            filepath: Path to audio file
+            
+        Returns:
+            True if file matches all target specs
+        """
+        specs = self._get_audio_specs(filepath)
+        
+        # Check sample rate if specified
+        if self.sample_rate:
+            target_rate = int(self.sample_rate)
+            if specs['sample_rate'] != target_rate:
+                return False
+        
+        # Check bit depth if specified (for lossless formats)
+        if self.bit_depth and self.output_format in ('flac', 'wav'):
+            target_depth = int(self.bit_depth)
+            if specs['bit_depth'] != target_depth:
+                return False
+        
+        return True
     
     def prompt_overwrite(self, filepath: Path) -> bool:
         """
@@ -158,11 +239,26 @@ class AudioConverter:
             format_config = self.FORMATS[self.output_format]
             output_path = input_path.with_suffix(format_config['ext'])
         
-        # Check if already in target format
+        # Check if already in target format with correct specs
         if input_path.suffix.lower() == output_path.suffix.lower():
             if input_path == output_path:
-                print(f"Skipping {input_path.name} (already in target format)")
-                return input_path
+                # Unless force_reconvert is set, validate specs
+                if not self.force_reconvert:
+                    if self._matches_target_specs(input_path):
+                        print(f"Skipping {input_path.name} (already in target format with correct specs)")
+                        return input_path
+                    else:
+                        # Need to reconvert to temp file then rename
+                        specs = self._get_audio_specs(input_path)
+                        print(f"File {input_path.name} needs reconversion:")
+                        print(f"  Current: {specs['sample_rate']}Hz, {specs['bit_depth']}-bit")
+                        if self.sample_rate:
+                            print(f"  Target:  {self.sample_rate}Hz", end='')
+                            if self.bit_depth:
+                                print(f", {self.bit_depth}-bit")
+                            else:
+                                print()
+                        output_path = input_path.with_suffix('.tmp' + format_config['ext'])
         
         # Check if output exists and prompt if needed
         if output_path.exists() and not force_overwrite:
@@ -257,8 +353,16 @@ class AudioConverter:
             
             print(f"  [OK] Success: {output_path.name}")
             
+            # Handle temp file from reconversion
+            if output_path.suffix.startswith('.tmp'):
+                final_path = output_path.with_suffix(output_path.suffix.replace('.tmp', ''))
+                if final_path.exists():
+                    final_path.unlink()
+                output_path.rename(final_path)
+                output_path = final_path
+                print(f"  Replaced original with reconverted file")
             # Delete original if requested
-            if self.delete_original and output_path.exists() and input_path != output_path:
+            elif self.delete_original and output_path.exists() and input_path != output_path:
                 try:
                     input_path.unlink()
                     print(f"  Deleted original: {input_path.name}")
@@ -351,7 +455,8 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
                  skip_existing: bool = False, quality: Optional[Union[int, str]] = None,
                  preserve_metadata: bool = True, bitrate: Optional[str] = None,
                  bit_depth: Optional[int] = None, sample_rate: Optional[int] = None,
-                 delete_original: bool = False, encoding_mode: Optional[str] = None) -> dict:
+                 delete_original: bool = False, encoding_mode: Optional[str] = None,
+                 force_reconvert: bool = False) -> dict:
     """
     Convert audio file(s)
     
@@ -369,6 +474,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
         sample_rate: Target sample rate (e.g., 44100)
         delete_original: Delete original after conversion
         encoding_mode: Encoding mode ('vbr', 'cbr', 'abr')
+        force_reconvert: Force reconvert all files regardless of specs
         
     Returns:
         Conversion statistics
@@ -377,7 +483,7 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
         output_format, preserve_metadata,
         bitrate=bitrate, bit_depth=bit_depth, 
         sample_rate=sample_rate, delete_original=delete_original,
-        encoding_mode=encoding_mode
+        encoding_mode=encoding_mode, force_reconvert=force_reconvert
     )
     
     if input_path.is_dir():
@@ -416,6 +522,8 @@ def main():
                        help='Delete original file after successful conversion')
     parser.add_argument('-em', '--encoding-mode', choices=['vbr', 'cbr', 'abr'],
                        help='Encoding mode for lossy formats (default: vbr)')
+    parser.add_argument('-fr', '--force-reconvert', action='store_true',
+                       help='Force reconvert all files regardless of current specs')
     
     args = parser.parse_args()
     
@@ -433,7 +541,8 @@ def main():
             args.bit_depth,
             args.sample_rate,
             args.delete_original,
-            args.encoding_mode
+            args.encoding_mode,
+            args.force_reconvert
         )
         
         print(f"\nConversion complete:")
