@@ -590,7 +590,13 @@ def main():
         if stats['metadata_errors']:
             print(f"  Metadata errors: {stats['metadata_errors']}")
         
-        return 1 if stats['errors'] else 0
+        # Only return error if ALL files failed (0 renamed AND 0 skipped)
+        total_processed = stats['renamed'] + stats['skipped']
+        if total_processed == 0 and stats['errors'] > 0:
+            print(f"ERROR: All files failed to rename")
+            return 1
+        
+        return 0
         
     except Exception as e:
         logger.error(f"Error: {e}")
