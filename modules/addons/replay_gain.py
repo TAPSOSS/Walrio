@@ -163,7 +163,13 @@ class ReplayGainAnalyzer:
             lufs_col = colmap.get("Loudness (LUFS)", -1)
             if lufs_col != -1 and lufs_col < len(values):
                 try:
-                    analysis_result['loudness_lufs'] = float(values[lufs_col])
+                    lufs_value = float(values[lufs_col])
+                    # Check for invalid values (infinity indicates silent/corrupted file)
+                    if not (-100 <= lufs_value <= 0):
+                        logger.error(f"Invalid loudness value for {filepath.name}: {lufs_value} LUFS (file may be silent or corrupted)")
+                        self.error_count += 1
+                        return None
+                    analysis_result['loudness_lufs'] = lufs_value
                 except ValueError:
                     analysis_result['loudness_lufs'] = values[lufs_col]
             
@@ -171,7 +177,13 @@ class ReplayGainAnalyzer:
             gain_col = colmap.get("Gain (dB)", -1)
             if gain_col != -1 and gain_col < len(values):
                 try:
-                    analysis_result['gain_db'] = float(values[gain_col])
+                    gain_value = float(values[gain_col])
+                    # Check for invalid values (infinity indicates calculation error)
+                    if abs(gain_value) > 100:
+                        logger.error(f"Invalid gain value for {filepath.name}: {gain_value} dB (file may be silent or corrupted)")
+                        self.error_count += 1
+                        return None
+                    analysis_result['gain_db'] = gain_value
                 except ValueError:
                     analysis_result['gain_db'] = values[gain_col]
             
@@ -284,7 +296,13 @@ class ReplayGainAnalyzer:
             lufs_col = colmap.get("Loudness (LUFS)", -1)
             if lufs_col != -1 and lufs_col < len(values):
                 try:
-                    analysis_result['loudness_lufs'] = float(values[lufs_col])
+                    lufs_value = float(values[lufs_col])
+                    # Check for invalid values (infinity indicates silent/corrupted file)
+                    if not (-100 <= lufs_value <= 0):
+                        logger.error(f"Invalid loudness value for {filepath.name}: {lufs_value} LUFS (file may be silent or corrupted)")
+                        self.error_count += 1
+                        return None
+                    analysis_result['loudness_lufs'] = lufs_value
                 except ValueError:
                     analysis_result['loudness_lufs'] = values[lufs_col]
             
@@ -292,7 +310,13 @@ class ReplayGainAnalyzer:
             gain_col = colmap.get("Gain (dB)", -1)
             if gain_col != -1 and gain_col < len(values):
                 try:
-                    analysis_result['gain_db'] = float(values[gain_col])
+                    gain_value = float(values[gain_col])
+                    # Check for invalid values (infinity indicates calculation error)
+                    if abs(gain_value) > 100:
+                        logger.error(f"Invalid gain value for {filepath.name}: {gain_value} dB (file may be silent or corrupted)")
+                        self.error_count += 1
+                        return None
+                    analysis_result['gain_db'] = gain_value
                 except ValueError:
                     analysis_result['gain_db'] = values[gain_col]
             

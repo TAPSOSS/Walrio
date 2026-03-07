@@ -806,11 +806,12 @@ Requirements:
             if create_backup and applicator.backup_count > 0:
                 print(f"  Backups created: {applicator.backup_count}")
             
-            if applicator.error_count > 0:
-                logger.error(f"Encountered {applicator.error_count} errors during processing")
+            # Only return error if ALL files failed (0 successful)
+            if total_files > 0 and total_successful == 0:
+                print(f"ERROR: All files failed loudness processing")
                 return 1
         
-        return 0 if total_successful == total_files else 1
+        return 0
         
     except Exception as e:
         logger.error(f"Error: {e}")
