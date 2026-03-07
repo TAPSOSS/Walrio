@@ -496,7 +496,12 @@ Supported audio formats: mp3, flac, ogg, opus, m4a, aac, wav
                 print(f"  Successful: {total_successful - (total_files - len(input_files))}")
                 print(f"  Total: {len(input_files)}")
         
-        return 0 if total_successful == total_files else 1
+        # Only return error if ALL files failed (0 successful)
+        if total_files > 0 and total_successful == 0:
+            print(f"ERROR: All files failed to resize album art")
+            return 1
+        
+        return 0
         
     except Exception as e:
         logger.error(f"Error: {e}")
