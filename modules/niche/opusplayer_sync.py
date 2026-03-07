@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Simplified script to clone playlists and files onto a Opus player."""
+"""
+Simplified script to clone playlists and files onto a Opus player.
+"""
 
 import sys
 import argparse

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Simplified script to clone playlists and files onto a FLAC player."""
+"""
+Simplified script to clone playlists and files onto a FLAC player.
+"""
 
 import sys
 import argparse
