@@ -294,7 +294,7 @@ class AudioConverter:
         cmd = ['ffmpeg', '-i', str(input_path)]
         
         # Only map audio streams (ignore embedded images/video that may be corrupted)
-        cmd.extend(['-map', '0:a'])
+        cmd.extend(['-map', '0:a', '-vn'])
         
         # Display conversion progress (file counter already shown above if needed)
         print(f"Converting {input_path.name} -> {output_path.name}")
@@ -579,6 +579,10 @@ def main():
         print(f"  Skipped: {stats['skipped']}")
         if stats['errors']:
             print(f"  Errors: {stats['errors']}")
+        
+        # Only fail if ALL files failed (no successful conversions or skips)
+        if stats['converted'] == 0 and stats['skipped'] == 0:
+            print("\nERROR: All files failed to convert", file=sys.stderr)
             return 1
         
     except Exception as e:
