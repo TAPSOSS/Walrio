@@ -293,6 +293,9 @@ class AudioConverter:
         format_config = self.FORMATS[self.output_format]
         cmd = ['ffmpeg', '-i', str(input_path)]
         
+        # Only map audio streams (ignore embedded images/video that may be corrupted)
+        cmd.extend(['-map', '0:a'])
+        
         # Display conversion progress (file counter already shown above if needed)
         print(f"Converting {input_path.name} -> {output_path.name}")
         
