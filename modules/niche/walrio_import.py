@@ -57,7 +57,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False):
     """
     Run complete import pipeline
     
@@ -74,6 +74,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         playlist_dir: Directory containing playlists to update after rename
         delete_originals: Delete original files after conversion
         force_reconvert: Force reconvert all files regardless of current specs
+        stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
         
     Returns:
         True if all stages succeeded
@@ -167,17 +168,25 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         return True
     
     # Execute pipeline
+    failed_stages = []
     for i, stage in enumerate(stages, 1):
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
         if not run_module(stage['name'], input_path, stage['args'], recursive):
-            print(f"\nPipeline FAILED at stage {i}: {stage['name']}")
-            return False
+            failed_stages.append(stage['name'])
+            if stop_on_error:
+                print(f"\nPipeline STOPPED at stage {i}: {stage['name']}")
+                return False
+            else:
+                print(f"\nWARNING: Stage {i} ({stage['name']}) had errors, continuing...")
     
     print("\n" + "=" * 60)
-    print("Pipeline completed successfully!")
-    return True
+    if failed_stages:
+        print(f"Pipeline completed with errors in: {', '.join(failed_stages)}")
+    else:
+        print("Pipeline completed successfully!")
+    return len(failed_stages) == 0
 
 
 def main():
@@ -220,7 +229,11 @@ Examples:
                        help='Delete original files after conversion (use with caution!)')
     parser.add_argument('--force-reconvert', '--fr', action='store_true',
                        dest='force_reconvert',
-                       help='Force reconvert all files regardless of current specs')
+                       help='Force reconvert all files regardless of current audio specs')
+    
+    parser.add_argument('--dont-continue', '--dc', action='store_true',
+                       dest='dont_continue',
+                       help='Stop pipeline execution if any stage has errors (default: continue through all stages)')
     
     args = parser.parse_args()
     
@@ -245,7 +258,8 @@ Examples:
             args.dry_run,
             args.playlist_dir,
             args.delete_originals,
-            args.force_reconvert
+            args.force_reconvert,
+            args.dont_continue
         )
         return 0 if success else 1
     
