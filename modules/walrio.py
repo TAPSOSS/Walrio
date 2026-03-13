@@ -9,6 +9,11 @@ except ImportError:
     pkg_version = None
     PackageNotFoundError = None
 
+try:
+    from setuptools_scm import get_version
+except ImportError:
+    get_version = None
+
 def discover_modules():
     """Dynamically discover all modules in the core, database, addons, and niche directories."""
     modules_dir = Path(__file__).parent
@@ -216,11 +221,22 @@ def print_help_more():
 def print_version():
     """Print version information from package metadata if available."""
     v = None
-    if pkg_version is not None:
+    
+    # Try to get version from git tags first (when running from source)
+    if get_version is not None:
+        try:
+            repo_root = Path(__file__).parent.parent
+            v = get_version(root=str(repo_root))
+        except Exception:
+            pass
+    
+    # Fall back to installed package version
+    if v is None and pkg_version is not None:
         try:
             v = pkg_version("walrio")
         except Exception:
             pass
+    
     if v:
         print(f"Walrio v{v}")
     else:
