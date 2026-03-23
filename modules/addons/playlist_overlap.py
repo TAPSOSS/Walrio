@@ -17,19 +17,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger('PlaylistOverlap')
 
-# Try to import metadata module for EXTINF generation
+# Import playlist and metadata modules
 try:
-    from ..core import metadata
-    METADATA_AVAILABLE = True
+    from ..core import playlist, metadata
+    PLAYLIST_MODULE_AVAILABLE = True
 except ImportError:
     try:
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-        from core import metadata
-        METADATA_AVAILABLE = True
+        from core import playlist, metadata
+        PLAYLIST_MODULE_AVAILABLE = True
     except ImportError:
-        METADATA_AVAILABLE = False
-        logger.debug("Metadata module not available, playlists will not include EXTINF tags")
+        PLAYLIST_MODULE_AVAILABLE = False
+        logger.warning("Playlist module not available, playlists will be created in basic format")
 
 
 class PlaylistOverlapFinder:
@@ -309,48 +309,78 @@ class PlaylistOverlapFinder:
         # Sort paths for consistent output
         sorted_songs = sorted(result_songs)
         
-        # Determine output directory for relative path calculation
-        output_dir = os.path.dirname(os.path.abspath(output_path))
-        
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # Write the playlist
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write("#EXTM3U\n")
-                
-                for file_path in sorted_songs:
-                    # Extract metadata for EXTINF if available
-                    if METADATA_AVAILABLE:
-                        try:
-                            meta = metadata.extract_metadata_for_playlist(file_path)
-                            if meta:
-                                duration = int(meta.get('length', 0))
-                                artist = meta.get('artist', 'Unknown Artist')
-                                title = meta.get('title', os.path.basename(file_path))
-                                f.write(f"#EXTINF:{duration},{artist} - {title}\n")
-                        except Exception as e:
-                            logger.debug(f"Could not extract metadata for {file_path}: {e}")
-                    
-                    # Convert to relative path if requested
-                    if use_relative_paths:
-                        try:
-                            rel_path = os.path.relpath(file_path, output_dir)
-                            f.write(f"{rel_path}\n")
-                        except ValueError:
-                            # Can't create relative path (different drives on Windows)
-                            f.write(f"{file_path}\n")
+        # Use playlist.py module if available for proper M3U creation
+        if PLAYLIST_MODULE_AVAILABLE:
+            # Prepare song data for playlist module
+            song_list = []
+            for file_path in sorted_songs:
+                try:
+                    # Extract metadata for each song
+                    meta = metadata.extract_metadata_for_playlist(file_path)
+                    if meta:
+                        song_list.append({
+                            'filepath': file_path,
+                            'title': meta.get('title', os.path.basename(file_path)),
+                            'artist': meta.get('artist', 'Unknown Artist'),
+                            'length': int(meta.get('length', 0))
+                        })
                     else:
-                        f.write(f"{file_path}\n")
+                        # Fallback if metadata extraction fails
+                        song_list.append({
+                            'filepath': file_path,
+                            'title': os.path.basename(file_path),
+                            'artist': 'Unknown Artist',
+                            'length': 0
+                        })
+                except Exception as e:
+                    logger.debug(f"Could not extract metadata for {file_path}: {e}")
+                    song_list.append({
+                        'filepath': file_path,
+                        'title': os.path.basename(file_path),
+                        'artist': 'Unknown Artist',
+                        'length': 0
+                    })
             
-            logger.info(f"Created playlist: {output_path}")
-            logger.info(f"  Contains {len(sorted_songs)} songs ({mode_description})")
-            return True
+            # Create playlist using playlist.py module
+            success = playlist.create_m3u_playlist(
+                song_list,
+                output_path,
+                use_absolute_paths=not use_relative_paths,
+                playlist_name=f"Playlist: {mode_description}"
+            )
             
-        except Exception as e:
-            logger.error(f"Error creating playlist: {str(e)}")
-            return False
+            if success:
+                logger.info(f"Created playlist: {output_path}")
+                logger.info(f"  Contains {len(sorted_songs)} songs ({mode_description})")
+            return success
+        
+        else:
+            # Fallback: basic M3U creation without EXTINF metadata
+            output_dir = os.path.dirname(os.path.abspath(output_path))
+            os.makedirs(output_dir, exist_ok=True)
+            
+            try:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write("#EXTM3U\n")
+                    
+                    for file_path in sorted_songs:
+                        # Convert to relative path if requested
+                        if use_relative_paths:
+                            try:
+                                rel_path = os.path.relpath(file_path, output_dir)
+                                f.write(f"{rel_path}\n")
+                            except ValueError:
+                                # Can't create relative path (different drives on Windows)
+                                f.write(f"{file_path}\n")
+                        else:
+                            f.write(f"{file_path}\n")
+                
+                logger.info(f"Created playlist: {output_path}")
+                logger.info(f"  Contains {len(sorted_songs)} songs ({mode_description})")
+                return True
+            except Exception as e:
+                logger.error(f"Error creating playlist: {str(e)}")
+                return False
     
     def display_overlap_info(self, playlist_paths: List[str], mode: str = 'overlap',
                            include_paths: List[str] = None, exclude_paths: List[str] = None) -> None:
