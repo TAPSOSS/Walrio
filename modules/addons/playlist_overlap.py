@@ -17,6 +17,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger('PlaylistOverlap')
 
+# Try to import metadata module for EXTINF generation
+try:
+    from ..core import metadata
+    METADATA_AVAILABLE = True
+except ImportError:
+    try:
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+        from core import metadata
+        METADATA_AVAILABLE = True
+    except ImportError:
+        METADATA_AVAILABLE = False
+        logger.debug("Metadata module not available, playlists will not include EXTINF tags")
+
 
 class PlaylistOverlapFinder:
     """
@@ -194,8 +208,64 @@ class PlaylistOverlapFinder:
         logger.info(f"Found {len(non_overlapping)} non-overlapping songs")
         return non_overlapping
     
+    def find_include_exclude(self, include_paths: List[str], exclude_paths: List[str]) -> Set[str]:
+        """
+        Find songs in ANY included playlist that are NOT in ANY excluded playlist.
+        
+        Args:
+            include_paths (list): List of playlist file paths to include (union)
+            exclude_paths (list): List of playlist file paths to exclude
+            
+        Returns:
+            set: Set of file paths in included playlists but not in excluded playlists
+        """
+        if not include_paths:
+            logger.error("Need at least 1 playlist to include")
+            return set()
+        
+        # Load and union all included playlists
+        included_songs = set()
+        for playlist_path in include_paths:
+            if not os.path.exists(playlist_path):
+                logger.error(f"Playlist not found: {playlist_path}")
+                return set()
+            
+            paths = self._load_m3u_paths(playlist_path)
+            normalized_paths = set(self._normalize_path(p) for p in paths)
+            included_songs = included_songs.union(normalized_paths)
+            
+            logger.info(f"Loaded {len(normalized_paths)} songs from {os.path.basename(playlist_path)} (include)")
+        
+        logger.info(f"Total songs in included playlists: {len(included_songs)}")
+        
+        # If no exclude list, return all included songs
+        if not exclude_paths:
+            return included_songs
+        
+        # Load and union all excluded playlists
+        excluded_songs = set()
+        for playlist_path in exclude_paths:
+            if not os.path.exists(playlist_path):
+                logger.error(f"Playlist not found: {playlist_path}")
+                return set()
+            
+            paths = self._load_m3u_paths(playlist_path)
+            normalized_paths = set(self._normalize_path(p) for p in paths)
+            excluded_songs = excluded_songs.union(normalized_paths)
+            
+            logger.info(f"Loaded {len(normalized_paths)} songs from {os.path.basename(playlist_path)} (exclude)")
+        
+        logger.info(f"Total songs in excluded playlists: {len(excluded_songs)}")
+        
+        # Remove excluded songs from included songs
+        result = included_songs - excluded_songs
+        
+        logger.info(f"Found {len(result)} songs after include/exclude filtering")
+        return result
+    
     def create_overlap_playlist(self, playlist_paths: List[str], output_path: str, 
-                               use_relative_paths: bool = True, mode: str = 'overlap') -> bool:
+                               use_relative_paths: bool = True, mode: str = 'overlap',
+                               include_paths: List[str] = None, exclude_paths: List[str] = None) -> bool:
         """
         Create a new playlist containing overlapping or non-overlapping songs.
         
@@ -203,7 +273,9 @@ class PlaylistOverlapFinder:
             playlist_paths (list): List of playlist file paths to compare
             output_path (str): Path for the output playlist file
             use_relative_paths (bool): Whether to use relative paths in output
-            mode (str): 'overlap', 'unique-first', or 'non-overlapping'
+            mode (str): 'overlap', 'unique-first', 'non-overlapping', or 'include-exclude'
+            include_paths (list): Playlists to include (for include-exclude mode)
+            exclude_paths (list): Playlists to exclude (for include-exclude mode)
             
         Returns:
             bool: True if successful, False otherwise
@@ -218,6 +290,14 @@ class PlaylistOverlapFinder:
         elif mode == 'non-overlapping':
             result_songs = self.find_non_overlapping(playlist_paths)
             mode_description = "non-overlapping songs"
+        elif mode == 'include-exclude':
+            result_songs = self.find_include_exclude(include_paths or [], exclude_paths or [])
+            inc_names = ', '.join(os.path.basename(p) for p in (include_paths or []))
+            exc_names = ', '.join(os.path.basename(p) for p in (exclude_paths or []))
+            if exclude_paths:
+                mode_description = f"songs from [{inc_names}] excluding [{exc_names}]"
+            else:
+                mode_description = f"songs from [{inc_names}]"
         else:
             logger.error(f"Invalid mode: {mode}")
             return False
@@ -239,10 +319,20 @@ class PlaylistOverlapFinder:
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("#EXTM3U\n")
-                f.write(f"# Playlist {mode_description} from {len(playlist_paths)} playlists\n")
-                f.write(f"# Contains {len(sorted_songs)} songs\n")
                 
                 for file_path in sorted_songs:
+                    # Extract metadata for EXTINF if available
+                    if METADATA_AVAILABLE:
+                        try:
+                            meta = metadata.extract_metadata_for_playlist(file_path)
+                            if meta:
+                                duration = int(meta.get('length', 0))
+                                artist = meta.get('artist', 'Unknown Artist')
+                                title = meta.get('title', os.path.basename(file_path))
+                                f.write(f"#EXTINF:{duration},{artist} - {title}\n")
+                        except Exception as e:
+                            logger.debug(f"Could not extract metadata for {file_path}: {e}")
+                    
                     # Convert to relative path if requested
                     if use_relative_paths:
                         try:
@@ -262,13 +352,16 @@ class PlaylistOverlapFinder:
             logger.error(f"Error creating playlist: {str(e)}")
             return False
     
-    def display_overlap_info(self, playlist_paths: List[str], mode: str = 'overlap') -> None:
+    def display_overlap_info(self, playlist_paths: List[str], mode: str = 'overlap',
+                           include_paths: List[str] = None, exclude_paths: List[str] = None) -> None:
         """
         Display information about songs without creating a playlist.
         
         Args:
             playlist_paths (list): List of playlist file paths to compare
-            mode (str): 'overlap', 'unique-first', or 'non-overlapping'
+            mode (str): 'overlap', 'unique-first', 'non-overlapping', or 'include-exclude'
+            include_paths (list): Playlists to include (for include-exclude mode)
+            exclude_paths (list): Playlists to exclude (for include-exclude mode)
         """
         # Find songs based on mode
         if mode == 'overlap':
@@ -283,6 +376,13 @@ class PlaylistOverlapFinder:
             result_songs = self.find_non_overlapping(playlist_paths)
             mode_title = "Non-Overlapping Songs"
             mode_description = "songs that DON'T appear in all playlists"
+        elif mode == 'include-exclude':
+            result_songs = self.find_include_exclude(include_paths or [], exclude_paths or [])
+            mode_title = "Include/Exclude Filter"
+            if exclude_paths:
+                mode_description = "songs in included playlists but NOT in excluded playlists"
+            else:
+                mode_description = "songs in included playlists"
         else:
             logger.error(f"Invalid mode: {mode}")
             return
@@ -297,9 +397,21 @@ class PlaylistOverlapFinder:
         print(f"\n{'='*70}")
         print(f"Playlist Analysis: {mode_title}")
         print(f"{'='*70}")
-        print(f"Playlists compared: {len(playlist_paths)}")
-        for i, path in enumerate(playlist_paths, 1):
-            print(f"  {i}. {os.path.basename(path)}")
+        
+        if mode == 'include-exclude':
+            if include_paths:
+                print(f"Include playlists: {len(include_paths)}")
+                for i, path in enumerate(include_paths, 1):
+                    print(f"  {i}. {os.path.basename(path)}")
+            if exclude_paths:
+                print(f"Exclude playlists: {len(exclude_paths)}")
+                for i, path in enumerate(exclude_paths, 1):
+                    print(f"  {i}. {os.path.basename(path)}")
+        else:
+            print(f"Playlists compared: {len(playlist_paths)}")
+            for i, path in enumerate(playlist_paths, 1):
+                print(f"  {i}. {os.path.basename(path)}")
+        
         print(f"\nFound {len(sorted_songs)} {mode_description}")
         print(f"{'='*70}")
         
@@ -330,6 +442,12 @@ Examples:
   # Find overlap between 2 playlists and create a new playlist
   python playlist_overlap.py playlist1.m3u playlist2.m3u -o overlap.m3u
   
+  # Find songs in playlist1 OR playlist2 that are NOT in playlist3
+  python playlist_overlap.py --include playlist1.m3u playlist2.m3u --exclude playlist3.m3u -o result.m3u
+  
+  # Find songs in multiple playlists (union), no exclusion
+  python playlist_overlap.py --include playlist1.m3u playlist2.m3u -o combined.m3u
+  
   # Find songs ONLY in first playlist (not in second)
   python playlist_overlap.py playlist1.m3u playlist2.m3u -o unique.m3u --unique-first
   
@@ -339,11 +457,8 @@ Examples:
   # Find overlap between 3 playlists
   python playlist_overlap.py playlist1.m3u playlist2.m3u playlist3.m3u -o overlap.m3u
   
-  # Show overlap information without creating a playlist
-  python playlist_overlap.py playlist1.m3u playlist2.m3u --info
-  
-  # Show unique songs with info mode
-  python playlist_overlap.py playlist1.m3u playlist2.m3u --info --unique-first
+  # Show include/exclude results without creating a playlist
+  python playlist_overlap.py --include playlist1.m3u playlist2.m3u --exclude playlist3.m3u --info
   
   # Use absolute paths in output playlist
   python playlist_overlap.py playlist1.m3u playlist2.m3u -o overlap.m3u --absolute-paths
@@ -352,13 +467,25 @@ Examples:
     
     parser.add_argument(
         'playlists',
-        nargs='+',
-        help='Playlist files to compare (minimum 2)'
+        nargs='*',
+        help='Playlist files to compare (minimum 2, unless using --include/--exclude)'
     )
     
     parser.add_argument(
         '-o', '--output',
         help='Output playlist file for overlapping songs'
+    )
+    
+    parser.add_argument(
+        '--include',
+        nargs='+',
+        help='Playlists to include (union of all songs in these playlists)'
+    )
+    
+    parser.add_argument(
+        '--exclude',
+        nargs='+',
+        help='Playlists to exclude (remove songs found in these playlists)'
     )
     
     parser.add_argument(
@@ -403,37 +530,68 @@ def main():
     if args.logging == 'high':
         logger.setLevel(logging.DEBUG)
     
-    # Validate input
-    if len(args.playlists) < 2:
-        logger.error("Need at least 2 playlists to find overlap")
-        sys.exit(1)
+    # Determine if using include/exclude mode
+    using_include_exclude = args.include is not None
     
-    # Validate playlist files exist
-    for playlist_path in args.playlists:
-        if not os.path.exists(playlist_path):
-            logger.error(f"Playlist not found: {playlist_path}")
+    # Validate input based on mode
+    if using_include_exclude:
+        # Include/exclude mode
+        if not args.include:
+            logger.error("Must specify at least one playlist with --include")
             sys.exit(1)
-        if not playlist_path.lower().endswith('.m3u'):
-            logger.warning(f"File may not be a valid M3U playlist: {playlist_path}")
+        
+        # Validate all include/exclude playlists exist
+        all_paths = args.include + (args.exclude or [])
+        for playlist_path in all_paths:
+            if not os.path.exists(playlist_path):
+                logger.error(f"Playlist not found: {playlist_path}")
+                sys.exit(1)
+            if not playlist_path.lower().endswith('.m3u'):
+                logger.warning(f"File may not be a valid M3U playlist: {playlist_path}")
+        
+        # Can't use other modes with include/exclude
+        if args.unique_first or args.non_overlapping:
+            logger.error("Cannot use --include/--exclude with --unique-first or --non-overlapping")
+            sys.exit(1)
+        
+        mode = 'include-exclude'
+    else:
+        # Traditional mode
+        if len(args.playlists) < 2:
+            logger.error("Need at least 2 playlists to find overlap (or use --include/--exclude)")
+            sys.exit(1)
+        
+        # Validate playlist files exist
+        for playlist_path in args.playlists:
+            if not os.path.exists(playlist_path):
+                logger.error(f"Playlist not found: {playlist_path}")
+                sys.exit(1)
+            if not playlist_path.lower().endswith('.m3u'):
+                logger.warning(f"File may not be a valid M3U playlist: {playlist_path}")
+        
+        # Determine mode
+        mode = 'overlap'  # default
+        if args.unique_first:
+            mode = 'unique-first'
+        elif args.non_overlapping:
+            mode = 'non-overlapping'
+        
+        # Check for conflicting flags
+        if args.unique_first and args.non_overlapping:
+            logger.error("Cannot use both --unique-first and --non-overlapping at the same time")
+            sys.exit(1)
     
     # Create finder
     finder = PlaylistOverlapFinder()
     
-    # Determine mode
-    mode = 'overlap'  # default
-    if args.unique_first:
-        mode = 'unique-first'
-    elif args.non_overlapping:
-        mode = 'non-overlapping'
-    
-    # Check for conflicting flags
-    if args.unique_first and args.non_overlapping:
-        logger.error("Cannot use both --unique-first and --non-overlapping at the same time")
-        sys.exit(1)
-    
     # Display info mode
     if args.info:
-        finder.display_overlap_info(args.playlists, mode=mode)
+        if using_include_exclude:
+            finder.display_overlap_info([], mode=mode, 
+                                      include_paths=args.include, 
+                                      exclude_paths=args.exclude)
+        else:
+            finder.display_overlap_info(args.playlists, mode=mode)
         return
     
     # Create overlap playlist mode
@@ -442,12 +600,22 @@ def main():
         sys.exit(1)
     
     # Create the playlist
-    success = finder.create_overlap_playlist(
-        args.playlists,
-        args.output,
-        use_relative_paths=not args.absolute_paths,
-        mode=mode
-    )
+    if using_include_exclude:
+        success = finder.create_overlap_playlist(
+            [],
+            args.output,
+            use_relative_paths=not args.absolute_paths,
+            mode=mode,
+            include_paths=args.include,
+            exclude_paths=args.exclude
+        )
+    else:
+        success = finder.create_overlap_playlist(
+            args.playlists,
+            args.output,
+            use_relative_paths=not args.absolute_paths,
+            mode=mode
+        )
     
     if success:
         print(f"\nSuccessfully created playlist: {args.output}")
