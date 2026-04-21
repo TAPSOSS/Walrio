@@ -39,23 +39,31 @@ def sync_to_player(playlist_inputs, output_dir, playlist_files_mode=False):
     """
     walrio_path = get_walrio_path()
     
-    # Build command for playlist_mover with conversion settings
+    # Build command for playlist_cloner with conversion settings
     cmd = [
-        sys.executable, walrio_path, 'playlist_mover',
-        '--output-dir', str(output_dir),
+        sys.executable, walrio_path, 'playlist_cloner',
         '--format', 'flac',
-        '--compression', '8',
         '--album-art-size', '600x600',
         '--album-art-format', 'jpg'
     ]
     
-    # Add playlist files flag if in file mode
+    # Add playlist inputs (either directory or individual files)
     if playlist_files_mode:
-        cmd.append('--playlist-files')
+        # Individual playlist files - add them as positional arguments
+        for playlist_input in playlist_inputs:
+            cmd.append(str(playlist_input))
+    else:
+        # Playlist directory mode - use --playlist-dir flag
+        if len(playlist_inputs) == 1:
+            cmd.extend(['--playlist-dir', str(playlist_inputs[0])])
+        else:
+            # Multiple directories - process each with --playlist-dir
+            # For now, we'll just pass the first one
+            # TODO: Support multiple playlist directories
+            cmd.extend(['--playlist-dir', str(playlist_inputs[0])])
     
-    # Add all playlist directories or files
-    for playlist_input in playlist_inputs:
-        cmd.append(str(playlist_input))
+    # Add output directory as the last positional argument
+    cmd.append(str(output_dir))
     
     mode_str = "files" if playlist_files_mode else "directories"
     print(f"Syncing playlists to FLAC player: {output_dir}")

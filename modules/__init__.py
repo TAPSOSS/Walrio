@@ -96,7 +96,8 @@ for module_name in _discovered_modules.get('core', {}):
     try:
         exec(f"from .core import {module_name}")
         _imported_modules.append(module_name)
-    except ImportError:
+    except (ImportError, AttributeError, ValueError) as e:
+        # Skip modules with missing dependencies or other import issues
         pass
 
 # Import addon modules  
@@ -104,7 +105,8 @@ for module_name in _discovered_modules.get('addons', {}):
     try:
         exec(f"from .addons import {module_name}")
         _imported_modules.append(module_name)
-    except ImportError:
+    except (ImportError, AttributeError, ValueError) as e:
+        # Skip modules with missing dependencies or other import issues
         pass
 
 # Import niche modules
@@ -112,7 +114,8 @@ for module_name in _discovered_modules.get('niche', {}):
     try:
         exec(f"from .niche import {module_name}")
         _imported_modules.append(module_name)
-    except ImportError:
+    except (ImportError, AttributeError, ValueError) as e:
+        # Skip modules with missing dependencies or other import issues
         pass
 
 # Also make submodules available for autodoc
