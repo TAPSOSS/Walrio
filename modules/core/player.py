@@ -11,13 +11,23 @@ import time
 import socket
 import tempfile
 
-import gi
-gi.require_version('Gst', '1.0')
-from gi.repository import Gst, GLib
+# Try to import GStreamer - it's optional for non-playback operations
+try:
+    import gi
+    gi.require_version('Gst', '1.0')
+    from gi.repository import Gst, GLib
+    GSTREAMER_AVAILABLE = True
+except (ImportError, AttributeError, ValueError):
+    # GStreamer not available - player functionality will be disabled
+    Gst = None
+    GLib = None
+    GSTREAMER_AVAILABLE = False
 
 
 def _init_gstreamer():
     """Initialize GStreamer if not already initialized."""
+    if not GSTREAMER_AVAILABLE:
+        raise RuntimeError("GStreamer is not available. Please install python3-gi and gstreamer1.0")
     if not Gst.is_initialized():
         Gst.init(None)
 
@@ -32,6 +42,8 @@ class AudioPlayer:
         Args:
             debug: Enable debug logging (default: False).
         """
+        if not GSTREAMER_AVAILABLE:
+            raise RuntimeError("GStreamer is not available. Please install python3-gi and gstreamer1.0")
         _init_gstreamer()
         self.debug = debug
         self.pipeline = None
@@ -692,6 +704,16 @@ def send_daemon_command(command):
 
 def main():
     """Main function to handle command line arguments and play audio."""
+    # Check if GStreamer is available
+    if not GSTREAMER_AVAILABLE:
+        print("Error: GStreamer is not available.", file=sys.stderr)
+        print("Please install the required packages:", file=sys.stderr)
+        print("  - python3-gi", file=sys.stderr)
+        print("  - gstreamer1.0", file=sys.stderr)
+        print("  - gstreamer1.0-plugins-base", file=sys.stderr)
+        print("  - gstreamer1.0-plugins-good", file=sys.stderr)
+        return 1
+    
     parser = argparse.ArgumentParser(
         description="Audio Player using GStreamer with full playback control",
         epilog="Examples:\n"

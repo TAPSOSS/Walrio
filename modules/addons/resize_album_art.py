@@ -12,12 +12,17 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-# Add parent directory for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add parent directory to path for module imports (same pattern as playlist_cloner.py)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+# Import from same directory and sibling packages
+try:
+    from addons.image_converter import convert_image
+except ImportError:
+    convert_image = None
 
 try:
-    from modules.addons.image_converter import convert_image
-    from modules.core.metadata import MetadataEditor
+    from core.metadata import MetadataEditor
 except ImportError:
     MetadataEditor = None
 
