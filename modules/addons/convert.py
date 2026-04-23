@@ -391,8 +391,10 @@ class AudioConverter:
                 output_path.rename(final_path)
                 output_path = final_path
                 print(f"  Replaced original with reconverted file")
-            # Delete original if requested
-            elif self.delete_original and output_path.exists() and input_path != output_path:
+            
+            # Delete original if requested (for different format conversions)
+            # This runs regardless of temp file handling above
+            if self.delete_original and input_path.exists() and input_path != output_path:
                 try:
                     input_path.unlink()
                     print(f"  Deleted original: {input_path.name}")
