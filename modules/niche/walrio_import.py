@@ -208,11 +208,14 @@ Examples:
   # Process recursively through subdirectories
   python walrio_import_remade.py /path/to/music --recursive
 
+  # Force reconvert all files (even if already FLAC with correct specs)
+  python walrio_import_remade.py /path/to/music --force-reconvert
+
+  # Force reconvert AND delete originals in one step
+  python walrio_import_remade.py /path/to/music --force-replace --recursive
+
   # Process and update playlists after renaming
   python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists
-
-  # Process and delete original files after conversion (use with caution!)
-  python walrio_import_remade.py /path/to/music --recursive --delete-originals
 
   # Show what would be executed without running
   python walrio_import_remade.py /path/to/music --dry-run
