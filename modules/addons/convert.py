@@ -279,6 +279,13 @@ class AudioConverter:
                             else:
                                 print()
                         output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                else:
+                    # Force reconvert: use temp file to avoid reading/writing same file
+                    if current_file and total_files:
+                        print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
+                    else:
+                        print(f"Force reconverting {input_path.name}")
+                    output_path = input_path.with_suffix('.tmp' + format_config['ext'])
         
         # Check if output exists and prompt if needed
         if output_path.exists() and not force_overwrite:
