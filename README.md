@@ -50,7 +50,6 @@ pip install walrio
 **⚠️ Important:** Walrio requires system dependencies that pip cannot install:
 - FFmpeg
 - GStreamer
-- ImageMagick
 - rsgain
 
 After installing via pip, check for missing dependencies:
@@ -67,33 +66,32 @@ If you have all the needed dependencies, you can get started using walrio with t
 
 Walrio requires the following non-Python tools to be installed on your system:
 
-- **FFmpeg** - Audio/video conversion and processing
+- **FFmpeg** - Audio/video conversion and processing (also used for album art resizing)
 - **GStreamer** - Audio playback engine
-- **ImageMagick** - Image processing for album art
 - **rsgain** - ReplayGain 2.0 loudness scanner
 
 **Installation by platform:**
 
 **Fedora:**
 ```bash
-sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg ImageMagick rsgain
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-ugly gstreamer1-tools ffmpeg rsgain
 ```
 
 **Ubuntu/Debian:**
 ```bash
-sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly ffmpeg imagemagick
+sudo apt install gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly ffmpeg
 # rsgain: See https://github.com/complexlogic/rsgain
 ```
 
 **Arch Linux:**
 ```bash
-sudo pacman -S gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg imagemagick
+sudo pacman -S gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg
 yay -S rsgain  # or use another AUR helper
 ```
 
 **macOS:**
 ```bash
-brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg imagemagick rsgain
+brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg rsgain
 ```
 
 ## Development Setup
@@ -131,7 +129,6 @@ Walrio uses/requires/bundles the following projects (and [python](https://www.py
 - **GStreamer** : <https://github.com/GStreamer/gstreamer>
 - **FFmpeg** : <https://github.com/FFmpeg/FFmpeg>
 - **rsgain** : <https://github.com/complexlogic/rsgain>
-- **ImageMagick**: <https://github.com/ImageMagick/ImageMagick>
 
 ### Python/Pip-Installable
 

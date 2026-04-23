@@ -17,11 +17,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # Import from same directory and sibling packages
 try:
-    from addons.image_converter import convert_image
-except ImportError:
-    convert_image = None
-
-try:
     from core.metadata import MetadataEditor
 except ImportError:
     MetadataEditor = None
@@ -245,38 +240,48 @@ def resize_album_art(audio_file: Path,
                 return False
             print(f"  [OK] Extraction complete")
             
-            # Step 2: Resize the extracted image
+            # Step 2: Resize the extracted image using FFmpeg
             print(f"  → Resizing to {size}...")
             
-            # Build geometry string
+            # Parse size (e.g., "1000x1000" -> width=1000, height=1000)
+            if 'x' in size.lower():
+                dimensions = size.lower().replace('!', '').replace('>', '').replace('<', '')
+                width, height = dimensions.split('x')
+                width = width.strip()
+                height = height.strip()
+            else:
+                logger.error(f"Invalid size format: {size}. Use WIDTHxHEIGHT format.")
+                return False
+            
+            # Build FFmpeg filter for scaling
             if maintain_aspect:
-                geometry = size
+                # Maintain aspect ratio, fit within dimensions
+                scale_filter = f"scale={width}:{height}:force_original_aspect_ratio=decrease"
             else:
-                # Force exact size
-                if 'x' in size and not size.endswith('!'):
-                    geometry = f"{size}!"
-                else:
-                    geometry = size
+                # Force exact dimensions
+                scale_filter = f"scale={width}:{height}"
             
-            if convert_image:
-                success = convert_image(
-                    input_path=temp_extracted,
-                    output_path=temp_resized,
-                    output_format=format,
-                    geometry=geometry,
-                    quality=quality,
-                    auto_orient=True,
-                    strip_metadata=True,
-                    background_color="white"
-                )
-            else:
-                logger.error("image_converter not available")
-                return False
+            # Use FFmpeg to resize the image
+            cmd = [
+                'ffmpeg',
+                '-i', str(temp_extracted),
+                '-vf', scale_filter,
+                '-y',  # Overwrite output
+                str(temp_resized)
+            ]
             
-            if not success:
-                logger.error("Failed to resize album art")
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0 or not temp_resized.exists():
+                    logger.error(f"Failed to resize album art: {result.stderr}")
+                    return False
+                print(f"  [OK] Resize complete")
+            except subprocess.TimeoutExpired:
+                logger.error("Timeout while resizing album art")
                 return False
-            print(f"  [OK] Resize complete")
+            except Exception as e:
+                logger.error(f"Error resizing album art: {e}")
+                return False
             
             # Step 3: Embed the resized image
             print(f"  → Embedding resized album art...")
@@ -434,11 +439,6 @@ Supported audio formats: mp3, flac, ogg, opus, m4a, aac, wav
     # Validate size format
     if not ('x' in args.size.lower() or args.size.endswith('%')):
         logger.error("Size must be in format 'WIDTHxHEIGHT' or percentage (e.g., '50%')")
-        return 1
-    
-    # Check dependencies
-    if convert_image is None:
-        logger.error("image_converter module not available")
         return 1
     
     try:

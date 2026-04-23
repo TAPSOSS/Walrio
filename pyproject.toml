@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "walrio"
 dynamic = ["version"]
-description = "Modular audio library management system for playing, managing, and editing music files (requires FFmpeg, GStreamer, ImageMagick, rsgain)"
+description = "Modular audio library management system for playing, managing, and editing music files (requires FFmpeg, GStreamer, rsgain)"
 readme = "README.md"
 requires-python = ">=3.8"
 license = "BSD-3-Clause"
