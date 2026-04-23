@@ -104,9 +104,13 @@ brew install gstreamer gst-plugins-base gst-plugins-good gst-plugins-ugly ffmpeg
 
 2. Install system dependencies (see [System Requirements](#system-requirements) above)
 
-3. Install in editable mode with dev dependencies
+3. Install in editable mode
    ```bash
+   # For development (includes testing/formatting tools)
    pip install -e .[dev]
+   
+   # Or for basic usage only
+   pip install -e .
    ```
 
 4. Verify dependencies
