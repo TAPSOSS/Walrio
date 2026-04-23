@@ -279,6 +279,13 @@ class AudioConverter:
                             else:
                                 print()
                         output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                else:
+                    # Force reconvert: use temp file to avoid reading/writing same file
+                    if current_file and total_files:
+                        print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
+                    else:
+                        print(f"Force reconverting {input_path.name}")
+                    output_path = input_path.with_suffix('.tmp' + format_config['ext'])
         
         # Check if output exists and prompt if needed
         if output_path.exists() and not force_overwrite:
@@ -376,21 +383,31 @@ class AudioConverter:
             
             print(f"  [OK] Success: {output_path.name}")
             
-            # Handle temp file from reconversion
-            if output_path.suffix.startswith('.tmp'):
-                final_path = output_path.with_suffix(output_path.suffix.replace('.tmp', ''))
+            # Store original input path for deletion check (before any path modifications)
+            original_input = input_path
+            
+            # Handle temp file from reconversion (same-format reconversion)
+            # Check if filename contains '.tmp.' (e.g., 'file.tmp.flac')
+            if '.tmp.' in output_path.name:
+                # Remove the '.tmp' part from the name
+                final_name = output_path.name.replace('.tmp.', '.')
+                final_path = output_path.parent / final_name
                 if final_path.exists():
                     final_path.unlink()
                 output_path.rename(final_path)
                 output_path = final_path
                 print(f"  Replaced original with reconverted file")
-            # Delete original if requested
-            elif self.delete_original and output_path.exists() and input_path != output_path:
-                try:
-                    input_path.unlink()
-                    print(f"  Deleted original: {input_path.name}")
-                except Exception as e:
-                    print(f"  Warning: Could not delete original: {e}")
+            
+            # Delete original if requested (for cross-format conversions)
+            # Only delete if: deletion enabled, input still exists, output was successfully created, and they're different files
+            if self.delete_original and original_input.exists() and output_path.exists():
+                # Compare the actual paths, not Path objects
+                if str(original_input.resolve()) != str(output_path.resolve()):
+                    try:
+                        original_input.unlink()
+                        print(f"  Deleted original: {original_input.name}")
+                    except Exception as e:
+                        print(f"  Warning: Could not delete original: {e}")
             
             return output_path
             

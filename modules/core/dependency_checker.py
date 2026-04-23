@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Check for required system dependencies (FFmpeg, GStreamer, ImageMagick, rsgain).
+"""Check for required system dependencies (FFmpeg, GStreamer, rsgain).
 
 This module provides functionality to verify that all required system-level
 dependencies are installed and accessible. It checks for FFmpeg, GStreamer,
-ImageMagick, and rsgain, which are required by various Walrio modules.
+and rsgain, which are required by various Walrio modules.
 """
 
 import subprocess
@@ -55,18 +55,6 @@ class DependencyChecker:
                 'windows': 'Download from https://gstreamer.freedesktop.org/download/'
             },
             'used_by': ['player']
-        },
-        'imagemagick': {
-            'check_cmd': ['convert', '-version'],
-            'description': 'ImageMagick image processing',
-            'install': {
-                'ubuntu/debian': 'sudo apt install imagemagick',
-                'fedora': 'sudo dnf install ImageMagick',
-                'arch': 'sudo pacman -S imagemagick',
-                'macos': 'brew install imagemagick',
-                'windows': 'Download from https://imagemagick.org/script/download.php'
-            },
-            'used_by': ['resize_album_art']
         },
         'rsgain': {
             'check_cmd': ['rsgain', '--version'],

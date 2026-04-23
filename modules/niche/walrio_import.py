@@ -62,10 +62,10 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     Run complete import pipeline
     
     Pipeline stages:
-    1. Convert to FLAC 48kHz/16-bit
-    2. Rename with comprehensive character sanitization
-    3. Analyze and apply loudness normalization (-16 LUFS)
-    4. Resize album art to 1000x1000 PNG
+    1. Resize album art to 1000x1000 PNG (FIRST - modifies source files in-place)
+    2. Convert to FLAC 48kHz/16-bit (now with correct album art already embedded)
+    3. Rename with comprehensive character sanitization
+    4. Analyze and apply loudness normalization (-16 LUFS)
     
     Args:
         input_path: Input file/directory
@@ -85,7 +85,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     print("=" * 60)
     
     # Define pipeline stages with comprehensive configuration
+    # IMPORTANT: Resize album art FIRST before conversion to avoid duplicate file issues
     stages = [
+        {
+            'name': 'resize_album_art',
+            'description': 'Resize album art to 1000x1000 PNG',
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
+        },
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
@@ -133,25 +139,20 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             'name': 'apply_loudness',
             'description': 'Analyze and apply loudness normalization (-16 LUFS)',
             'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force']
-        },
-        {
-            'name': 'resize_album_art',
-            'description': 'Resize album art to 1000x1000 PNG',
-            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
         }
     ]
     
-    # Add delete-originals to convert if requested
+    # Add delete-originals to convert if requested (convert is now stage 1, index 1)
     if delete_originals:
-        stages[0]['args'].append('--delete-original')
+        stages[1]['args'].append('--delete-original')
     
-    # Add force-reconvert to convert if requested
+    # Add force-reconvert to convert if requested (convert is now stage 1, index 1)
     if force_reconvert:
-        stages[0]['args'].append('--force-reconvert')
+        stages[1]['args'].append('--force-reconvert')
     
-    # Add playlist updating to rename if specified
+    # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
-        stages[1]['args'].extend(['--update-playlists', str(playlist_dir)])
+        stages[2]['args'].extend(['--update-playlists', str(playlist_dir)])
     
     if dry_run:
         print("\nDRY RUN - Commands that would be executed:\n")
@@ -195,10 +196,10 @@ def main():
         description='Walrio Import Pipeline - Complete audio library import processing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\nPipeline Stages (executed in order):
-  1. Convert to FLAC format (48kHz, 16-bit)
-  2. Rename files with character filtering
-  3. Analyze and apply loudness normalization (-16 LUFS)
-  4. Resize album artwork to 1000x1000 PNG
+  1. Resize album artwork to 1000x1000 PNG (FIRST - modifies in-place)
+  2. Convert to FLAC format (48kHz, 16-bit)
+  3. Rename files with character filtering
+  4. Analyze and apply loudness normalization (-16 LUFS)
 
 Examples:
   # Process a single directory
@@ -207,11 +208,14 @@ Examples:
   # Process recursively through subdirectories
   python walrio_import_remade.py /path/to/music --recursive
 
+  # Force reconvert all files (even if already FLAC with correct specs)
+  python walrio_import_remade.py /path/to/music --force-reconvert
+
+  # Force reconvert AND delete originals in one step
+  python walrio_import_remade.py /path/to/music --force-replace --recursive
+
   # Process and update playlists after renaming
   python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists
-
-  # Process and delete original files after conversion (use with caution!)
-  python walrio_import_remade.py /path/to/music --recursive --delete-originals
 
   # Show what would be executed without running
   python walrio_import_remade.py /path/to/music --dry-run
@@ -230,12 +234,20 @@ Examples:
     parser.add_argument('--force-reconvert', '--fr', action='store_true',
                        dest='force_reconvert',
                        help='Force reconvert all files regardless of current audio specs')
+    parser.add_argument('--force-replace', action='store_true',
+                       dest='force_replace',
+                       help='Force reconvert AND delete originals (combines --force-reconvert and --delete-originals)')
     
     parser.add_argument('--dont-continue', '--dc', action='store_true',
                        dest='dont_continue',
                        help='Stop pipeline execution if any stage has errors (default: continue through all stages)')
     
     args = parser.parse_args()
+    
+    # Handle --force-replace flag (combines force-reconvert and delete-originals)
+    if args.force_replace:
+        args.force_reconvert = True
+        args.delete_originals = True
     
     # Validate input path
     if not args.input.exists():
