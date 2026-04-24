@@ -1,4 +1,4 @@
-# Walrio GUI
+# Walrio
 
 Walrio is a modular library/set of files that let you play, manage, and edit music and music-related files. Every file should be usable via the terminal except documentation.
 
