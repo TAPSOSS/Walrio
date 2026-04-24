@@ -70,6 +70,10 @@ def cleanup_new_files():
     """
     Clean up files added during this run if process is cancelled.
     Only removes files that didn't exist before the pipeline started.
+    
+    Note:
+        This function removes empty subdirectories but NEVER removes output_dir itself,
+        even if empty, as it may contain pre-existing files that were tracked.
     """
     if not _cleanup_state['cleanup_enabled']:
         return
@@ -110,9 +114,12 @@ def cleanup_new_files():
     if errors > 0:
         print(f"Failed to remove {errors} files")
     
-    # Remove empty directories
+    # Remove empty subdirectories (but never output_dir itself)
     try:
         for dir_path in sorted(output_dir.rglob('*'), reverse=True):
+            # Skip output_dir itself - only remove subdirectories
+            if dir_path == output_dir:
+                continue
             if dir_path.is_dir() and not any(dir_path.iterdir()):
                 dir_path.rmdir()
                 print(f"Removed empty directory: {dir_path.relative_to(output_dir)}")
@@ -201,13 +208,17 @@ def delete_original_files(files, dry_run=False):
 def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=False):
     """
     Move processed files from output_dir back to input_path location,
-    then clean up output_dir.
+    then clean up output_dir (only if completely empty).
     
     Args:
         output_dir: Directory containing processed files
         input_path: Original input path (file or directory)
         recursive: Whether original processing was recursive
         dry_run: If True, only show what would be moved
+        
+    Note:
+        output_dir is only removed if it becomes completely empty after moving files.
+        This prevents accidental deletion of directories with pre-existing content.
     """
     if not output_dir.exists():
         return
@@ -232,7 +243,7 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             else:
                 target = input_path.parent / file_path.name
             print(f"  {file_path} -> {target}")
-        print(f"\nWould then delete output directory: {output_dir}")
+        print(f"\nWould then remove output directory if completely empty: {output_dir}")
         return
     
     moved = 0
@@ -273,10 +284,16 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             if dir_path.is_dir() and not any(dir_path.iterdir()):
                 dir_path.rmdir()
         
-        # Remove output_dir itself if empty
-        if not any(output_dir.iterdir()):
+        # Remove output_dir itself ONLY if completely empty
+        try:
+            is_empty = not any(output_dir.iterdir())
+        except (OSError, PermissionError):
+            # If we can't check, assume it's not empty (safer)
+            is_empty = False
+        
+        if is_empty:
             output_dir.rmdir()
-            print(f"Removed output directory: {output_dir}")
+            print(f"Removed empty output directory: {output_dir}")
         else:
             print(f"Output directory not empty, keeping: {output_dir}")
     except Exception as e:
@@ -344,7 +361,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
     4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
     5. Delete originals (if --delete-originals is set, AFTER all processing completes)
-       - With default output_dir: Processed files moved back to replace originals, output_dir cleaned up
+       - With default output_dir: Processed files moved back to replace originals, output_dir removed if empty
        - With custom output_dir: Originals deleted, processed files remain in custom location
     
     Important: All operations work on files in the output directory.
@@ -499,7 +516,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                 print(f"Output directory: {output_dir}")
             else:
                 print("\nProcessed files would be moved back to original location")
-                print(f"Output directory would be cleaned up: {output_dir}")
+                print(f"Output directory would be removed if completely empty: {output_dir}")
         
         print()
         return True
