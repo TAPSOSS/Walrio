@@ -632,7 +632,7 @@ Examples:
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process directories recursively')
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
-                       help='Output directory for converted files (default: ./output_dir)')
+                       help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: ./output_dir)')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
