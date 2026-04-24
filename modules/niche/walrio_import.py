@@ -78,7 +78,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         delete_originals: Delete original files after conversion
         force_reconvert: Force reconvert all files regardless of current specs
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
-        output_dir: Output directory for converted files (default: ./imported_files)
+        output_dir: Output directory for converted files (default: ./output_dir)
         
     Returns:
         True if all stages succeeded
@@ -89,7 +89,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     # Set default output directory
     if output_dir is None:
-        output_dir = Path.cwd() / "imported_files"
+        output_dir = Path.cwd() / "output_dir"
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
@@ -217,14 +217,14 @@ def main():
   4. Analyze and apply loudness normalization (-16 LUFS)
 
 Important Notes:
-  - Converted files go to --output-dir (default: ./imported_files)
+  - Converted files go to --output-dir (default: ./output_dir)
   - Original files in input directory are NEVER modified unless --delete-originals
   - --force-reconvert with wrong specs prompts to replace original (yes/no)
   - --force-replace combines --force-reconvert and --delete-originals (no prompts)
   - All operations (rename, album art, loudness) work ONLY on files in output directory
 
 Examples:
-  # Process to default ./imported_files directory
+  # Process to default ./output_dir directory
   python walrio_import_remade.py /path/to/music
 
   # Process recursively to custom output directory
@@ -247,7 +247,7 @@ Examples:
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process directories recursively')
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
-                       help='Output directory for converted files (default: ./imported_files)')
+                       help='Output directory for converted files (default: ./output_dir)')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
