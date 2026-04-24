@@ -5,10 +5,20 @@
 import sys
 import argparse
 import subprocess
+import signal
+import atexit
 from pathlib import Path
 
 # Audio file extensions that will be processed
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav', '.wma', '.aac', '.wv', '.ape'}
+
+# Global state for cleanup tracking
+_cleanup_state = {
+    'output_dir': None,
+    'existing_files': set(),
+    'cleanup_enabled': False,
+    'completed_successfully': False
+}
 
 
 def collect_audio_files(path, recursive=False):
@@ -38,6 +48,85 @@ def collect_audio_files(path, recursive=False):
                     audio_files.append(file_path)
     
     return audio_files
+
+
+def collect_all_files(path):
+    """
+    Collect all files from a directory (recursively)
+    
+    Args:
+        path: Directory path
+        
+    Returns:
+        Set of Path objects for all files
+    """
+    if not path.exists() or not path.is_dir():
+        return set()
+    
+    return {f for f in path.rglob('*') if f.is_file()}
+
+
+def cleanup_new_files():
+    """
+    Clean up files added during this run if process is cancelled.
+    Only removes files that didn't exist before the pipeline started.
+    """
+    if not _cleanup_state['cleanup_enabled']:
+        return
+    
+    if _cleanup_state['completed_successfully']:
+        return
+    
+    output_dir = _cleanup_state['output_dir']
+    existing_files = _cleanup_state['existing_files']
+    
+    if output_dir is None or not output_dir.exists():
+        return
+    
+    print("\n" + "=" * 60)
+    print("Process cancelled - cleaning up newly added files...")
+    print("=" * 60)
+    
+    current_files = collect_all_files(output_dir)
+    new_files = current_files - existing_files
+    
+    if not new_files:
+        print("No new files to clean up")
+        return
+    
+    cleaned = 0
+    errors = 0
+    
+    for file_path in new_files:
+        try:
+            file_path.unlink()
+            cleaned += 1
+            print(f"Removed: {file_path.relative_to(output_dir)}")
+        except Exception as e:
+            errors += 1
+            print(f"Error removing {file_path.relative_to(output_dir)}: {e}")
+    
+    print(f"\nCleaned up {cleaned} new files")
+    if errors > 0:
+        print(f"Failed to remove {errors} files")
+    
+    # Remove empty directories
+    try:
+        for dir_path in sorted(output_dir.rglob('*'), reverse=True):
+            if dir_path.is_dir() and not any(dir_path.iterdir()):
+                dir_path.rmdir()
+                print(f"Removed empty directory: {dir_path.relative_to(output_dir)}")
+    except Exception:
+        pass
+
+
+def signal_handler(signum, frame):
+    """
+    Handle interrupt signals (Ctrl+C, etc.)
+    """
+    print("\n\nReceived interrupt signal...")
+    cleanup_new_files()
+    sys.exit(1)
 
 
 def prompt_delete_with_errors(error_details):
@@ -173,6 +262,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     Important: All operations work on files in the output directory.
     If errors occur during processing, user is prompted whether to delete originals anyway.
+    If process is cancelled (Ctrl+C), only newly added files are removed from output_dir.
     
     Args:
         input_path: Input file/directory
@@ -197,6 +287,23 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
+    
+    # Set up cleanup tracking and signal handlers
+    if not dry_run:
+        _cleanup_state['output_dir'] = output_dir
+        _cleanup_state['existing_files'] = collect_all_files(output_dir)
+        _cleanup_state['cleanup_enabled'] = True
+        _cleanup_state['completed_successfully'] = False
+        
+        # Register cleanup handlers
+        signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+        signal.signal(signal.SIGTERM, signal_handler)  # Termination
+        atexit.register(cleanup_new_files)
+        
+        if _cleanup_state['existing_files']:
+            print(f"\nFound {len(_cleanup_state['existing_files'])} existing files in output directory")
+            print("(These will be preserved if process is cancelled)")
+            print("=" * 60)
     
     # Collect source files if we need to delete them later
     source_files = []
@@ -345,6 +452,9 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                 print(f"\nProcessed files are in: {output_dir}")
                 print("Original files have been deleted")
     
+    # Mark as successfully completed (disables cleanup on exit)
+    _cleanup_state['completed_successfully'] = True
+    
     return len(failed_stages) == 0
 
 
@@ -363,6 +473,7 @@ Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
   - Original files are NEVER modified - all work happens on copies in output_dir
   - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
+  - If process cancelled (Ctrl+C): Only newly added files cleaned up, existing preserved
   - With --delete-originals: If errors occur, you'll be prompted whether to delete anyway
   - If no errors: originals deleted automatically after all stages complete
   - --force-reconvert with wrong specs prompts to replace file (yes/no/yes all/no all)
