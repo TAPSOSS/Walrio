@@ -360,7 +360,8 @@ def main():
 Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
   - Original files are NEVER modified - all work happens on copies in output_dir
-  - With --delete-originals: originals deleted AFTER all stages complete successfully
+  - With --delete-originals: If errors occur, you'll be prompted whether to delete anyway
+  - If no errors: originals deleted automatically after all stages complete
   - --force-reconvert with wrong specs prompts to replace file in output_dir (yes/no)
   - --force-replace combines --force-reconvert and --delete-originals (no prompts)
   - Safer workflow: convert → resize → rename → loudness → then delete originals
