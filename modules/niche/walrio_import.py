@@ -7,6 +7,107 @@ import argparse
 import subprocess
 from pathlib import Path
 
+# Audio file extensions that will be processed
+AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav', '.wma', '.aac', '.wv', '.ape'}
+
+
+def collect_audio_files(path, recursive=False):
+    """
+    Collect all audio files from a path
+    
+    Args:
+        path: File or directory path
+        recursive: Process directories recursively
+        
+    Returns:
+        List of Path objects for audio files
+    """
+    audio_files = []
+    
+    if path.is_file():
+        if path.suffix.lower() in AUDIO_EXTENSIONS:
+            audio_files.append(path)
+    elif path.is_dir():
+        if recursive:
+            for file_path in path.rglob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
+                    audio_files.append(file_path)
+        else:
+            for file_path in path.glob('*'):
+                if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
+                    audio_files.append(file_path)
+    
+    return audio_files
+
+
+def prompt_delete_with_errors(error_details):
+    """
+    Prompt user whether to delete originals despite pipeline errors
+    
+    Args:
+        error_details: Dictionary mapping stage names to error information
+        
+    Returns:
+        True if user wants to proceed with deletion, False otherwise
+    """
+    print("\n" + "=" * 60)
+    print("PIPELINE COMPLETED WITH ERRORS")
+    print("=" * 60)
+    print("\nThe following stages encountered errors:\n")
+    
+    for stage_name, info in error_details.items():
+        print(f"  • {stage_name}: {info}")
+    
+    print("\n" + "=" * 60)
+    print("Delete original files anyway?")
+    print("  (y)es - Delete originals despite errors")
+    print("  (n)o  - Keep originals safe")
+    print("=" * 60)
+    
+    while True:
+        response = input("Your choice: ").strip().lower()
+        if response in ['y', 'yes']:
+            return True
+        elif response in ['n', 'no']:
+            return False
+        else:
+            print("Invalid input. Please enter 'y' or 'n'")
+
+
+def delete_original_files(files, dry_run=False):
+    """
+    Delete original audio files after successful processing
+    
+    Args:
+        files: List of Path objects to delete
+        dry_run: If True, only show what would be deleted
+    """
+    print("\n" + "=" * 60)
+    print("Deleting original files...")
+    print("=" * 60)
+    
+    if dry_run:
+        print("DRY RUN - Files that would be deleted:")
+        for file_path in files:
+            print(f"  {file_path}")
+        return
+    
+    deleted = 0
+    errors = 0
+    
+    for file_path in files:
+        try:
+            file_path.unlink()
+            deleted += 1
+            print(f"Deleted: {file_path}")
+        except Exception as e:
+            errors += 1
+            print(f"Error deleting {file_path}: {e}")
+    
+    print(f"\nDeleted {deleted} files")
+    if errors > 0:
+        print(f"Failed to delete {errors} files")
+
 
 def get_walrio_path():
     """Get path to walrio_remade.py unified interface"""
@@ -30,7 +131,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         recursive: Add recursive flag
         
     Returns:
-        True if successful
+        Tuple of (success: bool, error_info: str or None)
     """
     walrio_path = get_walrio_path()
     cmd = [sys.executable, walrio_path, module_name]
@@ -50,11 +151,12 @@ def run_module(module_name, input_path, args=None, recursive=False):
         subprocess.run(cmd, check=True)
         print("-" * 50)
         print(f"SUCCESS: {module_name} completed")
-        return True
+        return True, None
     except subprocess.CalledProcessError as e:
         print("-" * 50)
-        print(f"ERROR: {module_name} failed with exit code {e.returncode}")
-        return False
+        error_msg = f"Failed with exit code {e.returncode}"
+        print(f"ERROR: {module_name} {error_msg}")
+        return False, error_msg
 
 
 def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None):
@@ -66,9 +168,10 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     2. Resize album art to 1000x1000 PNG (only on converted files in output directory)
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
     4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
+    5. Delete originals (if --delete-originals is set, AFTER all processing completes)
     
-    Important: Original files in input_path are NEVER modified unless --delete-originals is set.
-    All operations work on files in the output directory.
+    Important: All operations work on files in the output directory.
+    If errors occur during processing, user is prompted whether to delete originals anyway.
     
     Args:
         input_path: Input file/directory
@@ -93,6 +196,14 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
+    
+    # Collect source files if we need to delete them later
+    source_files = []
+    if delete_originals:
+        print("\nCollecting source files for deletion after processing...")
+        source_files = collect_audio_files(input_path, recursive)
+        print(f"Found {len(source_files)} audio files to process")
+        print("=" * 60)
     
     # Define pipeline stages with comprehensive configuration
     # IMPORTANT: Convert outputs to separate directory, then all subsequent operations work ONLY on that directory
@@ -156,9 +267,9 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         }
     ]
     
-    # Add delete-originals to convert if requested (convert is stage 0, index 0)
-    if delete_originals:
-        stages[0]['args'].append('--delete-original')
+    # Note: We do NOT pass --delete-original to convert anymore.
+    # Instead, we delete source files AFTER all stages complete successfully.
+    # This ensures all processing happens on files in output_dir before originals are removed.
     
     # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
@@ -179,17 +290,25 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             if stage['args']:
                 cmd.extend(stage['args'])
             print(f"  {' '.join(cmd)}")
+        
+        # Show files that would be deleted
+        if delete_originals and source_files:
+            print("\nFiles that would be deleted after successful processing:")
+            for file_path in source_files:
+                print(f"  {file_path}")
+        
         print()
         return True
     
     # Execute pipeline
-    failed_stages = []
+    failed_stages = {}  # Dict mapping stage name to error info
     for i, stage in enumerate(stages, 1):
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
-        if not run_module(stage['name'], stage['target_path'], stage['args'], recursive):
-            failed_stages.append(stage['name'])
+        success, error_info = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        if not success:
+            failed_stages[stage['name']] = error_info
             if stop_on_error:
                 print(f"\nPipeline STOPPED at stage {i}: {stage['name']}")
                 return False
@@ -198,10 +317,32 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     print("\n" + "=" * 60)
     if failed_stages:
-        print(f"Pipeline completed with errors in: {', '.join(failed_stages)}")
+        print(f"Pipeline completed with errors in: {', '.join(failed_stages.keys())}")
+        
+        # Prompt user about deleting originals despite errors
+        if delete_originals and source_files:
+            if dry_run:
+                print("\n[DRY RUN] Would prompt user about deleting originals despite errors")
+            else:
+                should_delete = prompt_delete_with_errors(failed_stages)
+                if should_delete:
+                    delete_original_files(source_files, dry_run=False)
+                    print(f"\nProcessed files are in: {output_dir}")
+                    print("Original files have been deleted despite errors")
+                else:
+                    print("\nOriginal files preserved")
+                    print(f"Converted files are in: {output_dir}")
     else:
         print("Pipeline completed successfully!")
         print(f"\nConverted files are in: {output_dir}")
+        
+        # Delete original files if requested and all stages succeeded
+        if delete_originals and source_files:
+            delete_original_files(source_files, dry_run)
+            if not dry_run:
+                print(f"\nProcessed files are in: {output_dir}")
+                print("Original files have been deleted")
+    
     return len(failed_stages) == 0
 
 
@@ -217,11 +358,12 @@ def main():
   4. Analyze and apply loudness normalization (-16 LUFS)
 
 Important Notes:
-  - Converted files go to --output-dir (default: ./output_dir)
-  - Original files in input directory are NEVER modified unless --delete-originals
-  - --force-reconvert with wrong specs prompts to replace original (yes/no)
+  - All files are processed in --output-dir (default: ./output_dir)
+  - Original files are NEVER modified - all work happens on copies in output_dir
+  - With --delete-originals: originals deleted AFTER all stages complete successfully
+  - --force-reconvert with wrong specs prompts to replace file in output_dir (yes/no)
   - --force-replace combines --force-reconvert and --delete-originals (no prompts)
-  - All operations (rename, album art, loudness) work ONLY on files in output directory
+  - Safer workflow: convert → resize → rename → loudness → then delete originals
 
 Examples:
   # Process to default ./output_dir directory
