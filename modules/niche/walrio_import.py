@@ -57,18 +57,18 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None):
     """
     Run complete import pipeline
     
     Pipeline stages:
-    1. Convert to FLAC 48kHz/16-bit (creates new files or replaces based on --delete-originals)
-    2. Resize album art to 1000x1000 PNG (only modifies newly created files)
-    3. Rename with comprehensive character sanitization (only modifies newly created files)
-    4. Analyze and apply loudness normalization -16 LUFS (only modifies newly created files)
+    1. Convert to FLAC 48kHz/16-bit (creates new files in output directory)
+    2. Resize album art to 1000x1000 PNG (only on converted files in output directory)
+    3. Rename with comprehensive character sanitization (only on converted files in output directory)
+    4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
     
-    Important: Without --delete-originals (or --force-replace), original files are never modified.
-    Only newly converted files go through the rename and album art resize steps.
+    Important: Original files in input_path are NEVER modified unless --delete-originals is set.
+    All operations work on files in the output directory.
     
     Args:
         input_path: Input file/directory
@@ -78,6 +78,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         delete_originals: Delete original files after conversion
         force_reconvert: Force reconvert all files regardless of current specs
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
+        output_dir: Output directory for converted files (default: ./imported_files)
         
     Returns:
         True if all stages succeeded
@@ -85,20 +86,28 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     print(f"Starting Walrio Import Pipeline: {input_path}")
     print(f"Recursive: {recursive}")
     print(f"Dry run: {dry_run}")
+    
+    # Set default output directory
+    if output_dir is None:
+        output_dir = Path.cwd() / "imported_files"
+    
+    print(f"Output directory: {output_dir}")
     print("=" * 60)
     
     # Define pipeline stages with comprehensive configuration
-    # IMPORTANT: Convert FIRST so we can track which files are new
+    # IMPORTANT: Convert outputs to separate directory, then all subsequent operations work ONLY on that directory
     stages = [
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite']
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', '--output', str(output_dir)],
+            'target_path': input_path  # Convert processes input_path
         },
         {
             'name': 'resize_album_art',
             'description': 'Resize album art to 1000x1000 PNG',
-            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100'],
+            'target_path': output_dir  # Subsequent steps process output_dir ONLY
         },
         {
             'name': 'rename',
@@ -136,12 +145,14 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                 '--rc', 'Ó', 'O', '--rc', 'Ò', 'O', '--rc', 'Ö', 'O', '--rc', 'Ô', 'O', '--rc', 'Õ', 'O',
                 '--rc', 'Ú', 'U', '--rc', 'Ù', 'U', '--rc', 'Ü', 'U', '--rc', 'Û', 'U',
                 '--rc', 'Ñ', 'N', '--rc', 'Ç', 'C',
-            ]
+            ],
+            'target_path': output_dir  # Subsequent steps process output_dir ONLY
         },
         {
             'name': 'apply_loudness',
             'description': 'Analyze and apply loudness normalization (-16 LUFS)',
-            'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force']
+            'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force'],
+            'target_path': output_dir  # Subsequent steps process output_dir ONLY
         }
     ]
     
@@ -164,7 +175,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             cmd = [sys.executable, walrio_path, stage['name']]
             if recursive:
                 cmd.append('--recursive')
-            cmd.append(str(input_path))
+            cmd.append(str(stage['target_path']))
             if stage['args']:
                 cmd.extend(stage['args'])
             print(f"  {' '.join(cmd)}")
@@ -177,7 +188,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
-        if not run_module(stage['name'], input_path, stage['args'], recursive):
+        if not run_module(stage['name'], stage['target_path'], stage['args'], recursive):
             failed_stages.append(stage['name'])
             if stop_on_error:
                 print(f"\nPipeline STOPPED at stage {i}: {stage['name']}")
@@ -190,6 +201,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         print(f"Pipeline completed with errors in: {', '.join(failed_stages)}")
     else:
         print("Pipeline completed successfully!")
+        print(f"\nConverted files are in: {output_dir}")
     return len(failed_stages) == 0
 
 
@@ -205,22 +217,23 @@ def main():
   4. Analyze and apply loudness normalization (-16 LUFS)
 
 Important Notes:
-  - Without --delete-originals, original files are NEVER modified
-  - --force-reconvert creates new files (e.g., "song (2).flac") alongside originals
-  - --force-replace combines --force-reconvert and --delete-originals (replaces files)
-  - Only newly created/converted files go through rename and album art steps
+  - Converted files go to --output-dir (default: ./imported_files)
+  - Original files in input directory are NEVER modified unless --delete-originals
+  - --force-reconvert with wrong specs prompts to replace original (yes/no)
+  - --force-replace combines --force-reconvert and --delete-originals (no prompts)
+  - All operations (rename, album art, loudness) work ONLY on files in output directory
 
 Examples:
-  # Process a single directory
+  # Process to default ./imported_files directory
   python walrio_import_remade.py /path/to/music
 
-  # Process recursively through subdirectories
-  python walrio_import_remade.py /path/to/music --recursive
+  # Process recursively to custom output directory
+  python walrio_import_remade.py /path/to/music -r --output-dir /path/to/converted
 
-  # Force reconvert all files (even if already FLAC with correct specs)
+  # Force reconvert all files (prompts for files with wrong specs)
   python walrio_import_remade.py /path/to/music --force-reconvert
 
-  # Force reconvert AND delete originals in one step
+  # Force reconvert AND delete originals in one step (no prompts)
   python walrio_import_remade.py /path/to/music --force-replace --recursive
 
   # Process and update playlists after renaming
@@ -233,6 +246,8 @@ Examples:
     parser.add_argument('input', type=Path, help='Input file or directory')
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process directories recursively')
+    parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
+                       help='Output directory for converted files (default: ./imported_files)')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
@@ -280,7 +295,8 @@ Examples:
             args.playlist_dir,
             args.delete_originals,
             args.force_reconvert,
-            args.dont_continue
+            args.dont_continue,
+            args.output_dir
         )
         return 0 if success else 1
     

@@ -239,7 +239,7 @@ class AudioConverter:
     
     def convert_file(self, input_path: Path, output_path: Path = None,
                     force_overwrite: bool = False, current_file: int = None, 
-                    total_files: int = None) -> Path:
+                    total_files: int = None, output_dir: Path = None) -> Path:
         """
         Convert audio file
         
@@ -249,6 +249,7 @@ class AudioConverter:
             force_overwrite: Force overwrite without prompting
             current_file: Current file number (for progress display)
             total_files: Total number of files (for progress display)
+            output_dir: Output directory (for organizing converted files separately)
             
         Returns:
             Path to output file
@@ -261,11 +262,26 @@ class AudioConverter:
         
         # Determine output path
         if output_path is None:
-            output_path = input_path.with_suffix(format_config['ext'])
+            if output_dir:
+                # Output to separate directory, preserve relative structure
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir / input_path.name
+                # Change extension to target format
+                output_path = output_path.with_suffix(format_config['ext'])
+            else:
+                # Output in same directory
+                output_path = input_path.with_suffix(format_config['ext'])
         
         # Check if already in target format with correct specs
         if input_path.suffix.lower() == output_path.suffix.lower():
-            if input_path == output_path:
+            # If output_dir is specified, always convert to new location
+            if output_dir:
+                if current_file and total_files:
+                    print(f"File {current_file}/{total_files}: Converting {input_path.name} to output directory")
+                else:
+                    print(f"Converting {input_path.name} to output directory")
+            # If same input/output location
+            elif input_path == output_path:
                 # Unless force_reconvert is set, validate specs
                 if not self.force_reconvert:
                     if self._matches_target_specs(input_path):
@@ -276,7 +292,7 @@ class AudioConverter:
                             print(f"Skipping {input_path.name} (already in target format with correct specs)")
                         return input_path
                     else:
-                        # Need to reconvert - check if we should replace or create new file
+                        # Need to reconvert - prompt user
                         specs = self._get_audio_specs(input_path)
                         
                         # Check if file is corrupted/unreadable
@@ -290,9 +306,9 @@ class AudioConverter:
                         
                         # Print with file counter
                         if current_file and total_files:
-                            print(f"File {current_file}/{total_files}: {input_path.name} needs reconversion:")
+                            print(f"\nFile {current_file}/{total_files}: {input_path.name} needs reconversion:")
                         else:
-                            print(f"{input_path.name} needs reconversion:")
+                            print(f"\n{input_path.name} needs reconversion:")
                         print(f"  Current: {specs['sample_rate']}Hz, {specs['bit_depth']}-bit")
                         if self.sample_rate:
                             print(f"  Target:  {self.sample_rate}Hz", end='')
@@ -301,20 +317,39 @@ class AudioConverter:
                             else:
                                 print()
                         
-                        # Use temp file only if we're deleting the original (replace mode)
-                        if self.delete_original:
-                            output_path = input_path.with_suffix('.tmp' + format_config['ext'])
-                        else:
-                            # Create a new file with unique name (don't modify original)
-                            output_path = self._get_unique_filename(input_path)
+                        # Prompt user for action
+                        if not force_overwrite and not self.overwrite_all and not self.skip_all:
+                            while True:
+                                response = input("Replace file with reconverted version? (y)es, (n)o skip, (ya) yes to all, (na) no to all: ").lower().strip()
+                                if response in ['y', 'yes']:
+                                    break
+                                elif response in ['n', 'no']:
+                                    print(f"Skipped: {input_path.name}\n")
+                                    return input_path
+                                elif response in ['ya', 'yesall', 'yes to all']:
+                                    self.overwrite_all = True
+                                    break
+                                elif response in ['na', 'noall', 'no to all']:
+                                    self.skip_all = True
+                                    print(f"Skipped: {input_path.name}\n")
+                                    return input_path
+                                else:
+                                    print("Please enter 'y', 'n', 'ya', or 'na'")
+                        elif self.skip_all:
+                            print(f"Skipped: {input_path.name}\n")
+                            return input_path
+                        
+                        # User agreed to replace - use temp file for reconversion
+                        output_path = input_path.with_suffix('.tmp' + format_config['ext'])
                 else:
-                    # Force reconvert: create temp file only if deleting originals, otherwise new file
+                    # Force reconvert: check if we should replace or create new file
                     if current_file and total_files:
                         print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
                     else:
                         print(f"Force reconverting {input_path.name}")
                     
-                    if self.delete_original:
+                    if self.delete_original or force_overwrite:
+                        # Replace mode: use temp file
                         output_path = input_path.with_suffix('.tmp' + format_config['ext'])
                     else:
                         # Create new file, don't replace original
