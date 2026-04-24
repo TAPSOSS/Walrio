@@ -130,6 +130,10 @@ def cleanup_new_files():
 def signal_handler(signum, frame):
     """
     Handle interrupt signals (Ctrl+C, etc.)
+    
+    Args:
+        signum: Signal number received
+        frame: Current stack frame
     """
     print("\n\nReceived interrupt signal...")
     cleanup_new_files()
