@@ -491,7 +491,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
-        stages[0]['args'].append('--force-reconvert')
+        stages[1]['args'].append('--force-reconvert')
     
     # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
@@ -609,6 +609,12 @@ Important Notes:
   - --force-replace combines --force-reconvert and --delete-originals
   - Safer workflow: convert → resize → rename → loudness → replace originals
 
+  1. Resize album artwork to 1000x1000 PNG (FIRST - modifies in-place)
+  2. Convert to FLAC format (48kHz, 16-bit)
+  3. Rename files with character filtering
+  4. Analyze and apply loudness normalization (-16 LUFS)
+>>>>>>> origin/main
+
 Examples:
   # Process to default ./output_dir directory (keeps originals)
   python walrio_import_remade.py /path/to/music
@@ -624,6 +630,12 @@ Examples:
 
   # Force reconvert all files (prompts for files with wrong specs)
   python walrio_import_remade.py /path/to/music --force-reconvert
+
+  # Force reconvert all files (even if already FLAC with correct specs)
+  python walrio_import_remade.py /path/to/music --force-reconvert
+
+  # Force reconvert AND delete originals in one step
+  python walrio_import_remade.py /path/to/music --force-replace --recursive
 
   # Process and update playlists after renaming
   python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists

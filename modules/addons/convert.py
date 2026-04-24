@@ -342,21 +342,18 @@ class AudioConverter:
                         # User agreed to replace - use temp file for reconversion
                         output_path = input_path.with_suffix('.tmp' + format_config['ext'])
                 else:
-                    # Force reconvert: check if we should replace or create new file
-                    if current_file and total_files:
-                        print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
-                    else:
-                        print(f"Force reconverting {input_path.name}")
-                    
-                    if self.delete_original or force_overwrite:
-                        # Replace mode: use temp file
-                        output_path = input_path.with_suffix('.tmp' + format_config['ext'])
-                    else:
-                        # Create new file, don't replace original
-                        output_path = self._get_unique_filename(input_path)
-        
-        # Check if output exists and prompt if needed
-        if output_path.exists() and not force_overwrite:
+                # Force reconvert: check if we should replace or create new file
+                if current_file and total_files:
+                    print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
+                else:
+                    print(f"Force reconverting {input_path.name}")
+                
+                if self.delete_original or force_overwrite:
+                    # Replace mode: use temp file
+                    output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                else:
+                    # Create new file, don't replace original
+                    output_path = self._get_unique_filename(input_path)
             if not self.prompt_overwrite(output_path):
                 if current_file and total_files:
                     print(f"File {current_file}/{total_files}: Skipped: {input_path.name}")
