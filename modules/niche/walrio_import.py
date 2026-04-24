@@ -198,6 +198,91 @@ def delete_original_files(files, dry_run=False):
         print(f"Failed to delete {errors} files")
 
 
+def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=False):
+    """
+    Move processed files from output_dir back to input_path location,
+    then clean up output_dir.
+    
+    Args:
+        output_dir: Directory containing processed files
+        input_path: Original input path (file or directory)
+        recursive: Whether original processing was recursive
+        dry_run: If True, only show what would be moved
+    """
+    if not output_dir.exists():
+        return
+    
+    print("\n" + "=" * 60)
+    print("Moving processed files back to original location...")
+    print("=" * 60)
+    
+    # Collect processed files from output_dir
+    processed_files = collect_all_files(output_dir)
+    
+    if not processed_files:
+        print("No processed files to move")
+        return
+    
+    if dry_run:
+        print("DRY RUN - Files that would be moved:")
+        for file_path in processed_files:
+            relative = file_path.relative_to(output_dir)
+            if input_path.is_dir():
+                target = input_path / relative
+            else:
+                target = input_path.parent / file_path.name
+            print(f"  {file_path} -> {target}")
+        print(f"\nWould then delete output directory: {output_dir}")
+        return
+    
+    moved = 0
+    errors = 0
+    
+    for file_path in processed_files:
+        try:
+            # Determine target location
+            relative = file_path.relative_to(output_dir)
+            
+            if input_path.is_dir():
+                # Preserve directory structure
+                target = input_path / relative
+            else:
+                # Single file input - put in same directory as original
+                target = input_path.parent / file_path.name
+            
+            # Create parent directories if needed
+            target.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Move file
+            file_path.rename(target)
+            moved += 1
+            print(f"Moved: {relative} -> {target}")
+        except Exception as e:
+            errors += 1
+            print(f"Error moving {file_path}: {e}")
+    
+    print(f"\nMoved {moved} files back to original location")
+    if errors > 0:
+        print(f"Failed to move {errors} files")
+    
+    # Clean up output_dir
+    print("\nCleaning up output directory...")
+    try:
+        # Remove empty directories
+        for dir_path in sorted(output_dir.rglob('*'), reverse=True):
+            if dir_path.is_dir() and not any(dir_path.iterdir()):
+                dir_path.rmdir()
+        
+        # Remove output_dir itself if empty
+        if not any(output_dir.iterdir()):
+            output_dir.rmdir()
+            print(f"Removed output directory: {output_dir}")
+        else:
+            print(f"Output directory not empty, keeping: {output_dir}")
+    except Exception as e:
+        print(f"Error cleaning up output directory: {e}")
+
+
 def get_walrio_path():
     """Get path to walrio_remade.py unified interface"""
     current_dir = Path(__file__).parent
@@ -259,6 +344,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
     4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
     5. Delete originals (if --delete-originals is set, AFTER all processing completes)
+       - With default output_dir: Processed files moved back to replace originals, output_dir cleaned up
+       - With custom output_dir: Originals deleted, processed files remain in custom location
     
     Important: All operations work on files in the output directory.
     If errors occur during processing, user is prompted whether to delete originals anyway.
@@ -281,7 +368,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     print(f"Recursive: {recursive}")
     print(f"Dry run: {dry_run}")
     
-    # Set default output directory
+    # Set default output directory and track if user specified custom location
+    user_specified_output_dir = output_dir is not None
     if output_dir is None:
         output_dir = Path.cwd() / "output_dir"
     
@@ -405,6 +493,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             print("\nFiles that would be deleted after successful processing:")
             for file_path in source_files:
                 print(f"  {file_path}")
+            
+            if user_specified_output_dir:
+                print("\nProcessed files would remain in output directory")
+                print(f"Output directory: {output_dir}")
+            else:
+                print("\nProcessed files would be moved back to original location")
+                print(f"Output directory would be cleaned up: {output_dir}")
         
         print()
         return True
@@ -436,21 +531,32 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                 should_delete = prompt_delete_with_errors(failed_stages)
                 if should_delete:
                     delete_original_files(source_files, dry_run=False)
-                    print(f"\nProcessed files are in: {output_dir}")
-                    print("Original files have been deleted despite errors")
+                    
+                    # Only move files back if using default output_dir
+                    if not user_specified_output_dir:
+                        move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                        print(f"\nOriginal files have been replaced with processed versions")
+                    else:
+                        print(f"\nOriginal files deleted, processed files are in: {output_dir}")
                 else:
                     print("\nOriginal files preserved")
-                    print(f"Converted files are in: {output_dir}")
+                    print(f"Processed files are in: {output_dir}")
     else:
         print("Pipeline completed successfully!")
-        print(f"\nConverted files are in: {output_dir}")
         
         # Delete original files if requested and all stages succeeded
         if delete_originals and source_files:
+            print(f"\nProcessed files are in: {output_dir}")
             delete_original_files(source_files, dry_run)
             if not dry_run:
-                print(f"\nProcessed files are in: {output_dir}")
-                print("Original files have been deleted")
+                # Only move files back if using default output_dir
+                if not user_specified_output_dir:
+                    move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                    print(f"\nOriginal files have been replaced with processed versions")
+                else:
+                    print(f"\nOriginal files deleted, processed files remain in: {output_dir}")
+        else:
+            print(f"\nProcessed files are in: {output_dir}")
     
     # Mark as successfully completed (disables cleanup on exit)
     _cleanup_state['completed_successfully'] = True
@@ -474,24 +580,29 @@ Important Notes:
   - Original files are NEVER modified - all work happens on copies in output_dir
   - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
   - If process cancelled (Ctrl+C): Only newly added files cleaned up, existing preserved
-  - With --delete-originals: If errors occur, you'll be prompted whether to delete anyway
-  - If no errors: originals deleted automatically after all stages complete
+  - With --delete-originals (default output_dir): Processed files replace originals in place
+  - With --delete-originals (custom output_dir): Originals deleted, files stay in output_dir
+  - With --delete-originals + errors: Prompted whether to delete anyway
+  - Without --delete-originals: Processed files stay in output_dir, originals untouched
   - --force-reconvert with wrong specs prompts to replace file (yes/no/yes all/no all)
   - --force-replace combines --force-reconvert and --delete-originals
-  - Safer workflow: convert → resize → rename → loudness → then delete originals
+  - Safer workflow: convert → resize → rename → loudness → replace originals
 
 Examples:
-  # Process to default ./output_dir directory
+  # Process to default ./output_dir directory (keeps originals)
   python walrio_import_remade.py /path/to/music
 
-  # Process recursively to custom output directory
+  # Process to custom output directory (keeps originals)
   python walrio_import_remade.py /path/to/music -r --output-dir /path/to/converted
+
+  # Replace originals in-place (processed files moved back, temp dir cleaned up)
+  python walrio_import_remade.py /path/to/music --force-replace --recursive
+
+  # Delete originals, keep processed files in custom location
+  python walrio_import_remade.py /path/to/music --delete-originals -o /path/to/converted
 
   # Force reconvert all files (prompts for files with wrong specs)
   python walrio_import_remade.py /path/to/music --force-reconvert
-
-  # Force reconvert AND delete originals in one step (no prompts)
-  python walrio_import_remade.py /path/to/music --force-replace --recursive
 
   # Process and update playlists after renaming
   python walrio_import_remade.py /path/to/music --playlist-dir /path/to/playlists
@@ -511,7 +622,7 @@ Examples:
                        help='Directory containing playlists to update after rename')
     parser.add_argument('--delete-originals', '--do', action='store_true',
                        dest='delete_originals',
-                       help='Delete original files after conversion (use with caution!)')
+                       help='Delete original files after processing. With default output_dir: replaces originals in place. With custom output_dir: keeps processed files in specified location.')
     parser.add_argument('--force-reconvert', '--fr', action='store_true',
                        dest='force_reconvert',
                        help='Force reconvert all files regardless of current audio specs')
