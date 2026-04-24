@@ -165,6 +165,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     Pipeline stages:
     1. Convert to FLAC 48kHz/16-bit (creates new files in output directory)
+       - Prompts if files already exist in output_dir: (y)es, (n)o, (ya) yes to all, (na) no to all
     2. Resize album art to 1000x1000 PNG (only on converted files in output directory)
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
     4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
@@ -211,8 +212,9 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite', '--output', str(output_dir)],
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--output', str(output_dir)],
             'target_path': input_path  # Convert processes input_path
+            # Note: --force-overwrite NOT included so user is prompted when files exist in output_dir
         },
         {
             'name': 'resize_album_art',
@@ -360,10 +362,11 @@ def main():
 Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
   - Original files are NEVER modified - all work happens on copies in output_dir
+  - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
   - With --delete-originals: If errors occur, you'll be prompted whether to delete anyway
   - If no errors: originals deleted automatically after all stages complete
-  - --force-reconvert with wrong specs prompts to replace file in output_dir (yes/no)
-  - --force-replace combines --force-reconvert and --delete-originals (no prompts)
+  - --force-reconvert with wrong specs prompts to replace file (yes/no/yes all/no all)
+  - --force-replace combines --force-reconvert and --delete-originals
   - Safer workflow: convert → resize → rename → loudness → then delete originals
 
 Examples:
