@@ -56,6 +56,28 @@ class AudioConverter:
         self.skip_all = False
         self._check_ffmpeg()
     
+    def _get_unique_filename(self, base_path: Path) -> Path:
+        """
+        Generate a unique filename by adding a number suffix.
+        
+        Args:
+            base_path: Base file path
+            
+        Returns:
+            Unique file path (e.g., song (2).flac, song (3).flac)
+        """
+        if not base_path.with_name(f"{base_path.stem} (2){base_path.suffix}").exists():
+            return base_path.with_name(f"{base_path.stem} (2){base_path.suffix}")
+        
+        counter = 3
+        while True:
+            new_path = base_path.with_name(f"{base_path.stem} ({counter}){base_path.suffix}")
+            if not new_path.exists():
+                return new_path
+            counter += 1
+            if counter > 1000:  # Safety limit
+                raise RuntimeError(f"Cannot create unique filename for {base_path}")
+    
     def print_conversion_settings(self):
         """Print conversion parameters being used for the conversion process."""
         print("\n" + "=" * 60)
@@ -254,7 +276,7 @@ class AudioConverter:
                             print(f"Skipping {input_path.name} (already in target format with correct specs)")
                         return input_path
                     else:
-                        # Need to reconvert to temp file then rename
+                        # Need to reconvert - check if we should replace or create new file
                         specs = self._get_audio_specs(input_path)
                         
                         # Check if file is corrupted/unreadable
@@ -278,14 +300,25 @@ class AudioConverter:
                                 print(f", {self.bit_depth}-bit")
                             else:
                                 print()
-                        output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                        
+                        # Use temp file only if we're deleting the original (replace mode)
+                        if self.delete_original:
+                            output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                        else:
+                            # Create a new file with unique name (don't modify original)
+                            output_path = self._get_unique_filename(input_path)
                 else:
-                    # Force reconvert: use temp file to avoid reading/writing same file
+                    # Force reconvert: create temp file only if deleting originals, otherwise new file
                     if current_file and total_files:
                         print(f"File {current_file}/{total_files}: Force reconverting {input_path.name}")
                     else:
                         print(f"Force reconverting {input_path.name}")
-                    output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                    
+                    if self.delete_original:
+                        output_path = input_path.with_suffix('.tmp' + format_config['ext'])
+                    else:
+                        # Create new file, don't replace original
+                        output_path = self._get_unique_filename(input_path)
         
         # Check if output exists and prompt if needed
         if output_path.exists() and not force_overwrite:
@@ -386,8 +419,7 @@ class AudioConverter:
             # Store original input path for deletion check (before any path modifications)
             original_input = input_path
             
-            # Handle temp file from reconversion (same-format reconversion)
-            # Check if filename contains '.tmp.' (e.g., 'file.tmp.flac')
+            # Handle temp file from reconversion (only used when delete_original is True)
             if '.tmp.' in output_path.name:
                 # Remove the '.tmp' part from the name
                 final_name = output_path.name.replace('.tmp.', '.')
@@ -397,6 +429,9 @@ class AudioConverter:
                 output_path.rename(final_path)
                 output_path = final_path
                 print(f"  Replaced original with reconverted file")
+            elif original_input != output_path:
+                # Created a new file (not replacing), inform user
+                print(f"  Created new file: {output_path.name} (original preserved)")
             
             # Delete original if requested (for cross-format conversions)
             # Only delete if: deletion enabled, input still exists, output was successfully created, and they're different files

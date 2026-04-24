@@ -62,10 +62,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     Run complete import pipeline
     
     Pipeline stages:
-    1. Resize album art to 1000x1000 PNG (FIRST - modifies source files in-place)
-    2. Convert to FLAC 48kHz/16-bit (now with correct album art already embedded)
-    3. Rename with comprehensive character sanitization
-    4. Analyze and apply loudness normalization (-16 LUFS)
+    1. Convert to FLAC 48kHz/16-bit (creates new files or replaces based on --delete-originals)
+    2. Resize album art to 1000x1000 PNG (only modifies newly created files)
+    3. Rename with comprehensive character sanitization (only modifies newly created files)
+    4. Analyze and apply loudness normalization -16 LUFS (only modifies newly created files)
+    
+    Important: Without --delete-originals (or --force-replace), original files are never modified.
+    Only newly converted files go through the rename and album art resize steps.
     
     Args:
         input_path: Input file/directory
@@ -85,17 +88,17 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     print("=" * 60)
     
     # Define pipeline stages with comprehensive configuration
-    # IMPORTANT: Resize album art FIRST before conversion to avoid duplicate file issues
+    # IMPORTANT: Convert FIRST so we can track which files are new
     stages = [
-        {
-            'name': 'resize_album_art',
-            'description': 'Resize album art to 1000x1000 PNG',
-            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
-        },
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
             'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--force-overwrite']
+        },
+        {
+            'name': 'resize_album_art',
+            'description': 'Resize album art to 1000x1000 PNG',
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100']
         },
         {
             'name': 'rename',
@@ -142,13 +145,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         }
     ]
     
-    # Add delete-originals to convert if requested (convert is now stage 1, index 1)
+    # Add delete-originals to convert if requested (convert is stage 0, index 0)
     if delete_originals:
-        stages[1]['args'].append('--delete-original')
+        stages[0]['args'].append('--delete-original')
     
-    # Add force-reconvert to convert if requested (convert is now stage 1, index 1)
+    # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
-        stages[1]['args'].append('--force-reconvert')
+        stages[0]['args'].append('--force-reconvert')
     
     # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
@@ -196,10 +199,16 @@ def main():
         description='Walrio Import Pipeline - Complete audio library import processing',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\nPipeline Stages (executed in order):
-  1. Resize album artwork to 1000x1000 PNG (FIRST - modifies in-place)
-  2. Convert to FLAC format (48kHz, 16-bit)
+  1. Convert to FLAC format (48kHz, 16-bit)
+  2. Resize album artwork to 1000x1000 PNG
   3. Rename files with character filtering
   4. Analyze and apply loudness normalization (-16 LUFS)
+
+Important Notes:
+  - Without --delete-originals, original files are NEVER modified
+  - --force-reconvert creates new files (e.g., "song (2).flac") alongside originals
+  - --force-replace combines --force-reconvert and --delete-originals (replaces files)
+  - Only newly created/converted files go through rename and album art steps
 
 Examples:
   # Process a single directory
