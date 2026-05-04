@@ -20,3 +20,4 @@ plugins/
 WalrioLite.spec
 WalrioMain.spec
 gstreamer_config.txt
+output_dir/

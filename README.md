@@ -22,6 +22,8 @@ Check out the [LICENSE file](LICENSE) to see what LICENSE this project uses and 
 
 The main folder with all the seperate walrio music modules you can use and walrio.py,
 the global file that lets you easily run any file without having the CD into each folder.
+**⚠️ Important:**
+Most processing is done where the command is called in a subfolder called "output_dir". If this is a folder containing any sensitive data please considr renaming it/moving it while doing any file processing.
 
 #### Addons
 

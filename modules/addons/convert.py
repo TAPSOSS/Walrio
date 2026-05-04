@@ -354,7 +354,8 @@ class AudioConverter:
                     else:
                         # Create new file, don't replace original
                         output_path = self._get_unique_filename(input_path)
-            if not self.prompt_overwrite(output_path):
+            # Check if file exists and prompt (unless force_overwrite is set)
+            if not force_overwrite and not self.overwrite_all and not self.prompt_overwrite(output_path):
                 if current_file and total_files:
                     print(f"File {current_file}/{total_files}: Skipped: {input_path.name}")
                 else:
