@@ -491,7 +491,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
-        stages[1]['args'].append('--force-reconvert')
+        stages[0]['args'].append('--force-reconvert')
     
     # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
