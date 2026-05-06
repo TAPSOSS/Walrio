@@ -355,12 +355,16 @@ class AudioConverter:
                         # Create new file, don't replace original
                         output_path = self._get_unique_filename(input_path)
             # Check if file exists and prompt (unless force_overwrite is set)
-            if not force_overwrite and not self.overwrite_all and not self.prompt_overwrite(output_path):
-                if current_file and total_files:
-                    print(f"File {current_file}/{total_files}: Skipped: {input_path.name}")
-                else:
-                    print(f"Skipped: {input_path.name}")
-                return None
+            if output_path.exists():
+                if not force_overwrite and not self.overwrite_all:
+                    should_overwrite = self.prompt_overwrite(output_path)
+                    if not should_overwrite:
+                        # User chose not to overwrite - generate unique filename
+                        output_path = self._get_unique_filename(output_path)
+                        if current_file and total_files:
+                            print(f"File {current_file}/{total_files}: Creating new file with unique name: {output_path.name}")
+                        else:
+                            print(f"Creating new file with unique name: {output_path.name}")
         
         # Build FFmpeg command
         format_config = self.FORMATS[self.output_format]
