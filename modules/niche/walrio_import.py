@@ -435,7 +435,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'resize_album_art',
             'description': 'Resize album art to 1000x1000 PNG',
-            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100'],
+            'args': ['--size', '1000x1000', '--format', 'png', '--quality', '100', '--no-maintain-aspect'],
             'target_path': output_dir  # Subsequent steps process output_dir ONLY
         },
         {
