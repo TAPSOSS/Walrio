@@ -5,7 +5,9 @@ file metadata viewer and editor, largley a mutegen wrapper for less outward depe
 import os
 import sys
 import argparse
+import json
 import logging
+import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 
@@ -29,13 +31,6 @@ try:
 except ImportError:
     MUTAGEN_AVAILABLE = False
     logger.warning("mutagen library not available. Install with: pip install mutagen")
-
-try:
-    from PIL import Image
-    PILLOW_AVAILABLE = True
-except ImportError:
-    PILLOW_AVAILABLE = False
-    logger.debug("PIL/Pillow not available. Some image processing features will be limited.")
 
 # Supported formats - frozenset for faster lookups
 AUDIO_EXTENSIONS = frozenset({'.mp3', '.flac', '.ogg', '.oga', '.opus', '.m4a', '.mp4', 
@@ -436,23 +431,97 @@ class MetadataEditor:
             mime = 'image/jpeg'
             if img_data[:4] == b'\x89PNG':
                 mime = 'image/png'
+            elif img_data[:4] == b'RIFF' and img_data[8:12] == b'WEBP':
+                mime = 'image/webp'
+            elif img_data[:3] == b'GIF':
+                mime = 'image/gif'
             
             if isinstance(audio, MP3):
                 if audio.tags is None:
                     audio.add_tags()
+                # Clear all existing album art before adding new art
+                audio.tags.delall('APIC')
                 audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc='Cover', data=img_data))
             elif isinstance(audio, FLAC):
                 pic = Picture()
                 pic.data = img_data
-                pic.type = 3
+                pic.type = 3  # Cover (front)
                 pic.mime = mime
+                pic.desc = 'Cover'
+                # Set image dimensions using ffprobe - required for proper FLAC Picture metadata
+                try:
+                    result = subprocess.run(
+                        ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(image_obj)],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        probe_data = json.loads(result.stdout)
+                        if probe_data.get('streams'):
+                            stream = probe_data['streams'][0]
+                            pic.width = stream.get('width', 0)
+                            pic.height = stream.get('height', 0)
+                            # Estimate depth from pixel format
+                            pix_fmt = stream.get('pix_fmt', '')
+                            if 'rgba' in pix_fmt or 'bgra' in pix_fmt:
+                                pic.depth = 32
+                            elif 'gray' in pix_fmt:
+                                pic.depth = 8
+                            else:
+                                pic.depth = 24  # RGB default
+                        else:
+                            pic.width = 0
+                            pic.height = 0
+                            pic.depth = 24
+                    else:
+                        pic.width = 0
+                        pic.height = 0
+                        pic.depth = 24
+                except Exception as e:
+                    logger.debug(f"Could not probe image dimensions: {e}")
+                    pic.width = 0
+                    pic.height = 0
+                    pic.depth = 24
                 audio.clear_pictures()
                 audio.add_picture(pic)
             elif isinstance(audio, (OggVorbis, OggOpus)):
                 pic = Picture()
                 pic.data = img_data
-                pic.type = 3
+                pic.type = 3  # Cover (front)
                 pic.mime = mime
+                pic.desc = 'Cover'
+                # Set image dimensions using ffprobe - required for proper Picture metadata
+                try:
+                    result = subprocess.run(
+                        ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', str(image_obj)],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        probe_data = json.loads(result.stdout)
+                        if probe_data.get('streams'):
+                            stream = probe_data['streams'][0]
+                            pic.width = stream.get('width', 0)
+                            pic.height = stream.get('height', 0)
+                            # Estimate depth from pixel format
+                            pix_fmt = stream.get('pix_fmt', '')
+                            if 'rgba' in pix_fmt or 'bgra' in pix_fmt:
+                                pic.depth = 32
+                            elif 'gray' in pix_fmt:
+                                pic.depth = 8
+                            else:
+                                pic.depth = 24  # RGB default
+                        else:
+                            pic.width = 0
+                            pic.height = 0
+                            pic.depth = 24
+                    else:
+                        pic.width = 0
+                        pic.height = 0
+                        pic.depth = 24
+                except Exception as e:
+                    logger.debug(f"Could not probe image dimensions: {e}")
+                    pic.width = 0
+                    pic.height = 0
+                    pic.depth = 24
                 audio.clear_pictures()
                 audio.add_picture(pic)
             elif isinstance(audio, MP4):
