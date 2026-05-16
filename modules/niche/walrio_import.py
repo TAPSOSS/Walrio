@@ -363,7 +363,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
        - Prompts if files already exist in output_dir: (y)es, (n)o, (ya) yes to all, (na) no to all
     2. Resize album art to 1000x1000 PNG (only on converted files in output directory)
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
-    4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
+    4. Analyze and apply loudness normalization -14 LUFS (only on converted files in output directory)
     5. Delete originals (if --delete-originals is set, AFTER all processing completes)
        - With default output_dir: Processed files moved back to replace originals, output_dir removed if empty
        - With custom output_dir: Originals deleted, processed files remain in custom location
@@ -479,8 +479,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         },
         {
             'name': 'apply_loudness',
-            'description': 'Analyze and apply loudness normalization (-16 LUFS)',
-            'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force'],
+            'description': 'Analyze and apply loudness normalization (-14 LUFS)',
+            'args': ['--replaygain', '--rescan-lufs', '-14', '--backup', 'false', '--force'],
             'target_path': output_dir  # Subsequent steps process output_dir ONLY
         }
     ]
@@ -595,7 +595,7 @@ def main():
   1. Convert to FLAC format (48kHz, 16-bit)
   2. Resize album artwork to 1000x1000 PNG
   3. Rename files with character filtering
-  4. Analyze and apply loudness normalization (-16 LUFS)
+  4. Analyze and apply loudness normalization (-14 LUFS)
 
 Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
@@ -613,7 +613,7 @@ Important Notes:
   1. Resize album artwork to 1000x1000 PNG (FIRST - modifies in-place)
   2. Convert to FLAC format (48kHz, 16-bit)
   3. Rename files with character filtering
-  4. Analyze and apply loudness normalization (-16 LUFS)
+  4. Analyze and apply loudness normalization (-14 LUFS)
 >>>>>>> origin/main
 
 Examples:
