@@ -452,6 +452,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
+                '--auto-sanitize',  # Auto-sanitize without prompting (no to all special characters)
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
                 '--rc', '?', '~',
                 '--rc', '/', '~',
