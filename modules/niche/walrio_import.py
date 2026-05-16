@@ -145,7 +145,7 @@ def prompt_delete_with_errors(error_details):
     Prompt user whether to delete originals despite pipeline errors
     
     Args:
-        error_details: Dictionary mapping stage names to error information
+        error_details: Dictionary mapping stage names to (error_info, first_error_line) tuples
         
     Returns:
         True if user wants to proceed with deletion, False otherwise
@@ -155,8 +155,10 @@ def prompt_delete_with_errors(error_details):
     print("=" * 60)
     print("\nThe following stages encountered errors:\n")
     
-    for stage_name, info in error_details.items():
-        print(f"  • {stage_name}: {info}")
+    for stage_name, (error_info, first_error_line) in error_details.items():
+        print(f"  - {stage_name}: {error_info}")
+        if first_error_line:
+            print(f"    First error: {first_error_line[:150]}")
     
     print("\n" + "=" * 60)
     print("Delete original files anyway?")
@@ -326,7 +328,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         recursive: Add recursive flag
         
     Returns:
-        Tuple of (success: bool, error_info: str or None)
+        Tuple of (success: bool, error_info: str or None, first_error_line: str or None)
     """
     walrio_path = get_walrio_path()
     cmd = [sys.executable, walrio_path, module_name]
@@ -343,15 +345,50 @@ def run_module(module_name, input_path, args=None, recursive=False):
     print("-" * 50)
     
     try:
-        subprocess.run(cmd, check=True)
+        # Use Popen to capture stderr while still showing real-time output
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Stream output in real-time and capture for error analysis
+        output_lines = []
+        first_error_line = None
+        
+        for line in process.stdout:
+            print(line, end='')
+            output_lines.append(line)
+            # Capture first line containing error/failed
+            if not first_error_line:
+                line_lower = line.lower()
+                if any(keyword in line_lower for keyword in ['error:', 'failed', 'exception']):
+                    first_error_line = line.strip()
+        
+        return_code = process.wait()
+        
+        if return_code != 0:
+            print("-" * 50)
+            error_msg = f"Failed with exit code {return_code}"
+            print(f"ERROR: {module_name} {error_msg}")
+            if first_error_line:
+                print(f"First error: {first_error_line[:200]}")  # Truncate if very long
+            else:
+                print("Check the output above for details on which files failed.")
+            return False, error_msg, first_error_line
+        
         print("-" * 50)
         print(f"SUCCESS: {module_name} completed")
-        return True, None
-    except subprocess.CalledProcessError as e:
+        return True, None, None
+        
+    except Exception as e:
         print("-" * 50)
-        error_msg = f"Failed with exit code {e.returncode}"
+        error_msg = f"Exception: {str(e)}"
         print(f"ERROR: {module_name} {error_msg}")
-        return False, error_msg
+        return False, error_msg, str(e)
 
 
 def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False):
@@ -538,23 +575,33 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         return True
     
     # Execute pipeline
-    failed_stages = {}  # Dict mapping stage name to error info
+    failed_stages = {}  # Dict mapping stage name to (error_info, first_error_line)
     for i, stage in enumerate(stages, 1):
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
-        success, error_info = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        success, error_info, first_error_line = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
         if not success:
-            failed_stages[stage['name']] = error_info
+            failed_stages[stage['name']] = (error_info, first_error_line)
             if stop_on_error:
                 print(f"\nPipeline STOPPED at stage {i}: {stage['name']}")
+                print(f"Scroll up to see which files failed.")
                 return False
             else:
                 print(f"\nWARNING: Stage {i} ({stage['name']}) had errors, continuing...")
+                print(f"Some files may have failed - check output above for details.")
     
     print("\n" + "=" * 60)
     if failed_stages:
-        print(f"Pipeline completed with errors in: {', '.join(failed_stages.keys())}")
+        print(f"Pipeline completed with ERRORS in {len(failed_stages)} stage(s):")
+        print("=" * 60)
+        for stage_name, (error_info, first_error_line) in failed_stages.items():
+            print(f"  X {stage_name}: {error_info}")
+            if first_error_line:
+                print(f"    First error: {first_error_line[:150]}")
+        print("=" * 60)
+        print("\nScroll up to see detailed error messages for individual files.")
+        print("Look for lines containing 'ERROR', 'Failed', or specific file names.\n")
         
         # Prompt user about deleting originals despite errors
         if delete_originals and source_files:
@@ -576,6 +623,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                     print(f"Processed files are in: {output_dir}")
     else:
         print("Pipeline completed successfully!")
+        print("All stages processed without errors.")
         
         # Delete original files if requested and all stages succeeded
         if delete_originals and source_files:
@@ -611,10 +659,10 @@ def main():
 Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
   - Original files are NEVER modified - all work happens on copies in output_dir
-  - ⚠️  --in-place: RISKY mode that processes files directly without output_dir
-    • Saves disk space but NO ROLLBACK if errors occur
-    • Original files overwritten/deleted during processing
-    • Only use if you have backups or are confident in the operation
+  - WARNING: --in-place: RISKY mode that processes files directly without output_dir
+    * Saves disk space but NO ROLLBACK if errors occur
+    * Original files overwritten/deleted during processing
+    * Only use if you have backups or are confident in the operation
   - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
   - If process cancelled (Ctrl+C): Only newly added files cleaned up, existing preserved
   - With --delete-originals (default output_dir): Processed files replace originals in place
@@ -659,7 +707,7 @@ Examples:
   # Show what would be executed without running
   python walrio_import_remade.py /path/to/music --dry-run
 
-  # ⚠️  RISKY: Process in-place to save disk space (no rollback on failure)
+  # WARNING: RISKY: Process in-place to save disk space (no rollback on failure)
   python walrio_import_remade.py /path/to/music --in-place --recursive
 """
     )
@@ -669,7 +717,7 @@ Examples:
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
                        help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: ./output_dir)')
     parser.add_argument('--in-place', action='store_true',
-                       help='⚠️  RISKY: Process files directly in original location without using output_dir. Saves disk space but NO ROLLBACK if errors occur. Original files will be overwritten/deleted during processing.')
+                       help='RISKY: Process files directly in original location without using output_dir. Saves disk space but NO ROLLBACK if errors occur. Original files will be overwritten/deleted during processing.')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
