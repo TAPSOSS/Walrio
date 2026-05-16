@@ -354,7 +354,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False, error_msg
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False):
     """
     Run complete import pipeline
     
@@ -381,6 +381,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         force_reconvert: Force reconvert all files regardless of current specs
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
         output_dir: Output directory for converted files (default: ./output_dir)
+        in_place: Process files directly in-place without output_dir (RISKY: no rollback on failure)
         
     Returns:
         True if all stages succeeded
@@ -389,10 +390,19 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     print(f"Recursive: {recursive}")
     print(f"Dry run: {dry_run}")
     
-    # Set default output directory and track if user specified custom location
-    user_specified_output_dir = output_dir is not None
-    if output_dir is None:
-        output_dir = Path.cwd() / "output_dir"
+    # Handle in-place processing
+    if in_place:
+        print("WARNING: In-place mode enabled - files will be modified directly!")
+        print("         No rollback available if errors occur.")
+        output_dir = input_path
+        user_specified_output_dir = True
+        # Disable cleanup in in-place mode since we're working on originals
+        _cleanup_state['cleanup_enabled'] = False
+    else:
+        # Set default output directory and track if user specified custom location
+        user_specified_output_dir = output_dir is not None
+        if output_dir is None:
+            output_dir = Path.cwd() / "output_dir"
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
@@ -428,7 +438,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--output', str(output_dir)],
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'] + (['--output', str(output_dir)] if not in_place else []),
             'target_path': input_path  # Convert processes input_path
             # Note: --force-overwrite NOT included so user is prompted when files exist in output_dir
         },
@@ -600,6 +610,10 @@ def main():
 Important Notes:
   - All files are processed in --output-dir (default: ./output_dir)
   - Original files are NEVER modified - all work happens on copies in output_dir
+  - ⚠️  --in-place: RISKY mode that processes files directly without output_dir
+    • Saves disk space but NO ROLLBACK if errors occur
+    • Original files overwritten/deleted during processing
+    • Only use if you have backups or are confident in the operation
   - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
   - If process cancelled (Ctrl+C): Only newly added files cleaned up, existing preserved
   - With --delete-originals (default output_dir): Processed files replace originals in place
@@ -643,6 +657,9 @@ Examples:
 
   # Show what would be executed without running
   python walrio_import_remade.py /path/to/music --dry-run
+
+  # ⚠️  RISKY: Process in-place to save disk space (no rollback on failure)
+  python walrio_import_remade.py /path/to/music --in-place --recursive
 """
     )
     parser.add_argument('input', type=Path, help='Input file or directory')
@@ -650,6 +667,8 @@ Examples:
                        help='Process directories recursively')
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
                        help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: ./output_dir)')
+    parser.add_argument('--in-place', action='store_true',
+                       help='⚠️  RISKY: Process files directly in original location without using output_dir. Saves disk space but NO ROLLBACK if errors occur. Original files will be overwritten/deleted during processing.')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
@@ -680,6 +699,11 @@ Examples:
         print(f"Error: Input path does not exist: {args.input}", file=sys.stderr)
         return 1
     
+    # Validate conflicting options
+    if args.in_place and args.output_dir:
+        print(f"Error: Cannot use both --in-place and --output-dir together", file=sys.stderr)
+        return 1
+    
     # Validate playlist directory if provided
     if args.playlist_dir:
         if not args.playlist_dir.exists():
@@ -698,7 +722,8 @@ Examples:
             args.delete_originals,
             args.force_reconvert,
             args.dont_continue,
-            args.output_dir
+            args.output_dir,
+            args.in_place
         )
         return 0 if success else 1
     
