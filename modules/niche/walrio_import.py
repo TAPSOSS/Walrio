@@ -25,6 +25,9 @@ def collect_audio_files(path, recursive=False):
     """
     Collect all audio files from a path
     
+    Excludes files in directories named 'output_dir' to prevent accidental re-processing
+    of already converted files.
+    
     Args:
         path: File or directory path
         recursive: Process directories recursively
@@ -40,6 +43,9 @@ def collect_audio_files(path, recursive=False):
     elif path.is_dir():
         if recursive:
             for file_path in path.rglob('*'):
+                # Skip files in directories named 'output_dir' to avoid re-processing
+                if any(parent.name == 'output_dir' for parent in file_path.parents):
+                    continue
                 if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
                     audio_files.append(file_path)
         else:

@@ -328,7 +328,11 @@ def process_directory(directory: Path,
     try:
         if recursive:
             for ext in AUDIO_EXTENSIONS:
-                audio_files.extend(directory.rglob(f'*{ext}'))
+                for file_path in directory.rglob(f'*{ext}'):
+                    # Skip files in 'output_dir' to avoid re-processing
+                    if any(parent.name == 'output_dir' for parent in file_path.parents):
+                        continue
+                    audio_files.append(file_path)
         else:
             for ext in AUDIO_EXTENSIONS:
                 audio_files.extend(directory.glob(f'*{ext}'))

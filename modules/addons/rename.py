@@ -485,6 +485,9 @@ class AudioRenamer:
         if recursive:
             # Get all files recursively and filter by extension
             for file_path in directory.rglob('*'):
+                # Skip files in 'output_dir' to avoid re-processing
+                if any(parent.name == 'output_dir' for parent in file_path.parents):
+                    continue
                 if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
                     files.append(file_path)
         else:
