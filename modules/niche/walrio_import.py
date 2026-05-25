@@ -17,7 +17,8 @@ _cleanup_state = {
     'output_dir': None,
     'existing_files': set(),
     'cleanup_enabled': False,
-    'completed_successfully': False
+    'completed_successfully': False,
+    'current_process': None  # Track currently running subprocess for proper termination
 }
 
 
@@ -137,11 +138,31 @@ def signal_handler(signum, frame):
     """
     Handle interrupt signals (Ctrl+C, etc.)
     
+    Terminates any running subprocess first, then cleans up newly created files.
+    
     Args:
         signum: Signal number received
         frame: Current stack frame
     """
     print("\n\nReceived interrupt signal...")
+    
+    # Terminate any running subprocess first
+    current_process = _cleanup_state.get('current_process')
+    if current_process and current_process.poll() is None:
+        print("Terminating subprocess...")
+        try:
+            current_process.terminate()
+            # Give it a moment to terminate gracefully
+            try:
+                current_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't terminate
+                print("Force killing subprocess...")
+                current_process.kill()
+                current_process.wait()
+        except Exception as e:
+            print(f"Error terminating subprocess: {e}")
+    
     cleanup_new_files()
     sys.exit(1)
 
@@ -361,18 +382,28 @@ def run_module(module_name, input_path, args=None, recursive=False):
             universal_newlines=True
         )
         
+        # Track current process for signal handler
+        _cleanup_state['current_process'] = process
+        
         # Stream output in real-time and capture for error analysis
         output_lines = []
         first_error_line = None
         
-        for line in process.stdout:
-            print(line, end='')
-            output_lines.append(line)
-            # Capture first line containing error/failed
-            if not first_error_line:
-                line_lower = line.lower()
-                if any(keyword in line_lower for keyword in ['error:', 'failed', 'exception']):
-                    first_error_line = line.strip()
+        try:
+            for line in process.stdout:
+                print(line, end='')
+                output_lines.append(line)
+                # Capture first line containing error/failed
+                if not first_error_line:
+                    line_lower = line.lower()
+                    if any(keyword in line_lower for keyword in ['error:', 'failed', 'exception']):
+                        first_error_line = line.strip()
+        except KeyboardInterrupt:
+            # If interrupted while reading output, the signal handler will handle cleanup
+            raise
+        finally:
+            # Clear current process reference
+            _cleanup_state['current_process'] = None
         
         return_code = process.wait()
         
