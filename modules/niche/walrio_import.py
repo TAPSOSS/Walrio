@@ -428,7 +428,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False, error_msg, str(e)
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False):
     """
     Run complete import pipeline
     
@@ -456,6 +456,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
         output_dir: Output directory for converted files (default: output_dir in input location)
         in_place: Process files directly in-place without output_dir (RISKY: no rollback on failure)
+        auto_sanitize: Skip all prompts (auto-overwrite existing files in convert stage)
         
     Returns:
         True if all stages succeeded
@@ -518,7 +519,6 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             'description': 'Convert to FLAC 48kHz/16-bit',
             'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'] + (['--output', str(output_dir)] if not in_place else []),
             'target_path': input_path  # Convert processes input_path
-            # Note: --force-overwrite NOT included so user is prompted when files exist in output_dir
         },
         {
             'name': 'resize_album_art',
@@ -578,10 +578,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     # Instead, we delete source files AFTER all stages complete successfully.
     # This ensures all processing happens on files in output_dir before originals are removed.
     
+    # Add force-overwrite for auto-sanitize operation if requested
+    if auto_sanitize:
+        stages[0]['args'].append('--force-overwrite')
+    
     # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
         stages[0]['args'].append('--force-reconvert')
-        stages[0]['args'].append('--force-overwrite')  # Also bypass overwrite prompts
     
     # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
@@ -777,6 +780,10 @@ Examples:
                        dest='dont_continue',
                        help='Stop pipeline execution if any stage has errors (default: continue through all stages)')
     
+    parser.add_argument('--auto-sanitize', '--as', action='store_true',
+                       dest='auto_sanitize',
+                       help='Run without prompts - automatically overwrite existing files in output directory')
+    
     args = parser.parse_args()
     
     # Handle --force-replace flag (combines force-reconvert and delete-originals)
@@ -813,7 +820,8 @@ Examples:
             args.force_reconvert,
             args.dont_continue,
             args.output_dir,
-            args.in_place
+            args.in_place,
+            args.auto_sanitize
         )
         return 0 if success else 1
     
