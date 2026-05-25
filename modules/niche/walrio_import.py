@@ -417,7 +417,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         delete_originals: Delete original files after conversion
         force_reconvert: Force reconvert all files regardless of current specs
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
-        output_dir: Output directory for converted files (default: ./output_dir)
+        output_dir: Output directory for converted files (default: output_dir in input location)
         in_place: Process files directly in-place without output_dir (RISKY: no rollback on failure)
         
     Returns:
@@ -439,7 +439,11 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         # Set default output directory and track if user specified custom location
         user_specified_output_dir = output_dir is not None
         if output_dir is None:
-            output_dir = Path.cwd() / "output_dir"
+            # Create output_dir in the same location as input (not cwd)
+            if input_path.is_dir():
+                output_dir = input_path / "output_dir"
+            else:
+                output_dir = input_path.parent / "output_dir"
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
@@ -657,7 +661,7 @@ def main():
   4. Analyze and apply loudness normalization (-14 LUFS)
 
 Important Notes:
-  - All files are processed in --output-dir (default: ./output_dir)
+  - All files are processed in --output-dir (default: output_dir in input location)
   - Original files are NEVER modified - all work happens on copies in output_dir
   - WARNING: --in-place: RISKY mode that processes files directly without output_dir
     * Saves disk space but NO ROLLBACK if errors occur
@@ -680,7 +684,7 @@ Important Notes:
 >>>>>>> origin/main
 
 Examples:
-  # Process to default ./output_dir directory (keeps originals)
+  # Process to default output_dir (created in input location, keeps originals)
   python walrio_import_remade.py /path/to/music
 
   # Process to custom output directory (keeps originals)
@@ -715,7 +719,7 @@ Examples:
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process directories recursively')
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
-                       help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: ./output_dir)')
+                       help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: output_dir in same location as input)')
     parser.add_argument('--in-place', action='store_true',
                        help='RISKY: Process files directly in original location without using output_dir. Saves disk space but NO ROLLBACK if errors occur. Original files will be overwritten/deleted during processing.')
     parser.add_argument('-n', '--dry-run', action='store_true',
