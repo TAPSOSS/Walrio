@@ -434,12 +434,14 @@ class AudioRenamer:
         new_filename = self.generate_new_filename(filepath)
         if not new_filename:
             logger.info(f"Skipped {filepath.name} (no metadata)")
+            print(f"  [SKIP] No metadata available\n")
             self.skipped_count += 1
             return False
         
         # Check if already has desired name
         if filepath.name == new_filename:
             logger.debug(f"Skipped {filepath.name} (already correct)")
+            print(f"  [OK] Already has correct name\n")
             self.skipped_count += 1
             return False
         
@@ -452,9 +454,11 @@ class AudioRenamer:
         try:
             if self.dry_run:
                 logger.info(f"[DRY RUN] {filepath.name} -> {new_filename}")
+                print(f"  [DRY RUN] Would rename to: {new_filename}\n")
             else:
                 filepath.rename(new_filepath)
                 logger.info(f"Renamed: {filepath.name} -> {new_filename}")
+                print(f"  [OK] Renamed to: {new_filename}\n")
                 
                 # Track for playlist updates
                 self.path_mapping[str(filepath.resolve())] = str(new_filepath.resolve())
@@ -465,6 +469,7 @@ class AudioRenamer:
         except Exception as e:
             error_msg = f"Error renaming file: {e}"
             logger.error(f"{filepath.name}: {error_msg}")
+            print(f"  [ERROR] {error_msg}\n")
             self.error_count += 1
             self.failed_files.append((str(filepath), error_msg))
             return False

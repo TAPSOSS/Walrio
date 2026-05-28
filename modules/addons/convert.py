@@ -288,9 +288,9 @@ class AudioConverter:
                     if self._matches_target_specs(input_path):
                         # Print with file counter
                         if current_file and total_files:
-                            print(f"File {current_file}/{total_files}: Skipping {input_path.name} (already in target format with correct specs)")
+                            print(f"File {current_file}/{total_files}: Skipping {input_path.name} (already in target format with correct specs)\n")
                         else:
-                            print(f"Skipping {input_path.name} (already in target format with correct specs)")
+                            print(f"Skipping {input_path.name} (already in target format with correct specs)\n")
                         return input_path
                     else:
                         # Need to reconvert - prompt user
@@ -302,7 +302,7 @@ class AudioConverter:
                                 print(f"File {current_file}/{total_files}: ERROR - {input_path.name} is corrupted or unreadable")
                             else:
                                 print(f"ERROR - {input_path.name} is corrupted or unreadable")
-                            print(f"  File cannot be read by ffprobe. Skipping.")
+                            print(f"  File cannot be read by ffprobe. Skipping.\n")
                             return None
                         
                         # Print with file counter
@@ -466,10 +466,13 @@ class AudioConverter:
                     final_path.unlink()
                 output_path.rename(final_path)
                 output_path = final_path
-                print(f"  Replaced original with reconverted file")
+                print(f"  Replaced original with reconverted file\n")
             elif original_input != output_path:
                 # Created a new file (not replacing), inform user
-                print(f"  Created new file: {output_path.name} (original preserved)")
+                print(f"  Created new file: {output_path.name} (original preserved)\n")
+            else:
+                # In-place replacement was done
+                print()  # Add blank line
             
             # Delete original if requested (for cross-format conversions)
             # Only delete if: deletion enabled, input still exists, output was successfully created, and they're different files
@@ -564,7 +567,7 @@ class AudioConverter:
                 
             except Exception as e:
                 error_msg = f"Error converting file: {e}"
-                print(f"File {idx}/{len(files)}: {file_path.name}: {error_msg}", file=sys.stderr)
+                print(f"File {idx}/{len(files)}: {file_path.name}: {error_msg}\n", file=sys.stderr)
                 stats['errors'] += 1
                 self.failed_files.append((str(file_path), error_msg))
         

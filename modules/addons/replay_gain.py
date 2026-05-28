@@ -209,7 +209,7 @@ class ReplayGainAnalyzer:
             logger.debug(f"Analyzed {filepath.name}: {analysis_result['loudness_lufs']} LUFS, {analysis_result['gain_db']} dB gain")
             
             # Display results
-            print(f"  [OK] Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
+            print(f"  [OK] Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB\n")
             
             return analysis_result
             
@@ -352,7 +352,7 @@ class ReplayGainAnalyzer:
             
             # Display results
             print(f"  [OK] Analysis complete: Volume level: {analysis_result['loudness_lufs']} LUFS | Replay Gain: {analysis_result['gain_db']} dB")
-            print(f"  [OK] ReplayGain tags written")
+            print(f"  [OK] ReplayGain tags written\n")
             
             return analysis_result
             
