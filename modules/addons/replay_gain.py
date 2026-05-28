@@ -47,6 +47,7 @@ class ReplayGainAnalyzer:
         self.analyzed_count = 0
         self.error_count = 0
         self.tagged_count = 0
+        self.failed_files = []  # Track (filepath, error_message) tuples
         
         self._check_rsgain()
     
@@ -126,15 +127,19 @@ class ReplayGainAnalyzer:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
             if result.returncode != 0:
-                logger.error(f"rsgain analysis failed for {filepath.name}: {result.stderr or result.stdout}")
+                error_msg = f"rsgain analysis failed: {result.stderr or result.stdout}"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
             # Parse output
             lines = result.stdout.strip().splitlines()
             if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {filepath.name}")
+                error_msg = "Unexpected rsgain output format"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
             # Parse header and values
@@ -142,8 +147,10 @@ class ReplayGainAnalyzer:
             values = lines[1].split('\t')
             
             if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {filepath.name}")
+                error_msg = "Header/value mismatch in rsgain output"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
             # Create column mapping
@@ -207,8 +214,10 @@ class ReplayGainAnalyzer:
             return analysis_result
             
         except Exception as e:
-            logger.error(f"Error analyzing {filepath.name}: {e}")
+            error_msg = f"Error analyzing file: {e}"
+            logger.error(f"{filepath.name}: {error_msg}")
             self.error_count += 1
+            self.failed_files.append((str(filepath), error_msg))
             return None
     
     def analyze_and_tag_file(self, filepath: Path, skip_tagged: bool = True,
@@ -260,23 +269,29 @@ class ReplayGainAnalyzer:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
             if result.returncode != 0:
-                logger.error(f"rsgain tagging failed for {filepath.name}: {result.stderr or result.stdout}")
+                error_msg = f"rsgain tagging failed: {result.stderr or result.stdout}"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
             # Parse output (same format as analyze_file)
             lines = result.stdout.strip().splitlines()
             if len(lines) < 2:
-                logger.error(f"Unexpected rsgain output format for {filepath.name}")
+                error_msg = "Unexpected rsgain output format"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
-            header = lines[0].split('\t')
-            values = lines[1].split('\t')
+            header = lines[0].split('\\t')
+            values = lines[1].split('\\t')
             
             if len(header) != len(values):
-                logger.error(f"Header/value mismatch in rsgain output for {filepath.name}")
+                error_msg = "Header/value mismatch in rsgain output"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return None
             
             colmap = {k: i for i, k in enumerate(header)}
@@ -342,8 +357,10 @@ class ReplayGainAnalyzer:
             return analysis_result
             
         except Exception as e:
-            logger.error(f"Error analyzing and tagging {filepath.name}: {e}")
+            error_msg = f"Error analyzing and tagging file: {e}"
+            logger.error(f"{filepath.name}: {error_msg}")
             self.error_count += 1
+            self.failed_files.append((str(filepath), error_msg))
             return None
     
     def delete_tags_file(self, filepath: Path, current_file: int = None, 
@@ -385,16 +402,20 @@ class ReplayGainAnalyzer:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
             if result.returncode != 0:
-                logger.error(f"Failed to delete tags from {filepath.name}: {result.stderr or result.stdout}")
+                error_msg = f"Failed to delete tags: {result.stderr or result.stdout}"
+                logger.error(f"{filepath.name}: {error_msg}")
                 self.error_count += 1
+                self.failed_files.append((str(filepath), error_msg))
                 return False
             
             print(f"  [OK] ReplayGain tags deleted")
             return True
             
         except Exception as e:
-            logger.error(f"Error deleting tags from {filepath.name}: {e}")
+            error_msg = f"Error deleting tags: {e}"
+            logger.error(f"{filepath.name}: {error_msg}")
             self.error_count += 1
+            self.failed_files.append((str(filepath), error_msg))
             return False
     
     def analyze_directory(self, directory: Path, recursive: bool = True, 
@@ -522,6 +543,13 @@ def main():
                 print(f"  Tagged: {analyzer.tagged_count}")
             if analyzer.error_count:
                 print(f"  Errors: {analyzer.error_count}")
+                print("\\n" + "=" * 60)
+                print("Failed Files:")
+                print("=" * 60)
+                for filepath, error_msg in analyzer.failed_files:
+                    print(f"  {filepath}")
+                    print(f"    Error: {error_msg}")
+                print("=" * 60)
         
         else:
             # Single file analysis

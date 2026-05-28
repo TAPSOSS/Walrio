@@ -306,7 +306,7 @@ def process_directory(directory: Path,
                      maintain_aspect: bool = False,
                      backup: bool = False,
                      backup_dir: Optional[Path] = None,
-                     recursive: bool = False) -> Tuple[int, int]:
+                     recursive: bool = False) -> Tuple[int, int, list]:
     """
     Process all audio files in directory
     
@@ -318,6 +318,10 @@ def process_directory(directory: Path,
         maintain_aspect: Maintain aspect ratio
         backup: Create backups
         backup_dir: Backup directory
+        recursive: Process subdirectories recursively
+        
+    Returns:
+        Tuple of (successful_count, total_count, failed_files_list)
         recursive: Process subdirectories
         
     Returns:
@@ -339,13 +343,14 @@ def process_directory(directory: Path,
         
         if not audio_files:
             logger.warning(f"No audio files found in {directory}")
-            return 0, 0
+            return 0, 0, []
         
         # Print settings and file count
         print_settings(size, quality, format, maintain_aspect, backup)
         print(f"Found {len(audio_files)} audio file(s) to process\n")
         
         successful = 0
+        failed_files = []
         for idx, audio_file in enumerate(audio_files, 1):
             try:
                 if resize_album_art(
@@ -360,20 +365,34 @@ def process_directory(directory: Path,
                     total_files=len(audio_files)
                 ):
                     successful += 1
+                else:
+                    error_msg = "Failed to resize album art"
+                    failed_files.append((str(audio_file), error_msg))
             except Exception as e:
-                logger.error(f"Error processing {audio_file}: {e}")
+                error_msg = f"Error processing file: {e}"
+                logger.error(f"{audio_file.name}: {error_msg}")
+                failed_files.append((str(audio_file), error_msg))
         
         print(f"\nProcessing complete:")
         print(f"  Successful: {successful}")
         print(f"  Total: {len(audio_files)}")
         if successful < len(audio_files):
             print(f"  Failed: {len(audio_files) - successful}")
+            if failed_files:
+                print("\n" + "=" * 60)
+                print("Failed Files:")
+                print("=" * 60)
+                for filepath, error_msg in failed_files:
+                    print(f"  {filepath}")
+                    print(f"    Error: {error_msg}")
+                print("=" * 60)
         
-        return successful, len(audio_files)
+        return successful, len(audio_files), failed_files
         
     except Exception as e:
-        logger.error(f"Error scanning directory {directory}: {e}")
-        return 0, 0
+        error_msg = f"Error scanning directory: {e}"
+        logger.error(error_msg)
+        return 0, 0, []
 
 
 def main():
@@ -466,7 +485,7 @@ Supported audio formats: mp3, flac, ogg, opus, m4a, aac, wav
         
         # Process directories
         for directory in input_dirs:
-            successful, total = process_directory(
+            successful, total, _ = process_directory(
                 directory=directory,
                 size=args.size,
                 quality=args.quality,
