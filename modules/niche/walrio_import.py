@@ -8,9 +8,85 @@ import subprocess
 import signal
 import atexit
 from pathlib import Path
+from datetime import datetime
 
 # Audio file extensions that will be processed
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav', '.wma', '.aac', '.wv', '.ape'}
+
+
+class TeeOutput:
+    """
+    Duplicates output to both terminal and a log file.
+    """
+    def __init__(self, log_file_path, mode='w'):
+        """
+        Initialize TeeOutput.
+        
+        Args:
+            log_file_path: Path to log file
+            mode: File open mode ('w' for write, 'a' for append)
+        """
+        self.terminal = sys.stdout
+        self.log_file = open(log_file_path, mode, encoding='utf-8', buffering=1)  # Line buffered
+        
+        # Write header to log file
+        self.log_file.write(f"{'=' * 60}\n")
+        self.log_file.write(f"Walrio Import Pipeline Log\n")
+        self.log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        self.log_file.write(f"{'=' * 60}\n\n")
+        self.log_file.flush()
+    
+    def write(self, message):
+        """Write to both terminal and log file."""
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+    
+    def flush(self):
+        """Flush both outputs."""
+        self.terminal.flush()
+        self.log_file.flush()
+    
+    def close(self):
+        """Close the log file."""
+        if self.log_file and not self.log_file.closed:
+            self.log_file.write(f"\n{'=' * 60}\n")
+            self.log_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            self.log_file.write(f"{'=' * 60}\n")
+            self.log_file.close()
+
+
+class TeeStderr:
+    """
+    Duplicates stderr output to both terminal and a log file.
+    """
+    def __init__(self, log_file_path, mode='a'):
+        """
+        Initialize TeeStderr.
+        
+        Args:
+            log_file_path: Path to log file
+            mode: File open mode (typically 'a' for append since stdout already opened it)
+        """
+        self.terminal = sys.stderr
+        self.log_file = open(log_file_path, mode, encoding='utf-8', buffering=1)  # Line buffered
+    
+    def write(self, message):
+        """Write to both terminal stderr and log file."""
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+    
+    def flush(self):
+        """Flush both outputs."""
+        self.terminal.flush()
+        self.log_file.flush()
+    
+    def close(self):
+        """Close the log file."""
+        if self.log_file and not self.log_file.closed:
+            self.log_file.close()
+
 
 # Global state for cleanup tracking
 _cleanup_state = {
@@ -590,7 +666,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         return False, error_msg, str(e), []
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False, log_file=None):
     """
     Run complete import pipeline
     
@@ -619,9 +695,47 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         output_dir: Output directory for converted files (default: output_dir in input location)
         in_place: Process files directly in-place without output_dir (RISKY: no rollback on failure)
         auto_sanitize: Skip all prompts (auto-overwrite existing files in convert stage)
+        log_file: Path to log file for output (None to disable logging)
         
     Returns:
         True if all stages succeeded
+    """
+    # Set up output logging if requested
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    tee_stdout = None
+    tee_stderr = None
+    
+    if log_file:
+        try:
+            tee_stdout = TeeOutput(log_file, mode='w')
+            tee_stderr = TeeStderr(log_file, mode='a')
+            sys.stdout = tee_stdout
+            sys.stderr = tee_stderr
+            print(f"Logging to: {log_file}")
+        except Exception as e:
+            print(f"Warning: Could not create log file {log_file}: {e}", file=sys.stderr)
+            # Continue without logging
+            tee_stdout = None
+            tee_stderr = None
+    
+    try:
+        return _run_import_pipeline_impl(input_path, recursive, dry_run, playlist_dir, 
+                                         delete_originals, force_reconvert, stop_on_error, 
+                                         output_dir, in_place, auto_sanitize)
+    finally:
+        # Restore original stdout/stderr and close log files
+        if tee_stdout:
+            sys.stdout = original_stdout
+            tee_stdout.close()
+        if tee_stderr:
+            sys.stderr = original_stderr
+            tee_stderr.close()
+
+
+def _run_import_pipeline_impl(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False):
+    """
+    Internal implementation of run_import_pipeline (called after logging setup).
     """
     print(f"Starting Walrio Import Pipeline: {input_path}")
     print(f"Recursive: {recursive}")
@@ -974,6 +1088,10 @@ Examples:
                        dest='auto_sanitize',
                        help='Run without prompts - automatically overwrite existing files in output directory')
     
+    parser.add_argument('--log-file', type=Path, nargs='?', const='walrio_log.txt',
+                       dest='log_file',
+                       help='Log all output to file (default: walrio_log.txt in current directory). Optionally specify custom path.')
+    
     args = parser.parse_args()
     
     # Handle --force-replace flag (combines force-reconvert and delete-originals)
@@ -1011,7 +1129,8 @@ Examples:
             args.dont_continue,
             args.output_dir,
             args.in_place,
-            args.auto_sanitize
+            args.auto_sanitize,
+            args.log_file
         )
         return 0 if success else 1
     
