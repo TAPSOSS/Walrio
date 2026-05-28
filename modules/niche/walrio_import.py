@@ -210,6 +210,9 @@ def delete_original_files(files, dry_run=False):
     Args:
         files: List of Path objects to delete
         dry_run: If True, only show what would be deleted
+        
+    Returns:
+        Dict with 'deleted', 'errors', and 'failed_files' keys
     """
     print("\n" + "=" * 60)
     print("Deleting original files...")
@@ -219,23 +222,59 @@ def delete_original_files(files, dry_run=False):
         print("DRY RUN - Files that would be deleted:")
         for file_path in files:
             print(f"  {file_path}")
-        return
+        return {'deleted': 0, 'errors': 0, 'failed_files': []}
     
     deleted = 0
     errors = 0
+    error_details = []
     
     for file_path in files:
         try:
             file_path.unlink()
             deleted += 1
             print(f"Deleted: {file_path}")
+        except OSError as e:
+            errors += 1
+            error_msg = str(e)
+            # Detect common issues
+            if e.errno == 13 or 'Permission denied' in error_msg:
+                error_type = "PERMISSION DENIED"
+            elif e.errno == 2 or 'No such file' in error_msg:
+                error_type = "FILE NOT FOUND"
+            else:
+                error_type = "OS ERROR"
+            print(f"[{error_type}] Failed to delete {file_path}: {error_msg}", file=sys.stderr)
+            error_details.append((error_type, str(file_path), error_msg))
         except Exception as e:
             errors += 1
-            print(f"Error deleting {file_path}: {e}")
+            print(f"[ERROR] Failed to delete {file_path}: {e}", file=sys.stderr)
+            error_details.append(("ERROR", str(file_path), str(e)))
     
     print(f"\nDeleted {deleted} files")
     if errors > 0:
-        print(f"Failed to delete {errors} files")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"WARNING: Failed to delete {errors} original files", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        
+        # Group errors by type
+        error_by_type = {}
+        for error_type, filename, error_msg in error_details:
+            if error_type not in error_by_type:
+                error_by_type[error_type] = []
+            error_by_type[error_type].append((filename, error_msg))
+        
+        for error_type, file_errors in error_by_type.items():
+            print(f"\n{error_type}: {len(file_errors)} file(s)", file=sys.stderr)
+            for filename, error_msg in file_errors[:5]:  # Show first 5
+                print(f"  - {filename}", file=sys.stderr)
+            if len(file_errors) > 5:
+                print(f"  ... and {len(file_errors) - 5} more", file=sys.stderr)
+        
+        print(f"\n{'=' * 60}\n", file=sys.stderr)
+    
+    # Convert error_details to the format expected for consolidated report
+    failed_files_list = [(filepath, error_msg) for error_type, filepath, error_msg in error_details]
+    return {'deleted': deleted, 'errors': errors, 'failed_files': failed_files_list}
 
 
 def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=False):
@@ -249,12 +288,15 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
         recursive: Whether original processing was recursive
         dry_run: If True, only show what would be moved
         
+    Returns:
+        Dict with 'moved', 'errors', and 'failed_files' keys
+        
     Note:
         output_dir is only removed if it becomes completely empty after moving files.
         This prevents accidental deletion of directories with pre-existing content.
     """
     if not output_dir.exists():
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     print("\n" + "=" * 60)
     print("Moving processed files back to original location...")
@@ -265,7 +307,7 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
     
     if not processed_files:
         print("No processed files to move")
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     if dry_run:
         print("DRY RUN - Files that would be moved:")
@@ -277,10 +319,11 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
                 target = input_path.parent / file_path.name
             print(f"  {file_path} -> {target}")
         print(f"\nWould then remove output directory if completely empty: {output_dir}")
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     moved = 0
     errors = 0
+    error_details = []
     
     for file_path in processed_files:
         try:
@@ -301,13 +344,50 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             file_path.rename(target)
             moved += 1
             print(f"Moved: {relative} -> {target}")
+        except OSError as e:
+            errors += 1
+            error_msg = str(e)
+            # Detect common issues
+            if e.errno == 28 or 'No space left' in error_msg or 'Disk full' in error_msg:
+                error_type = "DISK FULL"
+            elif e.errno == 13 or 'Permission denied' in error_msg:
+                error_type = "PERMISSION DENIED"
+            else:
+                error_type = "OS ERROR"
+            print(f"[{error_type}] Failed to move {relative}: {error_msg}", file=sys.stderr)
+            error_details.append((error_type, str(relative), error_msg))
         except Exception as e:
             errors += 1
-            print(f"Error moving {file_path}: {e}")
+            print(f"[ERROR] Failed to move {relative}: {e}", file=sys.stderr)
+            error_details.append(("ERROR", str(relative), str(e)))
     
     print(f"\nMoved {moved} files back to original location")
     if errors > 0:
-        print(f"Failed to move {errors} files")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"CRITICAL: Failed to move {errors} files!", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        
+        # Group errors by type
+        error_by_type = {}
+        for error_type, filename, error_msg in error_details:
+            if error_type not in error_by_type:
+                error_by_type[error_type] = []
+            error_by_type[error_type].append((filename, error_msg))
+        
+        for error_type, file_errors in error_by_type.items():
+            print(f"\n{error_type}: {len(file_errors)} file(s)", file=sys.stderr)
+            for filename, error_msg in file_errors[:5]:  # Show first 5
+                print(f"  - {filename}", file=sys.stderr)
+            if len(file_errors) > 5:
+                print(f"  ... and {len(file_errors) - 5} more", file=sys.stderr)
+        
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"Files remain in output directory: {output_dir}", file=sys.stderr)
+        print(f"{'=' * 60}\n", file=sys.stderr)
+        
+        # Convert error_details to the format expected for consolidated report
+        failed_files_list = [(filepath, error_msg) for error_type, filepath, error_msg in error_details]
+        return {'moved': moved, 'errors': errors, 'failed_files': failed_files_list}  # Don't try to clean up output_dir if moves failed
     
     # Clean up output_dir
     print("\nCleaning up output directory...")
@@ -331,6 +411,8 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             print(f"Output directory not empty, keeping: {output_dir}")
     except Exception as e:
         print(f"Error cleaning up output directory: {e}")
+    
+    return {'moved': moved, 'errors': errors, 'failed_files': []}
 
 
 def get_walrio_path():
@@ -344,6 +426,83 @@ def get_walrio_path():
     return str(walrio_path)
 
 
+def parse_failed_files_from_output(output_lines):
+    """
+    Parse failed files from module output.
+    Looks for the "Failed files:" section that modules print.
+    
+    Returns:
+        List of tuples (filepath, error_message)
+    """
+    failed_files = []
+    in_failed_section = False
+    
+    for line in output_lines:
+        # Look for the start of failed files section
+        if 'Failed files:' in line or 'failed files summary' in line.lower():
+            in_failed_section = True
+            continue
+        
+        # Stop at section boundaries
+        if in_failed_section:
+            if line.strip() == '' or line.startswith('===') or line.startswith('---'):
+                in_failed_section = False
+                continue
+            
+            # Parse file and error (format: "  - filepath: error message")
+            if line.strip().startswith('-') or line.strip().startswith('•'):
+                parts = line.strip().lstrip('-').lstrip('•').strip().split(':', 1)
+                if len(parts) == 2:
+                    filepath = parts[0].strip()
+                    error = parts[1].strip()
+                    failed_files.append((filepath, error))
+                else:
+                    # Just filename, no error detail
+                    failed_files.append((parts[0].strip(), "Unknown error"))
+    
+    return failed_files
+
+
+def print_consolidated_error_report(stage_failed_files):
+    """
+    Print a consolidated report of all failed files from all stages.
+    
+    Args:
+        stage_failed_files: Dict mapping stage name to list of (filepath, error) tuples
+    """
+    if not stage_failed_files:
+        return
+    
+    total_failures = sum(len(files) for files in stage_failed_files.values())
+    
+    print("\n" + "=" * 60, file=sys.stderr)
+    print(f"PIPELINE ERROR SUMMARY: {total_failures} file(s) failed across {len(stage_failed_files)} stage(s)", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    
+    for stage_name, failed_files in stage_failed_files.items():
+        print(f"\n{stage_name.upper()}: {len(failed_files)} file(s) failed", file=sys.stderr)
+        print("-" * 60, file=sys.stderr)
+        
+        # Show first 10 failures with details
+        for filepath, error in failed_files[:10]:
+            # Shorten filepath if too long
+            if len(filepath) > 60:
+                filepath = "..." + filepath[-57:]
+            print(f"  - {filepath}", file=sys.stderr)
+            if error and error != "Unknown error":
+                # Truncate error if very long
+                if len(error) > 80:
+                    error = error[:77] + "..."
+                print(f"    Error: {error}", file=sys.stderr)
+        
+        if len(failed_files) > 10:
+            print(f"  ... and {len(failed_files) - 10} more files", file=sys.stderr)
+    
+    print("\n" + "=" * 60, file=sys.stderr)
+    print("Scroll up for full details on each failure", file=sys.stderr)
+    print("=" * 60 + "\n", file=sys.stderr)
+
+
 def run_module(module_name, input_path, args=None, recursive=False):
     """
     Run a Walrio module with given arguments
@@ -355,7 +514,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         recursive: Add recursive flag
         
     Returns:
-        Tuple of (success: bool, error_info: str or None, first_error_line: str or None)
+        Tuple of (success: bool, error_info: str or None, first_error_line: str or None, failed_files: list)
     """
     walrio_path = get_walrio_path()
     cmd = [sys.executable, walrio_path, module_name]
@@ -407,6 +566,9 @@ def run_module(module_name, input_path, args=None, recursive=False):
         
         return_code = process.wait()
         
+        # Parse failed files from output
+        failed_files = parse_failed_files_from_output(output_lines)
+        
         if return_code != 0:
             print("-" * 50)
             error_msg = f"Failed with exit code {return_code}"
@@ -415,17 +577,17 @@ def run_module(module_name, input_path, args=None, recursive=False):
                 print(f"First error: {first_error_line[:200]}")  # Truncate if very long
             else:
                 print("Check the output above for details on which files failed.")
-            return False, error_msg, first_error_line
+            return False, error_msg, first_error_line, failed_files
         
         print("-" * 50)
         print(f"SUCCESS: {module_name} completed")
-        return True, None, None
+        return True, None, None, failed_files
         
     except Exception as e:
         print("-" * 50)
         error_msg = f"Exception: {str(e)}"
         print(f"ERROR: {module_name} {error_msg}")
-        return False, error_msg, str(e)
+        return False, error_msg, str(e), []
 
 
 def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False):
@@ -620,11 +782,18 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     
     # Execute pipeline
     failed_stages = {}  # Dict mapping stage name to (error_info, first_error_line)
+    stage_failed_files = {}  # Dict mapping stage name to list of (filepath, error) tuples
+    
     for i, stage in enumerate(stages, 1):
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
-        success, error_info, first_error_line = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        success, error_info, first_error_line, failed_files = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        
+        # Store failed files for this stage
+        if failed_files:
+            stage_failed_files[stage['name']] = failed_files
+        
         if not success:
             failed_stages[stage['name']] = (error_info, first_error_line)
             if stop_on_error:
@@ -654,12 +823,20 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             else:
                 should_delete = prompt_delete_with_errors(failed_stages)
                 if should_delete:
-                    delete_original_files(source_files, dry_run=False)
+                    delete_result = delete_original_files(source_files, dry_run=False)
+                    # Track deletion errors
+                    if delete_result['errors'] > 0:
+                        stage_failed_files['delete_originals'] = delete_result['failed_files']
                     
                     # Only move files back if using default output_dir
                     if not user_specified_output_dir:
-                        move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
-                        print(f"\nOriginal files have been replaced with processed versions")
+                        move_result = move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                        # Track move errors
+                        if move_result['errors'] > 0:
+                            stage_failed_files['move_files'] = move_result['failed_files']
+                        
+                        if move_result['errors'] == 0:
+                            print(f"\nOriginal files have been replaced with processed versions")
                     else:
                         print(f"\nOriginal files deleted, processed files are in: {output_dir}")
                 else:
@@ -672,16 +849,29 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         # Delete original files if requested and all stages succeeded
         if delete_originals and source_files:
             print(f"\nProcessed files are in: {output_dir}")
-            delete_original_files(source_files, dry_run)
+            delete_result = delete_original_files(source_files, dry_run)
             if not dry_run:
+                # Track deletion errors
+                if delete_result['errors'] > 0:
+                    stage_failed_files['delete_originals'] = delete_result['failed_files']
+                
                 # Only move files back if using default output_dir
                 if not user_specified_output_dir:
-                    move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
-                    print(f"\nOriginal files have been replaced with processed versions")
+                    move_result = move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                    # Track move errors
+                    if move_result['errors'] > 0:
+                        stage_failed_files['move_files'] = move_result['failed_files']
+                    
+                    if move_result['errors'] == 0:
+                        print(f"\nOriginal files have been replaced with processed versions")
                 else:
                     print(f"\nOriginal files deleted, processed files remain in: {output_dir}")
         else:
             print(f"\nProcessed files are in: {output_dir}")
+    
+    # Display final consolidated error report if any operations had failures
+    if stage_failed_files:
+        print_consolidated_error_report(stage_failed_files)
     
     # Mark as successfully completed (disables cleanup on exit)
     _cleanup_state['completed_successfully'] = True
