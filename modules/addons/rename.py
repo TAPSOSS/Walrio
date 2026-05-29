@@ -89,6 +89,7 @@ class AudioRenamer:
         self.skipped_count = 0
         self.metadata_error_count = 0
         self.conflict_count = 0
+        self.failed_files = []  # Track (filepath, error_message) tuples
         
         # Interactive prompt state
         self.allow_special_all = False
@@ -433,12 +434,14 @@ class AudioRenamer:
         new_filename = self.generate_new_filename(filepath)
         if not new_filename:
             logger.info(f"Skipped {filepath.name} (no metadata)")
+            print(f"  [SKIP] No metadata available\n")
             self.skipped_count += 1
             return False
         
         # Check if already has desired name
         if filepath.name == new_filename:
             logger.debug(f"Skipped {filepath.name} (already correct)")
+            print(f"  [OK] Already has correct name\n")
             self.skipped_count += 1
             return False
         
@@ -451,9 +454,11 @@ class AudioRenamer:
         try:
             if self.dry_run:
                 logger.info(f"[DRY RUN] {filepath.name} -> {new_filename}")
+                print(f"  [DRY RUN] Would rename to: {new_filename}\n")
             else:
                 filepath.rename(new_filepath)
                 logger.info(f"Renamed: {filepath.name} -> {new_filename}")
+                print(f"  [OK] Renamed to: {new_filename}\n")
                 
                 # Track for playlist updates
                 self.path_mapping[str(filepath.resolve())] = str(new_filepath.resolve())
@@ -462,8 +467,11 @@ class AudioRenamer:
             return True
             
         except Exception as e:
-            logger.error(f"Error renaming {filepath.name}: {e}")
+            error_msg = f"Error renaming file: {e}"
+            logger.error(f"{filepath.name}: {error_msg}")
+            print(f"  [ERROR] {error_msg}\n")
             self.error_count += 1
+            self.failed_files.append((str(filepath), error_msg))
             return False
     
     def rename_directory(self, directory: Path, recursive: bool = True) -> Dict[str, int]:
@@ -485,6 +493,9 @@ class AudioRenamer:
         if recursive:
             # Get all files recursively and filter by extension
             for file_path in directory.rglob('*'):
+                # Skip files in 'output_dir' to avoid re-processing
+                if any(parent.name == 'output_dir' for parent in file_path.parents):
+                    continue
                 if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
                     files.append(file_path)
         else:
@@ -587,6 +598,14 @@ def main():
         print(f"  Conflicts resolved: {stats['conflicts']}")
         if stats['errors']:
             print(f"  Errors: {stats['errors']}")
+            if renamer.failed_files:
+                print("\n" + "=" * 60)
+                print("Failed Files:")
+                print("=" * 60)
+                for filepath, error_msg in renamer.failed_files:
+                    print(f"  {filepath}")
+                    print(f"    Error: {error_msg}")
+                print("=" * 60)
         if stats['metadata_errors']:
             print(f"  Metadata errors: {stats['metadata_errors']}")
         

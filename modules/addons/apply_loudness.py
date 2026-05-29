@@ -43,6 +43,7 @@ class LoudnessApplicator:
         self.processed_count = 0
         self.error_count = 0
         self.backup_count = 0
+        self.failed_files = []  # Track (filepath, error_message) tuples
         
         # Interactive prompt state for missing ReplayGain
         self.analyze_all = False
@@ -482,8 +483,10 @@ class LoudnessApplicator:
                         pass
                         
         except Exception as e:
+            error_msg = f"Error processing file: {e}"
             self.error_count += 1
-            logger.error(f"Error processing {os.path.basename(filepath)}: {e}")
+            self.failed_files.append((str(filepath), error_msg))
+            logger.error(f"{os.path.basename(filepath)}: {error_msg}")
             return False
     
     def process_files(self, file_paths: List[str], gain_db: Optional[float] = None,
@@ -802,6 +805,14 @@ Requirements:
             print(f"  Total: {total_files}")
             if total_successful < total_files:
                 print(f"  Failed: {total_files - total_successful}")
+                if applicator.failed_files:
+                    print("\n" + "=" * 60)
+                    print("Failed Files:")
+                    print("=" * 60)
+                    for filepath, error_msg in applicator.failed_files:
+                        print(f"  {filepath}")
+                        print(f"    Error: {error_msg}")
+                    print("=" * 60)
             
             if create_backup and applicator.backup_count > 0:
                 print(f"  Backups created: {applicator.backup_count}")

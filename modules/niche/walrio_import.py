@@ -8,22 +8,102 @@ import subprocess
 import signal
 import atexit
 from pathlib import Path
+from datetime import datetime
 
 # Audio file extensions that will be processed
 AUDIO_EXTENSIONS = {'.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.wav', '.wma', '.aac', '.wv', '.ape'}
+
+
+class TeeOutput:
+    """
+    Duplicates output to both terminal and a log file.
+    """
+    def __init__(self, log_file_path, mode='w'):
+        """
+        Initialize TeeOutput.
+        
+        Args:
+            log_file_path: Path to log file
+            mode: File open mode ('w' for write, 'a' for append)
+        """
+        self.terminal = sys.stdout
+        self.log_file = open(log_file_path, mode, encoding='utf-8', buffering=1)  # Line buffered
+        
+        # Write header to log file
+        self.log_file.write(f"{'=' * 60}\n")
+        self.log_file.write(f"Walrio Import Pipeline Log\n")
+        self.log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        self.log_file.write(f"{'=' * 60}\n\n")
+        self.log_file.flush()
+    
+    def write(self, message):
+        """Write to both terminal and log file."""
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+    
+    def flush(self):
+        """Flush both outputs."""
+        self.terminal.flush()
+        self.log_file.flush()
+    
+    def close(self):
+        """Close the log file."""
+        if self.log_file and not self.log_file.closed:
+            self.log_file.write(f"\n{'=' * 60}\n")
+            self.log_file.write(f"Completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            self.log_file.write(f"{'=' * 60}\n")
+            self.log_file.close()
+
+
+class TeeStderr:
+    """
+    Duplicates stderr output to both terminal and a log file.
+    """
+    def __init__(self, log_file_path, mode='a'):
+        """
+        Initialize TeeStderr.
+        
+        Args:
+            log_file_path: Path to log file
+            mode: File open mode (typically 'a' for append since stdout already opened it)
+        """
+        self.terminal = sys.stderr
+        self.log_file = open(log_file_path, mode, encoding='utf-8', buffering=1)  # Line buffered
+    
+    def write(self, message):
+        """Write to both terminal stderr and log file."""
+        self.terminal.write(message)
+        self.log_file.write(message)
+        self.log_file.flush()
+    
+    def flush(self):
+        """Flush both outputs."""
+        self.terminal.flush()
+        self.log_file.flush()
+    
+    def close(self):
+        """Close the log file."""
+        if self.log_file and not self.log_file.closed:
+            self.log_file.close()
+
 
 # Global state for cleanup tracking
 _cleanup_state = {
     'output_dir': None,
     'existing_files': set(),
     'cleanup_enabled': False,
-    'completed_successfully': False
+    'completed_successfully': False,
+    'current_process': None  # Track currently running subprocess for proper termination
 }
 
 
 def collect_audio_files(path, recursive=False):
     """
     Collect all audio files from a path
+    
+    Excludes files in directories named 'output_dir' to prevent accidental re-processing
+    of already converted files.
     
     Args:
         path: File or directory path
@@ -40,6 +120,9 @@ def collect_audio_files(path, recursive=False):
     elif path.is_dir():
         if recursive:
             for file_path in path.rglob('*'):
+                # Skip files in directories named 'output_dir' to avoid re-processing
+                if any(parent.name == 'output_dir' for parent in file_path.parents):
+                    continue
                 if file_path.is_file() and file_path.suffix.lower() in AUDIO_EXTENSIONS:
                     audio_files.append(file_path)
         else:
@@ -131,11 +214,31 @@ def signal_handler(signum, frame):
     """
     Handle interrupt signals (Ctrl+C, etc.)
     
+    Terminates any running subprocess first, then cleans up newly created files.
+    
     Args:
         signum: Signal number received
         frame: Current stack frame
     """
     print("\n\nReceived interrupt signal...")
+    
+    # Terminate any running subprocess first
+    current_process = _cleanup_state.get('current_process')
+    if current_process and current_process.poll() is None:
+        print("Terminating subprocess...")
+        try:
+            current_process.terminate()
+            # Give it a moment to terminate gracefully
+            try:
+                current_process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Force kill if it doesn't terminate
+                print("Force killing subprocess...")
+                current_process.kill()
+                current_process.wait()
+        except Exception as e:
+            print(f"Error terminating subprocess: {e}")
+    
     cleanup_new_files()
     sys.exit(1)
 
@@ -145,7 +248,7 @@ def prompt_delete_with_errors(error_details):
     Prompt user whether to delete originals despite pipeline errors
     
     Args:
-        error_details: Dictionary mapping stage names to error information
+        error_details: Dictionary mapping stage names to (error_info, first_error_line) tuples
         
     Returns:
         True if user wants to proceed with deletion, False otherwise
@@ -155,8 +258,10 @@ def prompt_delete_with_errors(error_details):
     print("=" * 60)
     print("\nThe following stages encountered errors:\n")
     
-    for stage_name, info in error_details.items():
-        print(f"  • {stage_name}: {info}")
+    for stage_name, (error_info, first_error_line) in error_details.items():
+        print(f"  - {stage_name}: {error_info}")
+        if first_error_line:
+            print(f"    First error: {first_error_line[:150]}")
     
     print("\n" + "=" * 60)
     print("Delete original files anyway?")
@@ -181,6 +286,9 @@ def delete_original_files(files, dry_run=False):
     Args:
         files: List of Path objects to delete
         dry_run: If True, only show what would be deleted
+        
+    Returns:
+        Dict with 'deleted', 'errors', and 'failed_files' keys
     """
     print("\n" + "=" * 60)
     print("Deleting original files...")
@@ -190,23 +298,59 @@ def delete_original_files(files, dry_run=False):
         print("DRY RUN - Files that would be deleted:")
         for file_path in files:
             print(f"  {file_path}")
-        return
+        return {'deleted': 0, 'errors': 0, 'failed_files': []}
     
     deleted = 0
     errors = 0
+    error_details = []
     
     for file_path in files:
         try:
             file_path.unlink()
             deleted += 1
             print(f"Deleted: {file_path}")
+        except OSError as e:
+            errors += 1
+            error_msg = str(e)
+            # Detect common issues
+            if e.errno == 13 or 'Permission denied' in error_msg:
+                error_type = "PERMISSION DENIED"
+            elif e.errno == 2 or 'No such file' in error_msg:
+                error_type = "FILE NOT FOUND"
+            else:
+                error_type = "OS ERROR"
+            print(f"[{error_type}] Failed to delete {file_path}: {error_msg}", file=sys.stderr)
+            error_details.append((error_type, str(file_path), error_msg))
         except Exception as e:
             errors += 1
-            print(f"Error deleting {file_path}: {e}")
+            print(f"[ERROR] Failed to delete {file_path}: {e}", file=sys.stderr)
+            error_details.append(("ERROR", str(file_path), str(e)))
     
     print(f"\nDeleted {deleted} files")
     if errors > 0:
-        print(f"Failed to delete {errors} files")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"WARNING: Failed to delete {errors} original files", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        
+        # Group errors by type
+        error_by_type = {}
+        for error_type, filename, error_msg in error_details:
+            if error_type not in error_by_type:
+                error_by_type[error_type] = []
+            error_by_type[error_type].append((filename, error_msg))
+        
+        for error_type, file_errors in error_by_type.items():
+            print(f"\n{error_type}: {len(file_errors)} file(s)", file=sys.stderr)
+            for filename, error_msg in file_errors[:5]:  # Show first 5
+                print(f"  - {filename}", file=sys.stderr)
+            if len(file_errors) > 5:
+                print(f"  ... and {len(file_errors) - 5} more", file=sys.stderr)
+        
+        print(f"\n{'=' * 60}\n", file=sys.stderr)
+    
+    # Convert error_details to the format expected for consolidated report
+    failed_files_list = [(filepath, error_msg) for error_type, filepath, error_msg in error_details]
+    return {'deleted': deleted, 'errors': errors, 'failed_files': failed_files_list}
 
 
 def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=False):
@@ -220,12 +364,15 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
         recursive: Whether original processing was recursive
         dry_run: If True, only show what would be moved
         
+    Returns:
+        Dict with 'moved', 'errors', and 'failed_files' keys
+        
     Note:
         output_dir is only removed if it becomes completely empty after moving files.
         This prevents accidental deletion of directories with pre-existing content.
     """
     if not output_dir.exists():
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     print("\n" + "=" * 60)
     print("Moving processed files back to original location...")
@@ -236,7 +383,7 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
     
     if not processed_files:
         print("No processed files to move")
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     if dry_run:
         print("DRY RUN - Files that would be moved:")
@@ -248,10 +395,11 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
                 target = input_path.parent / file_path.name
             print(f"  {file_path} -> {target}")
         print(f"\nWould then remove output directory if completely empty: {output_dir}")
-        return
+        return {'moved': 0, 'errors': 0, 'failed_files': []}
     
     moved = 0
     errors = 0
+    error_details = []
     
     for file_path in processed_files:
         try:
@@ -272,13 +420,50 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             file_path.rename(target)
             moved += 1
             print(f"Moved: {relative} -> {target}")
+        except OSError as e:
+            errors += 1
+            error_msg = str(e)
+            # Detect common issues
+            if e.errno == 28 or 'No space left' in error_msg or 'Disk full' in error_msg:
+                error_type = "DISK FULL"
+            elif e.errno == 13 or 'Permission denied' in error_msg:
+                error_type = "PERMISSION DENIED"
+            else:
+                error_type = "OS ERROR"
+            print(f"[{error_type}] Failed to move {relative}: {error_msg}", file=sys.stderr)
+            error_details.append((error_type, str(relative), error_msg))
         except Exception as e:
             errors += 1
-            print(f"Error moving {file_path}: {e}")
+            print(f"[ERROR] Failed to move {relative}: {e}", file=sys.stderr)
+            error_details.append(("ERROR", str(relative), str(e)))
     
     print(f"\nMoved {moved} files back to original location")
     if errors > 0:
-        print(f"Failed to move {errors} files")
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"CRITICAL: Failed to move {errors} files!", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
+        
+        # Group errors by type
+        error_by_type = {}
+        for error_type, filename, error_msg in error_details:
+            if error_type not in error_by_type:
+                error_by_type[error_type] = []
+            error_by_type[error_type].append((filename, error_msg))
+        
+        for error_type, file_errors in error_by_type.items():
+            print(f"\n{error_type}: {len(file_errors)} file(s)", file=sys.stderr)
+            for filename, error_msg in file_errors[:5]:  # Show first 5
+                print(f"  - {filename}", file=sys.stderr)
+            if len(file_errors) > 5:
+                print(f"  ... and {len(file_errors) - 5} more", file=sys.stderr)
+        
+        print(f"\n{'=' * 60}", file=sys.stderr)
+        print(f"Files remain in output directory: {output_dir}", file=sys.stderr)
+        print(f"{'=' * 60}\n", file=sys.stderr)
+        
+        # Convert error_details to the format expected for consolidated report
+        failed_files_list = [(filepath, error_msg) for error_type, filepath, error_msg in error_details]
+        return {'moved': moved, 'errors': errors, 'failed_files': failed_files_list}  # Don't try to clean up output_dir if moves failed
     
     # Clean up output_dir
     print("\nCleaning up output directory...")
@@ -302,6 +487,8 @@ def move_processed_files_back(output_dir, input_path, recursive=False, dry_run=F
             print(f"Output directory not empty, keeping: {output_dir}")
     except Exception as e:
         print(f"Error cleaning up output directory: {e}")
+    
+    return {'moved': moved, 'errors': errors, 'failed_files': []}
 
 
 def get_walrio_path():
@@ -315,6 +502,86 @@ def get_walrio_path():
     return str(walrio_path)
 
 
+def parse_failed_files_from_output(output_lines):
+    """Parse failed files from module output.
+    
+    Looks for the "Failed files:" section that modules print.
+    
+    Args:
+        output_lines: List of output lines from the module execution
+    
+    Returns:
+        List of tuples (filepath, error_message)
+    """
+    failed_files = []
+    in_failed_section = False
+    
+    for line in output_lines:
+        # Look for the start of failed files section
+        if 'Failed files:' in line or 'failed files summary' in line.lower():
+            in_failed_section = True
+            continue
+        
+        # Stop at section boundaries
+        if in_failed_section:
+            if line.strip() == '' or line.startswith('===') or line.startswith('---'):
+                in_failed_section = False
+                continue
+            
+            # Parse file and error (format: "  - filepath: error message")
+            if line.strip().startswith('-') or line.strip().startswith('•'):
+                parts = line.strip().lstrip('-').lstrip('•').strip().split(':', 1)
+                if len(parts) == 2:
+                    filepath = parts[0].strip()
+                    error = parts[1].strip()
+                    failed_files.append((filepath, error))
+                else:
+                    # Just filename, no error detail
+                    failed_files.append((parts[0].strip(), "Unknown error"))
+    
+    return failed_files
+
+
+def print_consolidated_error_report(stage_failed_files):
+    """
+    Print a consolidated report of all failed files from all stages.
+    
+    Args:
+        stage_failed_files: Dict mapping stage name to list of (filepath, error) tuples
+    """
+    if not stage_failed_files:
+        return
+    
+    total_failures = sum(len(files) for files in stage_failed_files.values())
+    
+    print("\n" + "=" * 60, file=sys.stderr)
+    print(f"PIPELINE ERROR SUMMARY: {total_failures} file(s) failed across {len(stage_failed_files)} stage(s)", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+    
+    for stage_name, failed_files in stage_failed_files.items():
+        print(f"\n{stage_name.upper()}: {len(failed_files)} file(s) failed", file=sys.stderr)
+        print("-" * 60, file=sys.stderr)
+        
+        # Show first 10 failures with details
+        for filepath, error in failed_files[:10]:
+            # Shorten filepath if too long
+            if len(filepath) > 60:
+                filepath = "..." + filepath[-57:]
+            print(f"  - {filepath}", file=sys.stderr)
+            if error and error != "Unknown error":
+                # Truncate error if very long
+                if len(error) > 80:
+                    error = error[:77] + "..."
+                print(f"    Error: {error}", file=sys.stderr)
+        
+        if len(failed_files) > 10:
+            print(f"  ... and {len(failed_files) - 10} more files", file=sys.stderr)
+    
+    print("\n" + "=" * 60, file=sys.stderr)
+    print("Scroll up for full details on each failure", file=sys.stderr)
+    print("=" * 60 + "\n", file=sys.stderr)
+
+
 def run_module(module_name, input_path, args=None, recursive=False):
     """
     Run a Walrio module with given arguments
@@ -326,7 +593,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         recursive: Add recursive flag
         
     Returns:
-        Tuple of (success: bool, error_info: str or None)
+        Tuple of (success: bool, error_info: str or None, first_error_line: str or None, failed_files: list)
     """
     walrio_path = get_walrio_path()
     cmd = [sys.executable, walrio_path, module_name]
@@ -343,18 +610,66 @@ def run_module(module_name, input_path, args=None, recursive=False):
     print("-" * 50)
     
     try:
-        subprocess.run(cmd, check=True)
+        # Use Popen to capture stderr while still showing real-time output
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        
+        # Track current process for signal handler
+        _cleanup_state['current_process'] = process
+        
+        # Stream output in real-time and capture for error analysis
+        output_lines = []
+        first_error_line = None
+        
+        try:
+            for line in process.stdout:
+                print(line, end='')
+                output_lines.append(line)
+                # Capture first line containing error/failed
+                if not first_error_line:
+                    line_lower = line.lower()
+                    if any(keyword in line_lower for keyword in ['error:', 'failed', 'exception']):
+                        first_error_line = line.strip()
+        except KeyboardInterrupt:
+            # If interrupted while reading output, the signal handler will handle cleanup
+            raise
+        finally:
+            # Clear current process reference
+            _cleanup_state['current_process'] = None
+        
+        return_code = process.wait()
+        
+        # Parse failed files from output
+        failed_files = parse_failed_files_from_output(output_lines)
+        
+        if return_code != 0:
+            print("-" * 50)
+            error_msg = f"Failed with exit code {return_code}"
+            print(f"ERROR: {module_name} {error_msg}")
+            if first_error_line:
+                print(f"First error: {first_error_line[:200]}")  # Truncate if very long
+            else:
+                print("Check the output above for details on which files failed.")
+            return False, error_msg, first_error_line, failed_files
+        
         print("-" * 50)
         print(f"SUCCESS: {module_name} completed")
-        return True, None
-    except subprocess.CalledProcessError as e:
+        return True, None, None, failed_files
+        
+    except Exception as e:
         print("-" * 50)
-        error_msg = f"Failed with exit code {e.returncode}"
+        error_msg = f"Exception: {str(e)}"
         print(f"ERROR: {module_name} {error_msg}")
-        return False, error_msg
+        return False, error_msg, str(e), []
 
 
-def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None):
+def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False, log_file=None):
     """
     Run complete import pipeline
     
@@ -363,7 +678,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
        - Prompts if files already exist in output_dir: (y)es, (n)o, (ya) yes to all, (na) no to all
     2. Resize album art to 1000x1000 PNG (only on converted files in output directory)
     3. Rename with comprehensive character sanitization (only on converted files in output directory)
-    4. Analyze and apply loudness normalization -16 LUFS (only on converted files in output directory)
+    4. Analyze and apply loudness normalization -14 LUFS (only on converted files in output directory)
     5. Delete originals (if --delete-originals is set, AFTER all processing completes)
        - With default output_dir: Processed files moved back to replace originals, output_dir removed if empty
        - With custom output_dir: Originals deleted, processed files remain in custom location
@@ -380,19 +695,72 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         delete_originals: Delete original files after conversion
         force_reconvert: Force reconvert all files regardless of current specs
         stop_on_error: Stop pipeline if any stage has errors (default: continue through all stages)
-        output_dir: Output directory for converted files (default: ./output_dir)
+        output_dir: Output directory for converted files (default: output_dir in input location)
+        in_place: Process files directly in-place without output_dir (RISKY: no rollback on failure)
+        auto_sanitize: Skip all prompts (auto-overwrite existing files in convert stage)
+        log_file: Path to log file for output (None to disable logging)
         
     Returns:
         True if all stages succeeded
+    """
+    # Set up output logging if requested
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    tee_stdout = None
+    tee_stderr = None
+    
+    if log_file:
+        try:
+            tee_stdout = TeeOutput(log_file, mode='w')
+            tee_stderr = TeeStderr(log_file, mode='a')
+            sys.stdout = tee_stdout
+            sys.stderr = tee_stderr
+            print(f"Logging to: {log_file}")
+        except Exception as e:
+            print(f"Warning: Could not create log file {log_file}: {e}", file=sys.stderr)
+            # Continue without logging
+            tee_stdout = None
+            tee_stderr = None
+    
+    try:
+        return _run_import_pipeline_impl(input_path, recursive, dry_run, playlist_dir, 
+                                         delete_originals, force_reconvert, stop_on_error, 
+                                         output_dir, in_place, auto_sanitize)
+    finally:
+        # Restore original stdout/stderr and close log files
+        if tee_stdout:
+            sys.stdout = original_stdout
+            tee_stdout.close()
+        if tee_stderr:
+            sys.stderr = original_stderr
+            tee_stderr.close()
+
+
+def _run_import_pipeline_impl(input_path, recursive=False, dry_run=False, playlist_dir=None, delete_originals=False, force_reconvert=False, stop_on_error=False, output_dir=None, in_place=False, auto_sanitize=False):
+    """
+    Internal implementation of run_import_pipeline (called after logging setup).
     """
     print(f"Starting Walrio Import Pipeline: {input_path}")
     print(f"Recursive: {recursive}")
     print(f"Dry run: {dry_run}")
     
-    # Set default output directory and track if user specified custom location
-    user_specified_output_dir = output_dir is not None
-    if output_dir is None:
-        output_dir = Path.cwd() / "output_dir"
+    # Handle in-place processing
+    if in_place:
+        print("WARNING: In-place mode enabled - files will be modified directly!")
+        print("         No rollback available if errors occur.")
+        output_dir = input_path
+        user_specified_output_dir = True
+        # Disable cleanup in in-place mode since we're working on originals
+        _cleanup_state['cleanup_enabled'] = False
+    else:
+        # Set default output directory and track if user specified custom location
+        user_specified_output_dir = output_dir is not None
+        if output_dir is None:
+            # Create output_dir in the same location as input (not cwd)
+            if input_path.is_dir():
+                output_dir = input_path / "output_dir"
+            else:
+                output_dir = input_path.parent / "output_dir"
     
     print(f"Output directory: {output_dir}")
     print("=" * 60)
@@ -428,9 +796,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         {
             'name': 'convert',
             'description': 'Convert to FLAC 48kHz/16-bit',
-            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16', '--output', str(output_dir)],
+            'args': ['--format', 'flac', '--sample-rate', '48000', '--bit-depth', '16'] + (['--output', str(output_dir)] if not in_place else []),
             'target_path': input_path  # Convert processes input_path
-            # Note: --force-overwrite NOT included so user is prompted when files exist in output_dir
         },
         {
             'name': 'resize_album_art',
@@ -442,6 +809,7 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             'name': 'rename',
             'description': 'Rename with character filtering',
             'args': [
+                '--auto-sanitize',  # Auto-sanitize without prompting (no to all special characters)
                 '--sanitize', 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789[]()-_~@=+! ',
                 '--rc', '?', '~',
                 '--rc', '/', '~',
@@ -479,8 +847,8 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         },
         {
             'name': 'apply_loudness',
-            'description': 'Analyze and apply loudness normalization (-16 LUFS)',
-            'args': ['--replaygain', '--rescan-lufs', '-16', '--backup', 'false', '--force'],
+            'description': 'Analyze and apply loudness normalization (-14 LUFS)',
+            'args': ['--replaygain', '--rescan-lufs', '-14', '--backup', 'false', '--force'],
             'target_path': output_dir  # Subsequent steps process output_dir ONLY
         }
     ]
@@ -489,10 +857,13 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
     # Instead, we delete source files AFTER all stages complete successfully.
     # This ensures all processing happens on files in output_dir before originals are removed.
     
+    # Add force-overwrite for auto-sanitize operation if requested
+    if auto_sanitize:
+        stages[0]['args'].append('--force-overwrite')
+    
     # Add force-reconvert to convert if requested (convert is stage 0, index 0)
     if force_reconvert:
         stages[0]['args'].append('--force-reconvert')
-        stages[0]['args'].append('--force-overwrite')  # Also bypass overwrite prompts
     
     # Add playlist updating to rename if specified (rename is now stage 2, index 2)
     if playlist_dir:
@@ -527,23 +898,40 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
         return True
     
     # Execute pipeline
-    failed_stages = {}  # Dict mapping stage name to error info
+    failed_stages = {}  # Dict mapping stage name to (error_info, first_error_line)
+    stage_failed_files = {}  # Dict mapping stage name to list of (filepath, error) tuples
+    
     for i, stage in enumerate(stages, 1):
         print(f"\n[Stage {i}/{len(stages)}] {stage['description']}")
         print("=" * 60)
         
-        success, error_info = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        success, error_info, first_error_line, failed_files = run_module(stage['name'], stage['target_path'], stage['args'], recursive)
+        
+        # Store failed files for this stage
+        if failed_files:
+            stage_failed_files[stage['name']] = failed_files
+        
         if not success:
-            failed_stages[stage['name']] = error_info
+            failed_stages[stage['name']] = (error_info, first_error_line)
             if stop_on_error:
                 print(f"\nPipeline STOPPED at stage {i}: {stage['name']}")
+                print(f"Scroll up to see which files failed.")
                 return False
             else:
                 print(f"\nWARNING: Stage {i} ({stage['name']}) had errors, continuing...")
+                print(f"Some files may have failed - check output above for details.")
     
     print("\n" + "=" * 60)
     if failed_stages:
-        print(f"Pipeline completed with errors in: {', '.join(failed_stages.keys())}")
+        print(f"Pipeline completed with ERRORS in {len(failed_stages)} stage(s):")
+        print("=" * 60)
+        for stage_name, (error_info, first_error_line) in failed_stages.items():
+            print(f"  X {stage_name}: {error_info}")
+            if first_error_line:
+                print(f"    First error: {first_error_line[:150]}")
+        print("=" * 60)
+        print("\nScroll up to see detailed error messages for individual files.")
+        print("Look for lines containing 'ERROR', 'Failed', or specific file names.\n")
         
         # Prompt user about deleting originals despite errors
         if delete_originals and source_files:
@@ -552,12 +940,20 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
             else:
                 should_delete = prompt_delete_with_errors(failed_stages)
                 if should_delete:
-                    delete_original_files(source_files, dry_run=False)
+                    delete_result = delete_original_files(source_files, dry_run=False)
+                    # Track deletion errors
+                    if delete_result['errors'] > 0:
+                        stage_failed_files['delete_originals'] = delete_result['failed_files']
                     
                     # Only move files back if using default output_dir
                     if not user_specified_output_dir:
-                        move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
-                        print(f"\nOriginal files have been replaced with processed versions")
+                        move_result = move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                        # Track move errors
+                        if move_result['errors'] > 0:
+                            stage_failed_files['move_files'] = move_result['failed_files']
+                        
+                        if move_result['errors'] == 0:
+                            print(f"\nOriginal files have been replaced with processed versions")
                     else:
                         print(f"\nOriginal files deleted, processed files are in: {output_dir}")
                 else:
@@ -565,20 +961,34 @@ def run_import_pipeline(input_path, recursive=False, dry_run=False, playlist_dir
                     print(f"Processed files are in: {output_dir}")
     else:
         print("Pipeline completed successfully!")
+        print("All stages processed without errors.")
         
         # Delete original files if requested and all stages succeeded
         if delete_originals and source_files:
             print(f"\nProcessed files are in: {output_dir}")
-            delete_original_files(source_files, dry_run)
+            delete_result = delete_original_files(source_files, dry_run)
             if not dry_run:
+                # Track deletion errors
+                if delete_result['errors'] > 0:
+                    stage_failed_files['delete_originals'] = delete_result['failed_files']
+                
                 # Only move files back if using default output_dir
                 if not user_specified_output_dir:
-                    move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
-                    print(f"\nOriginal files have been replaced with processed versions")
+                    move_result = move_processed_files_back(output_dir, input_path, recursive, dry_run=False)
+                    # Track move errors
+                    if move_result['errors'] > 0:
+                        stage_failed_files['move_files'] = move_result['failed_files']
+                    
+                    if move_result['errors'] == 0:
+                        print(f"\nOriginal files have been replaced with processed versions")
                 else:
                     print(f"\nOriginal files deleted, processed files remain in: {output_dir}")
         else:
             print(f"\nProcessed files are in: {output_dir}")
+    
+    # Display final consolidated error report if any operations had failures
+    if stage_failed_files:
+        print_consolidated_error_report(stage_failed_files)
     
     # Mark as successfully completed (disables cleanup on exit)
     _cleanup_state['completed_successfully'] = True
@@ -595,11 +1005,15 @@ def main():
   1. Convert to FLAC format (48kHz, 16-bit)
   2. Resize album artwork to 1000x1000 PNG
   3. Rename files with character filtering
-  4. Analyze and apply loudness normalization (-16 LUFS)
+  4. Analyze and apply loudness normalization (-14 LUFS)
 
 Important Notes:
-  - All files are processed in --output-dir (default: ./output_dir)
+  - All files are processed in --output-dir (default: output_dir in input location)
   - Original files are NEVER modified - all work happens on copies in output_dir
+  - WARNING: --in-place: RISKY mode that processes files directly without output_dir
+    * Saves disk space but NO ROLLBACK if errors occur
+    * Original files overwritten/deleted during processing
+    * Only use if you have backups or are confident in the operation
   - If files exist in output_dir, prompts: (y)es, (n)o, (ya) yes to all, (na) no to all
   - If process cancelled (Ctrl+C): Only newly added files cleaned up, existing preserved
   - With --delete-originals (default output_dir): Processed files replace originals in place
@@ -613,11 +1027,11 @@ Important Notes:
   1. Resize album artwork to 1000x1000 PNG (FIRST - modifies in-place)
   2. Convert to FLAC format (48kHz, 16-bit)
   3. Rename files with character filtering
-  4. Analyze and apply loudness normalization (-16 LUFS)
+  4. Analyze and apply loudness normalization (-14 LUFS)
 >>>>>>> origin/main
 
 Examples:
-  # Process to default ./output_dir directory (keeps originals)
+  # Process to default output_dir (created in input location, keeps originals)
   python walrio_import_remade.py /path/to/music
 
   # Process to custom output directory (keeps originals)
@@ -643,13 +1057,18 @@ Examples:
 
   # Show what would be executed without running
   python walrio_import_remade.py /path/to/music --dry-run
+
+  # WARNING: RISKY: Process in-place to save disk space (no rollback on failure)
+  python walrio_import_remade.py /path/to/music --in-place --recursive
 """
     )
     parser.add_argument('input', type=Path, help='Input file or directory')
     parser.add_argument('-r', '--recursive', action='store_true',
                        help='Process directories recursively')
     parser.add_argument('-o', '--output-dir', type=Path, dest='output_dir',
-                       help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: ./output_dir)')
+                       help='Output directory where ALL processing happens (convert, resize, rename, loudness). Original files are never modified. (default: output_dir in same location as input)')
+    parser.add_argument('--in-place', action='store_true',
+                       help='RISKY: Process files directly in original location without using output_dir. Saves disk space but NO ROLLBACK if errors occur. Original files will be overwritten/deleted during processing.')
     parser.add_argument('-n', '--dry-run', action='store_true',
                        help='Show commands without executing')
     parser.add_argument('-p', '--playlist-dir', type=Path,
@@ -668,6 +1087,14 @@ Examples:
                        dest='dont_continue',
                        help='Stop pipeline execution if any stage has errors (default: continue through all stages)')
     
+    parser.add_argument('--auto-sanitize', '--as', action='store_true',
+                       dest='auto_sanitize',
+                       help='Run without prompts - automatically overwrite existing files in output directory')
+    
+    parser.add_argument('--log-file', type=Path, nargs='?', const='walrio_log.txt',
+                       dest='log_file',
+                       help='Log all output to file (default: walrio_log.txt in current directory). Optionally specify custom path.')
+    
     args = parser.parse_args()
     
     # Handle --force-replace flag (combines force-reconvert and delete-originals)
@@ -678,6 +1105,11 @@ Examples:
     # Validate input path
     if not args.input.exists():
         print(f"Error: Input path does not exist: {args.input}", file=sys.stderr)
+        return 1
+    
+    # Validate conflicting options
+    if args.in_place and args.output_dir:
+        print(f"Error: Cannot use both --in-place and --output-dir together", file=sys.stderr)
         return 1
     
     # Validate playlist directory if provided
@@ -698,7 +1130,10 @@ Examples:
             args.delete_originals,
             args.force_reconvert,
             args.dont_continue,
-            args.output_dir
+            args.output_dir,
+            args.in_place,
+            args.auto_sanitize,
+            args.log_file
         )
         return 0 if success else 1
     

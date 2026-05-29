@@ -54,6 +54,7 @@ class AudioConverter:
         self.force_reconvert = force_reconvert
         self.overwrite_all = False
         self.skip_all = False
+        self.failed_files = []  # Track (filepath, error_message) tuples
         self._check_ffmpeg()
     
     def _get_unique_filename(self, base_path: Path) -> Path:
@@ -287,9 +288,9 @@ class AudioConverter:
                     if self._matches_target_specs(input_path):
                         # Print with file counter
                         if current_file and total_files:
-                            print(f"File {current_file}/{total_files}: Skipping {input_path.name} (already in target format with correct specs)")
+                            print(f"File {current_file}/{total_files}: Skipping {input_path.name} (already in target format with correct specs)\n")
                         else:
-                            print(f"Skipping {input_path.name} (already in target format with correct specs)")
+                            print(f"Skipping {input_path.name} (already in target format with correct specs)\n")
                         return input_path
                     else:
                         # Need to reconvert - prompt user
@@ -301,7 +302,7 @@ class AudioConverter:
                                 print(f"File {current_file}/{total_files}: ERROR - {input_path.name} is corrupted or unreadable")
                             else:
                                 print(f"ERROR - {input_path.name} is corrupted or unreadable")
-                            print(f"  File cannot be read by ffprobe. Skipping.")
+                            print(f"  File cannot be read by ffprobe. Skipping.\n")
                             return None
                         
                         # Print with file counter
@@ -465,10 +466,13 @@ class AudioConverter:
                     final_path.unlink()
                 output_path.rename(final_path)
                 output_path = final_path
-                print(f"  Replaced original with reconverted file")
+                print(f"  Replaced original with reconverted file\n")
             elif original_input != output_path:
                 # Created a new file (not replacing), inform user
-                print(f"  Created new file: {output_path.name} (original preserved)")
+                print(f"  Created new file: {output_path.name} (original preserved)\n")
+            else:
+                # In-place replacement was done
+                print()  # Add blank line
             
             # Delete original if requested (for cross-format conversions)
             # Only delete if: deletion enabled, input still exists, output was successfully created, and they're different files
@@ -562,8 +566,10 @@ class AudioConverter:
                     stats['skipped'] += 1
                 
             except Exception as e:
-                print(f"File {idx}/{len(files)}: Error converting {file_path.name}: {e}", file=sys.stderr)
+                error_msg = f"Error converting file: {e}"
+                print(f"File {idx}/{len(files)}: {file_path.name}: {error_msg}\n", file=sys.stderr)
                 stats['errors'] += 1
+                self.failed_files.append((str(file_path), error_msg))
         
         return stats
 
@@ -605,11 +611,15 @@ def convert_audio(input_path: Path, output_format: str, output_path: Path = None
     )
     
     if input_path.is_dir():
-        return converter.convert_directory(input_path, output_path, recursive, 
+        stats = converter.convert_directory(input_path, output_path, recursive, 
                                            force_overwrite, skip_existing)
+        stats['failed_files'] = converter.failed_files
+        return stats
     else:
         result = converter.convert_file(input_path, output_path, force_overwrite)
-        return {'converted': 1 if result else 0, 'skipped': 0 if result else 1, 'errors': 0}
+        stats = {'converted': 1 if result else 0, 'skipped': 0 if result else 1, 'errors': 0}
+        stats['failed_files'] = converter.failed_files
+        return stats
 
 
 def main():
@@ -668,6 +678,14 @@ def main():
         print(f"  Skipped: {stats['skipped']}")
         if stats['errors']:
             print(f"  Errors: {stats['errors']}")
+            if stats.get('failed_files'):
+                print("\n" + "=" * 60)
+                print("Failed Files:")
+                print("=" * 60)
+                for filepath, error_msg in stats['failed_files']:
+                    print(f"  {filepath}")
+                    print(f"    Error: {error_msg}")
+                print("=" * 60)
         
         # Only fail if ALL files failed (no successful conversions or skips)
         if stats['converted'] == 0 and stats['skipped'] == 0:
