@@ -503,9 +503,12 @@ def get_walrio_path():
 
 
 def parse_failed_files_from_output(output_lines):
-    """
-    Parse failed files from module output.
+    """Parse failed files from module output.
+    
     Looks for the "Failed files:" section that modules print.
+    
+    Args:
+        output_lines: List of output lines from the module execution
     
     Returns:
         List of tuples (filepath, error_message)
