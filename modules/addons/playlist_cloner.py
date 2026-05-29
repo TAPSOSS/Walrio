@@ -162,7 +162,14 @@ class PlaylistCloner:
             # Try to get relative path from playlist directory
             try:
                 rel_path = os.path.relpath(os.path.dirname(input_abs), playlist_dir)
-                output_subdir = os.path.join(music_output_dir, rel_path)
+                # Strip leading ../ from relative paths to avoid confusing path structures
+                while rel_path.startswith('../'):
+                    rel_path = rel_path[3:]
+                # If rel_path is now empty or just '.', use music_output_dir directly
+                if rel_path in ('', '.'):
+                    output_subdir = music_output_dir
+                else:
+                    output_subdir = os.path.join(music_output_dir, rel_path)
             except ValueError:
                 # If files are on different drives, just use basename
                 output_subdir = music_output_dir
@@ -284,15 +291,15 @@ class PlaylistCloner:
             
             # Check if output file already exists
             if self.skip_existing and os.path.exists(output_path):
-                logger.info(f"  → Skipped (already exists): {os.path.basename(output_path)}")
+                logger.info(f"  → Skipped (already exists): {output_path}")
                 self.skipped_files += 1
                 continue
             
             if self.dry_run:
                 if self._needs_conversion(input_file):
-                    logger.info(f"  → Would convert to: {os.path.basename(output_path)}")
+                    logger.info(f"  → Would convert to: {output_path}")
                 else:
-                    logger.info(f"  → Would copy to: {os.path.basename(output_path)}")
+                    logger.info(f"  → Would copy to: {output_path}")
                 continue
             
             # Check if conversion is needed
@@ -306,7 +313,7 @@ class PlaylistCloner:
                     )
                     
                     if result_path:
-                        logger.info(f"  [OK] Converted to: {os.path.basename(output_path)}")
+                        logger.info(f"  [OK] Converted to: {output_path}")
                         self.converted_files += 1
                         
                         # Resize album art if requested and not disabled
@@ -348,7 +355,7 @@ class PlaylistCloner:
                 try:
                     os.makedirs(os.path.dirname(output_path), exist_ok=True)
                     shutil.copy2(input_file, output_path)
-                    logger.info(f"  [OK] Copied to: {os.path.basename(output_path)}")
+                    logger.info(f"  [OK] Copied to: {output_path}")
                     self.copied_files += 1
                 except Exception as e:
                     logger.error(f"  [ERROR] Copy failed: {str(e)}")
@@ -701,15 +708,15 @@ def clone_playlists_batch(playlist_files: List[str],
         
         # Check if output file already exists
         if skip_existing and os.path.exists(output_path):
-            logger.info(f"  → Skipped (already exists): {os.path.basename(output_path)}")
+            logger.info(f"  → Skipped (already exists): {output_path}")
             skipped_count += 1
             continue
         
         if dry_run:
             if first_cloner._needs_conversion(input_file):
-                logger.info(f"  → Would convert to: {os.path.basename(output_path)}")
+                logger.info(f"  → Would convert to: {output_path}")
             else:
-                logger.info(f"  → Would copy to: {os.path.basename(output_path)}")
+                logger.info(f"  → Would copy to: {output_path}")
             continue
         
         # Convert or copy file
@@ -722,7 +729,7 @@ def clone_playlists_batch(playlist_files: List[str],
                 )
                 
                 if result_path:
-                    logger.info(f"  [OK] Converted to: {os.path.basename(output_path)}")
+                    logger.info(f"  [OK] Converted to: {output_path}")
                     converted_count += 1
                     
                     # Resize album art if requested
@@ -761,7 +768,7 @@ def clone_playlists_batch(playlist_files: List[str],
             try:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
                 shutil.copy2(input_file, output_path)
-                logger.info(f"  [OK] Copied to: {os.path.basename(output_path)}")
+                logger.info(f"  [OK] Copied to: {output_path}")
                 copied_count += 1
             except Exception as e:
                 logger.error(f"  [ERROR] Copy failed: {str(e)}")
