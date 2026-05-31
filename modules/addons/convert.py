@@ -392,10 +392,19 @@ class AudioConverter:
         if self.bit_depth and self.output_format in ('flac', 'wav'):
             if self.bit_depth == '16':
                 cmd.extend(['-sample_fmt', 's16'])
+                # For FLAC, explicitly set the encoded bit depth
+                if self.output_format == 'flac':
+                    cmd.extend(['-bits_per_raw_sample', '16'])
             elif self.bit_depth == '24':
                 cmd.extend(['-sample_fmt', 's32'])
+                # For FLAC, explicitly set the encoded bit depth
+                if self.output_format == 'flac':
+                    cmd.extend(['-bits_per_raw_sample', '24'])
             elif self.bit_depth == '32':
                 cmd.extend(['-sample_fmt', 's32'])
+                # For FLAC, explicitly set the encoded bit depth
+                if self.output_format == 'flac':
+                    cmd.extend(['-bits_per_raw_sample', '32'])
         
         # Encoding mode and bitrate for lossy formats
         encoding_mode = self.encoding_mode or 'vbr'
