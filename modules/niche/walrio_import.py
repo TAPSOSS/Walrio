@@ -3,6 +3,7 @@
 'import' script which converts to standard filetype, normalizes file loudness, normalizes album art, and renames files. combination of multiple other scripts runnign one after another to normalize a music library.
 """
 import sys
+import os
 import argparse
 import subprocess
 import signal
@@ -610,6 +611,10 @@ def run_module(module_name, input_path, args=None, recursive=False):
     print("-" * 50)
     
     try:
+        # Set environment to disable Python buffering (critical for real-time output when stdout is piped)
+        env = os.environ.copy()
+        env['PYTHONUNBUFFERED'] = '1'
+        
         # Use Popen to capture stderr while still showing real-time output
         process = subprocess.Popen(
             cmd,
@@ -617,7 +622,8 @@ def run_module(module_name, input_path, args=None, recursive=False):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            universal_newlines=True
+            universal_newlines=True,
+            env=env
         )
         
         # Track current process for signal handler
@@ -630,6 +636,7 @@ def run_module(module_name, input_path, args=None, recursive=False):
         try:
             for line in process.stdout:
                 print(line, end='')
+                sys.stdout.flush()  # Ensure output appears immediately (especially when logging)
                 output_lines.append(line)
                 # Capture first line containing error/failed
                 if not first_error_line:
