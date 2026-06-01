@@ -333,8 +333,13 @@ def process_directory(directory: Path,
         if recursive:
             for ext in AUDIO_EXTENSIONS:
                 for file_path in directory.rglob(f'*{ext}'):
-                    # Skip files in 'output_dir' to avoid re-processing
-                    if any(parent.name == 'output_dir' for parent in file_path.parents):
+                    # Skip files in 'output_dir' subdirectories (but not if we're already processing output_dir itself)
+                    try:
+                        relative_path = file_path.relative_to(directory)
+                        if any(parent.name == 'output_dir' for parent in relative_path.parents):
+                            continue
+                    except ValueError:
+                        # file_path is not relative to directory, skip to be safe
                         continue
                     audio_files.append(file_path)
         else:
