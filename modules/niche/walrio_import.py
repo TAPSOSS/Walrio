@@ -616,8 +616,10 @@ def run_module(module_name, input_path, args=None, recursive=False):
         env['PYTHONUNBUFFERED'] = '1'
         
         # Use Popen to capture stderr while still showing real-time output
+        # stdin=sys.stdin allows interactive prompts to work
         process = subprocess.Popen(
             cmd,
+            stdin=sys.stdin,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
