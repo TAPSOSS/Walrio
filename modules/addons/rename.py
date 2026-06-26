@@ -342,10 +342,42 @@ class AudioRenamer:
             logger.error(f"Error formatting filename for {filepath.name}: {e}")
             return None
     
+    def _case_insensitive_exists(self, filepath: Path, original_filepath: Path = None) -> bool:
+        """
+        Check if a file exists with case-insensitive name matching.
+        
+        Args:
+            filepath: Path to check
+            original_filepath: Original file being renamed (to exclude from check)
+            
+        Returns:
+            True if a file with same name (case-insensitive) exists
+        """
+        if not filepath.parent.exists():
+            return False
+        
+        target_name_lower = filepath.name.lower()
+        
+        # Check all files in the directory
+        try:
+            for existing_file in filepath.parent.iterdir():
+                # Skip if it's the original file being renamed
+                if original_filepath and existing_file == original_filepath:
+                    continue
+                
+                # Case-insensitive comparison
+                if existing_file.name.lower() == target_name_lower:
+                    return True
+        except (OSError, PermissionError):
+            # If we can't read directory, fall back to regular exists check
+            return filepath.exists() and filepath != original_filepath
+        
+        return False
+    
     def resolve_filename_conflict(self, filepath: Path, new_filename: str, 
                                   directory: Path) -> str:
         """
-        Resolve conflicts by adding counter to title
+        Resolve conflicts by adding counter to title (with case-insensitive checking)
         
         Args:
             filepath: Original file
@@ -357,7 +389,8 @@ class AudioRenamer:
         """
         new_filepath = directory / new_filename
         
-        if not new_filepath.exists():
+        # Check for case-insensitive conflicts
+        if not self._case_insensitive_exists(new_filepath, filepath):
             return new_filename
         
         file_ext = Path(new_filename).suffix
@@ -375,7 +408,7 @@ class AudioRenamer:
         if 'title' in format_fields and 'title' in metadata:
             original_title = metadata['title']
             
-            while new_filepath.exists():
+            while self._case_insensitive_exists(new_filepath, filepath):
                 modified_metadata = metadata.copy()
                 modified_metadata['title'] = f"{original_title} ({counter})"
                 
@@ -410,7 +443,7 @@ class AudioRenamer:
         new_filename = f"{filename_base} ({counter}){file_ext}"
         new_filepath = directory / new_filename
         
-        while new_filepath.exists():
+        while self._case_insensitive_exists(new_filepath, filepath):
             counter += 1
             new_filename = f"{filename_base} ({counter}){file_ext}"
             new_filepath = directory / new_filename
